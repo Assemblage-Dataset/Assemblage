@@ -1,23 +1,23 @@
-# Assemblage AWS Deployment Instructions 
+# Assemblage
 
-Assemblage is mainly tested on AWS. If you plan to use AWS services, please copy your confidential file to `$ASSEMBLAGE_HOME/aws` before system initialization, which should contains the private key and geo information.
+## Deployment of popular cloud infrastructure
 
-To ensure the security of system, please enable firewall for instances, particularly 5672 and 50052 port of coordinator node, 3306 port of database, and other necessary ports.
+Assemblage is mainly tested on AWS. If you plan to use AWS services, please copy your confidential file to `$ASSEMBLAGE_HOME/aws` before system initialization, which should contains the private key and geo information
 
-## 1. Coordinator Setup
+## Set up env for developing & testing
+
 
 1. Create the docker network
 ```
 docker network create assemblage-net
 ```
 
-2. Build docker images, add git tokens
+2. Build docker images
 ```
 ./build.sh
 ```
 
-2. Run and initialize MySQL. All passwords are using default `assemblage` under user `roor`, change these if needed
-
+2. Run and initialize MySQL.
 ```
 docker pull mysql/mysql-server
 # publish port 3306 and add a volume so the data can be accessed locally.
@@ -40,15 +40,15 @@ mysql> CREATE DATABASE IF NOT EXISTS assemblage;
 
 3. Initialize the Database
 ```
-# Run cli.py and follow the intructions, it will create tables and setup other configs
+# Run cli.py and wipe the database, it will clean the database and create tables
 pip3 install -r requirements.txt
 python3 cli.py
 ```
 
 
-4. Use `start.sh` to restart the services if needed
+4. Run `docker-compose` to start up the services (Optional, cli.py can boot after initialization)
 ```
-sh start.sh
+docker-compose up -d
 ```
 
 5. Boot CLI
@@ -59,67 +59,3 @@ As Google changed some of the codes, you need to add the flag `PROTOCOL_BUFFERS_
 pip3 install pyfiglet prompt_toolkit pyfiglet plotext pypager grpcio grpcio-tools
 PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python python3 cli.py --server $(docker inspect --format '{{ $network := index .NetworkSettings.Networks "assemblage-net" }}{{ $network.IPAddress}}'  assemblage_coordinator_1):50052
 ```
-
-## Crawler Setup
-
-A crawler is provided with the system, it need a object of data source, which is the website it crawls,the constructor for such data source is provided as `GithubRepositories`, which takes in tokens, query parameters and query time intervals, for example:
-
-```
-GithubRepositories(
-    git_token="some_token_here",
-    qualifier={
-        "language:c",
-        "stars:>2",
-        "license:"mit"
-    }, 
-    crawl_time_start= 1262322000,
-    crawl_time_interval=86400,
-    proxies=[],
-    build_sys_callback=(lambda files:1 in [for file in files if file.lower().endswith(".sln")])
-)
-
-```
-
-It is also possible to implement crawler to other websites by extending the [`DataSource`](worker/scraper.py) class
-
-## Workers API and Deployment
-
-The exposed worker APIs locate in [api.py](api.py)
-
-```
-from assemblage.worker.profile import AWSProfile
-from assemblage.worker.postprocess import PostAnalysis
-from assemblage.worker.build_method import *
-```
-
-where the `BuildStartegy` specifies the behavior of Building process, and each abstract method represents each building stages. If you want to fully customize the building/post building behavior, provide the `clone_data`, `pre_build`, `run_build` and `post_build_hook` function with your code, the function input indicates the build configuration (you can ignore these if you pass in your own build configs)
-
-`class BuildStartegy`: An abstract class that encapsulates the Assemblage's worker behavior
-
-    clone_data(self, repo):
-        Return clone_msg, clone_status(indicated by BuildStatus), clone_dir (the directory where is cloned to)
-        The method to clone the repository to local machine
-
-    pre_build(self, Platform,
-                    Buildmode, Target_dir, Optimization, _tmp_dir, VC_Version, Favorsizeorspeed="",
-                    Inlinefunctionexpansion="", Intrinsicfunctions="") -> tuple[str, int, str]:
-        Return the processing message, status code, Makefile (or solution file) path
-        The method process the files in Target_dir to meet other config parameters
-
-    run_build(self, repo, target_dir, build_mode, library, optimization, slnfile,
-                  platform, compiler_version) -> tuple[bytes, bytes, int]:
-        Return the stderr and stdout in bytes, and status code
-        The actual function that a command is called to perform the compilation and building
-    
-    post_build_hook(self,
-                    dest_binfolder, build_mode, library, repoinfo, toolset,
-                    optimization, commit_hexsha):
-        No return value, this function processes the dest_binfolder and upload it
-
-
-
-## Example Workers
-
-Example workers can be found at [example_cluster.py](../example_cluster.py), [example_windows.py](../example_windows.py), [example_vcpkg.py](../example_vcpkg.py).
-If you don't need customization, check [stable branches](https://github.com/harp-lab/Assemblage/branches) that has been deployed and tested on AWS for months.
-

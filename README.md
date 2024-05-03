@@ -2,7 +2,7 @@
 
 Assemblage is a distributed binary corpus discovery, generation, and archival tool built to provide high-quality labeled metadata for the purposes of building training data for machine learning applications of binary analysis and other applications (static / dynamic analysis, reverse engineering, etc...).
 
-The code in this repository is published under MIT license.
+The code published in this repository is published under MIT license.
 
 ## Cloud infrastructure support
 
@@ -15,29 +15,23 @@ This is the public repository of Assemblage, and it is hosts a general template 
 We provide Dockerfile and build script to build Docker images for Linux worker, and the Docker compose file can be used to specify the resource each worker can access.  
 Due to the commercial license of the Wiundows, we only provide the boot script and environment specification for workers, locating at the [Windows readme](assemblage/windows/README.md)
 
-Meanwhile, a brief introduction to the APIs is provided at this [link](assemblage/README.md).
-
 ## Dataset Availability
 
-We include __only__ the subset of binaries for which permissive licenses can be ascertained. 
-
+We are publishing the binaries __only comes with license__.  
 Pdb files are too large to be included, but datasets with pdb files are also available upon request.
 
-1.Windows GitHub dataset (Processed to SQLite database, 62k, last updated: Apr 14th 2024):  
-*   SQLite databse (12G):  
-https://assemblage-lps.s3.us-west-1.amazonaws.com/public/winpe_licensed.sqlite.zip
-*   Binary dataset (7G):  
-https://assemblage-lps.s3.us-west-1.amazonaws.com/public/winpe_licensed.zip
+1.Windows GitHub dataset (Processed to SQLite databse, 97k):  
+*   SQLite databse (14G):  
+https://assemblage-lps.s3.us-west-1.amazonaws.com/public/jan19_licensed.sqlite  
+*   Binary dataset (8G):  
+https://assemblage-lps.s3.us-west-1.amazonaws.com/public/licensed_windows.zip  
 
-2.Windows vcpkg dataset (Processed to SQLite database, 29k):
+2.Windows vcpkg dataset (Unprocessed compression files, ~25k):
+*   Dataset:  
+https://assemblage-lps.s3.us-west-1.amazonaws.com/public/vcpkg_windows.zip
 
-*   SQLite database (3.3GB):  
-https://assemblage-lps.s3.us-west-1.amazonaws.com/public/vcpkg.sqlite.zip
 
-*   Binary dataset (18G):  
-https://assemblage-lps.s3.us-west-1.amazonaws.com/public/vcpkg.zip
-
-3.Linux GitHub dataset (Processed to SQLite database, 211k):
+3.Linux GitHub dataset (Processed to SQLite databse, 211k):
 
 *   SQLite database (23M):  
 https://assemblage-lps.s3.us-west-1.amazonaws.com/public/feb15_linux_licensed.sqlite

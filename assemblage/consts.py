@@ -50,7 +50,7 @@ if os.name=="nt":
 
 PDBPATH = "Pdbs"
 BUILDPATH = "Builds"
-PDBJSONNAME = "pdbinfo.json"
+PDBJSONNAME = "assemblage_meta.json"
 WIN_PREFIX = "C:\\Assemblage\\repo-scraper-builder\\Binaries\\"
 
 AWS_AUTO_REBOOT_PREFIX = "auto-worker"

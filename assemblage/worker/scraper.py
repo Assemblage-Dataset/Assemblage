@@ -104,7 +104,7 @@ class GithubRepositories(DataSource):
     """ a data generator for Windows c repositories """
 
     def __init__(self, git_token, qualifier, crawl_time_start, crawl_time_interval,
-                proxies, sort=GithubTimeOrder.CREATED, order="",
+                crawl_time_lap, proxies, sort=GithubTimeOrder.CREATED, order="",
                 build_sys_callback=get_build_system) -> None:
         super().__init__(build_sys_callback)
         self.token = git_token
@@ -113,6 +113,7 @@ class GithubRepositories(DataSource):
         self.page_size = 100
         self.crawl_time_interval = crawl_time_interval
         self.crawl_time_start = crawl_time_start
+        self.crawl_time_lap = crawl_time_lap
         self.proxies = proxies
         self.query_pile = int(time.time())//3600
         self.token_checker = TokenChecker()

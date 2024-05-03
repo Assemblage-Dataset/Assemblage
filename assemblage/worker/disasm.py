@@ -25,7 +25,8 @@ import boto3
 
 from assemblage.worker.profile import AWSProfile
 from assemblage.worker.base_worker import BasicWorker
-from assemblage.worker.build_method import post_processing_pdb, post_processing_s3, cmd_with_output
+from assemblage.worker.build_method import post_processing_pdb, post_processing_s3
+from assemblage.worker.build_method import cmd_with_output
 
 
 TMP_PATH = "tmp"
