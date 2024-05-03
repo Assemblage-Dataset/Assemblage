@@ -48,7 +48,7 @@ class Status(Base):
 class BuildOpt(Base):
     """ build option for how to build a repo """
     __tablename__ = 'buildopt'
-    _id = Column(Integer, primary_key=True)
+    _id = Column(Integer, primary_key=True, autoincrement=True)
     # git = Column(String(length=255), default='')
     platform = Column(String(length=255), default='')
     language = Column(String(length=255), default='')
@@ -110,6 +110,12 @@ class RepoDO(Base):
     # priority high: 2, mid: 1, low 0
     priority = Column(Integer, default=0)
     size = Column(Integer, default=0)
+    star = Column(Integer, default=0)
+    watching = Column(Integer, default=0)
+    fork = Column(Integer, default=0)
+    license = Column(String(length=255), default='')
+    default_branch = Column(String(length=255), default='')
+    topics = Column(Text, default='')
     build_system = Column(String(length=255), default='', index=True)
     statuses = relationship("Status", cascade="all, delete",
                             passive_deletes=True)
@@ -144,7 +150,7 @@ def init_clean_database(db_str):
     except Exception as err:
         print(err)
     try:
-        print("Creating tables, don't exit program")
+        print("Creating tables")
         Base.metadata.create_all(engine)
     except Exception as err:
         print(err)

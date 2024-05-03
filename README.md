@@ -1,47 +1,69 @@
-# Assemblage
+# repo-scraper-builder
 
-Assemblage is a distributed binary corpus discovery, generation, and archival tool built to provide high-quality labeled metadata for the purposes of building training data for machine learning applications of binary analysis and other applications (static / dynamic analysis, reverse engineering, etc...).
+* Crawl C/C++ projects from GitHub and store them into database
+* Clone repos local machine
+* Experiment with build systems and flags to get diversity of binaries
+* Maintain record of repo/binary metadata throughout
 
-The code in this repository is published under MIT license.
+Design document notes: https://docs.google.com/document/d/1p9SvTGqZT9zI8eYj6Z1dHr9NWoytWdvptI3m0Kixqo4/edit
+https://docs.google.com/document/d/1pjuG1iYjtir0W1pzO09rr49sehRp5bbLsamGmyPzJw4/edit
 
-## Cloud infrastructure support
+## AWS
+Assemblage support aws deployment, please copy your `.aws` folder to `{ASSEMBLAGE_HOME}/aws` before system initialization, which should contains the private key and geo information, under the profile called `assemblage`
 
-We have run Assemblage over the course of several months within the research computing cluster at Syracuse University and Amazon Web Services. 
 
-## Worker Requirement
+## Set up env for developing & testing
 
-This is the public repository of Assemblage, and it is hosts a general template for booting Assemblage on any cloud infrastructure. We will soon include stable/old versions we customized and ran on AWS, please check out beanches under name of fomat `{linux|windows}_{github|vcpkg}`. For example, code we used to generate Windows binaries from GitHub data will locate at branch naming `windows_github` (though the credentials are sanitized).
 
-We provide Dockerfile and build script to build Docker images for Linux worker, and the Docker compose file can be used to specify the resource each worker can access.  
-Due to the commercial license of the Wiundows, we only provide the boot script and environment specification for workers, locating at the [Windows readme](assemblage/windows/README.md)
+1. Create the docker network
+```
+docker network create assemblage-net
+```
 
-Meanwhile, a brief introduction to the APIs is provided at this [link](assemblage/README.md).
+2. Build docker images
+```
+./build.sh
+```
 
-## Dataset Availability
+2. Run and initialize MySQL.
+```
+docker pull mysql/mysql-server
+# publish port 3306 and add a volume so the data can be accessed locally.
+docker run --name=mysql -v $(pwd)/db-data:/var/lib/mysql -p 3306:3306 --network=assemblage-net -d mysql/mysql-server
+docker logs mysql
+# find the tmp password in log
+# may need to wait a minute for the database to initialize
+# and the password is provided
+docker exec -it mysql mysql -uroot -p
 
-We include __only__ the subset of binaries for which permissive licenses can be ascertained. 
 
-Pdb files are too large to be included, but datasets with pdb files are also available upon request.
+# set password to 'assemblage', change this for your own
+# Make sure to set the DB password in the coordinators config
+# before building the image.
+mysql> ALTER USER 'root'@'localhost' IDENTIFIED BY 'assemblage';
+mysql> CREATE USER 'root'@'%' IDENTIFIED BY 'assemblage';
+mysql> GRANT ALL PRIVILEGES ON *.* TO 'root'@'%' WITH GRANT OPTION;
+mysql> CREATE DATABASE IF NOT EXISTS assemblage;
+```
 
-1.Windows GitHub dataset (Processed to SQLite database, 62k, last updated: Apr 14th 2024):  
-*   SQLite databse (12G):  
-https://assemblage-lps.s3.us-west-1.amazonaws.com/public/winpe_licensed.sqlite.zip
-*   Binary dataset (7G):  
-https://assemblage-lps.s3.us-west-1.amazonaws.com/public/winpe_licensed.zip
+3. Initialize the Database
+```
+# Run cli.py and wipe the database, it will clean the database and create tables
+pip3 install -r requirements.txt
+python3 cli.py
+```
 
-2.Windows vcpkg dataset (Processed to SQLite database, 29k):
 
-*   SQLite database (3.3GB):  
-https://assemblage-lps.s3.us-west-1.amazonaws.com/public/vcpkg.sqlite.zip
+4. Run `docker-compose` to start up the services (Optional, cli.py can boot after initialization)
+```
+docker-compose up -d
+```
 
-*   Binary dataset (18G):  
-https://assemblage-lps.s3.us-west-1.amazonaws.com/public/vcpkg.zip
+5. Boot CLI
 
-3.Linux GitHub dataset (Processed to SQLite database, 211k):
+As Google changed some of the codes, you need to add the flag `PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python` to boot CLI tools
 
-*   SQLite database (23M):  
-https://assemblage-lps.s3.us-west-1.amazonaws.com/public/feb15_linux_licensed.sqlite
-
-*   Binary dataset (72G):  
-https://assemblage-lps.s3.us-west-1.amazonaws.com/public/licensed_linux.zip
-
+```
+pip3 install pyfiglet prompt_toolkit pyfiglet plotext pypager grpcio grpcio-tools
+PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python python3 cli.py --server $(docker inspect --format '{{ $network := index .NetworkSettings.Networks "assemblage-net" }}{{ $network.IPAddress}}'  assemblage_coordinator_1):50052
+```

@@ -1,4 +1,5 @@
-FROM assemblage-gh:base
+FROM ubuntu:22.04
+ENV PYTHON_VERSION 3.9.1
 
 RUN apt-get update && apt-get -y upgrade
 
@@ -26,8 +27,7 @@ RUN git clone https://github.com/grpc/grpc /var/local/git/grpc --recurse-submodu
 ENV PYENV_ROOT /root/.pyenv
 ENV PATH $PYENV_ROOT/shims:$PYENV_ROOT/bin:$PATH
 
-RUN set -ex \
-    && curl https://pyenv.run | bash \
+RUN curl https://pyenv.run | bash \
     && pyenv update \
     && pyenv install $PYTHON_VERSION \
     && pyenv global $PYTHON_VERSION \
@@ -46,21 +46,22 @@ RUN DEBIAN_FRONTEND="noninteractive" apt-get install -y rebar \
                 qtbase5-dev qtchooser qt5-qmake qtbase5-dev-tools \
                 swig
 
-RUN curl -fsSL https://deb.nodesource.com/setup_current.x | bash - && apt-get update && apt-get install -y nodejs
 
-#RUN sudo apt-get update; \
-#  sudo apt-get install -y apt-transport-https && \
-#  sudo apt-get update && \
-#  sudo apt-get install -y dotnet-sdk-5.0
-
-RUN wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key|sudo apt-key add -
+# RUN wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key|sudo apt-key add -
 RUN apt-get install -y clang-format clang-tidy clang-tools clang clangd libc++-dev libc++1 libc++abi-dev \
             libc++abi1 libclang-dev libclang1 liblldb-dev libllvm-ocaml-dev libomp-dev libomp5 lld lldb \ 
-            llvm-dev llvm-runtime llvm python-clang mcpp
+            llvm-dev llvm-runtime llvm mcpp
 
 RUN curl https://raw.githubusercontent.com/pshved/timeout/master/timeout | \
     tee /usr/local/bin/timeout && chmod 755 /usr/local/bin/timeout
 
+RUN apt --purge remove gcc -y
+
 COPY . /assemblage
 
 RUN pip install -r /assemblage/requirements.txt
+RUN cp -r /assemblage/aws /root/.aws
+RUN export AWS_CONFIG_FILE=/root/.aws/config
+RUN export AWS_SHARED_CREDENTIALS_FILE=/root/.aws/credentials
+
+RUN apt --purge remove gcc -y

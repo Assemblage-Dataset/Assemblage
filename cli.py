@@ -371,9 +371,9 @@ class CommandExecutor:
                 "build_time": b_status.build_time})
 
         print(f"{len(b_statuses)} buildtasks found")
-
+        fname = f'{os.urandom(4).hex()}__{start_time}__{end_time}.json'.replace("/", "_")
         print("Saving")
-        with open(f'dump__{start_time}__{end_time}.json'.replace("/", "_"), 'w') as dump_f:
+        with open(fname, 'w') as dump_f:
             out_obj = json.dumps(
                 {'buildopt': build_opts,
                  'b_status': b_statuses,
@@ -611,37 +611,32 @@ class CommandExecutor:
         with open(repo_json_path, "r") as repo_json_f:
             parsed_json = json.loads(repo_json_f.read())
             print(parsed_json.keys())
-            repo_list = parsed_json['projects']
+            repo_list = parsed_json['projects'] if 'projects' in parsed_json else []
             opt_list = parsed_json['buildopt']
             bstatus_list = parsed_json['b_status']
-            print(f"{len(repo_list)} repos found, {len(bstatus_list)} b_status found")
+            print(f"{len(opt_list)} opt found, {len(repo_list)} repos found, {len(bstatus_list)} b_status found")
             if input("Reconstruct databse will delete ALL data in databse! Are you sure? [y/n]").strip().lower() != 'y':
-                return
-            if input("Wipe the database? [y/n]").strip().lower() != 'y':
                 return
             if input("Reconstruct database? [y/n]").strip().lower() == 'y':
                 init_clean_database(mysql_conn_str)
                 print("Restore buildopt")
-                for opt in tqdm(opt_list):
-                    opt['enable'] = True
+                for opt in opt_list:
+                    opt['enable'] = 1
                     opt["_id"] = opt["id"]
                     del opt["id"]
-                    db_man.add_build_option_without_repo(opt)
+                db_man.bulk_insert_buildopt(opt_list)
                 print("Restore repos")
-                for repo in tqdm(repo_list):
+                for repo in repo_list:
                     repo["_id"] = repo["id"]
                     del repo["id"]
-                    db_man.insert_repos(repo, repoonly=True)
-                print(
-                    "Restore b_status, this will take long time, and it may seem stuck")
-                for bstatus in tqdm(bstatus_list):
-                    try:
-                        bstatus["_id"] = bstatus["id"]
-                        del bstatus["id"]
-                        db_man.insert_b_status(bstatus)
-                    except Exception as err:
-                        print(err)
-            db_man.shutdown()
+                for bstatus in bstatus_list:
+                    bstatus["_id"] = bstatus["id"]
+                    del bstatus["id"]
+                db_man.bulk_insert_repos(repo_list)
+                db_man.bulk_insert_b_status(bstatus_list)
+                print("Restore done")
+        db_man.reset_bstatus()
+        db_man.shutdown()
 
     def __enable_build_opt(self):
         build_option_id = prompt("Enter Build Option ID: ")
@@ -884,13 +879,13 @@ def main(server_addr):
     with grpc.insecure_channel(server_addr) as channel:
         stub = AssemblageServiceStub(channel)
         executor = CommandExecutor(stub, server_addr)
-        try:
-            executor.exec('progress')
-        except grpc.RpcError as rpc_error:  # catch coordinator not being active
-            traceback.print_exc()
-            if rpc_error.code() == grpc.StatusCode.UNAVAILABLE:
-                logging.info(
-                    'CLI Failed To connect to any addresses; Coordinator may be inactive')
+        # try:
+        #     executor.exec('progress')
+        # except grpc.RpcError as rpc_error:  # catch coordinator not being active
+        #     traceback.print_exc()
+        #     if rpc_error.code() == grpc.StatusCode.UNAVAILABLE:
+        #         logging.info(
+        #             'CLI Failed To connect to any addresses; Coordinator may be inactive')
         while True:
             try:
                 cmd = session.prompt(PROMPT, validator=cmd_validator)

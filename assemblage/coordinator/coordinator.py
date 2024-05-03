@@ -16,6 +16,7 @@ import boto3
 import datetime
 import re
 from botocore.exceptions import ClientError
+import sqlalchemy
 
 from assemblage.protobufs.assemblage_pb2_grpc import add_AssemblageServiceServicer_to_server
 
@@ -26,7 +27,7 @@ from assemblage.consts import AWS_AUTO_REBOOT_PREFIX, BIN_DIR, TASK_TIMEOUT_THRE
 
 formatter = logging.Formatter("%(asctime)s %(levelname)s:%(message)s",
                               "%Y-%m-%d %H:%M:%S")
-SLEEP_INTERVAL = 1200
+SLEEP_INTERVAL = 3600
 logging.basicConfig(format=formatter, level=logging.DEBUG)
 
 
@@ -134,73 +135,55 @@ class Coordinator:
             db_man = DBManager(self.db_addr)
         except:
             logging.info("__dispatch_task start fail")
-            exit(1)
         task_count = 0
         sleep_interval = SLEEP_INTERVAL
         task_pausetime = int(time.time()) - \
             int(time.time()) % SLEEP_INTERVAL + sleep_interval
         while True:
+            time_before_query = time.time()
+            tasks = db_man.find_status_by_status_code(
+                build_opt_id=build_opt_id,
+                clone_status=BuildStatus.INIT,
+                build_status=BuildStatus.INIT,
+                limit=1)
+            if len(tasks) == 0:
+                continue
+            task = tasks[0]
+            uncloned_repo = db_man.find_repo_by_id(task.repo_id)
+            # if uncloned_repo.size < REPO_SIZE_THRESHOLD:
+            #     logging.info("Discard task %s size %s", task.repo_id, uncloned_repo.size)
+            #     continue
+            build_opt = db_man.find_build_opt_by_id(task.build_opt_id)
             try:
-                time_before_query = time.time()
-                tasks = db_man.find_status_by_status_code(
-                    build_opt_id=build_opt_id,
-                    clone_status=BuildStatus.INIT,
-                    build_status=BuildStatus.INIT,
-                    limit=1)
-                if len(tasks) == 0:
-                    logging.info("__dispatch_task thread %s Idle", build_opt_id)
-                    time.sleep(2)
-                    continue
-                task = tasks[0]
-                uncloned_repo = db_man.find_repo_by_id(task.repo_id)
-                # if uncloned_repo.size < REPO_SIZE_THRESHOLD:
-                #     logging.info("Discard task %s size %s", task.repo_id, uncloned_repo.size)
-                #     continue
-                build_opt = db_man.find_build_opt_by_id(task.build_opt_id)
-                db_man.update_repo_status(
-                    status_id=task.id, clone_status=BuildStatus.PROCESSING)
-                time_after_query = time.time()
-                repo_url = patch_url(uncloned_repo.url)
-                out_dir = f'{BIN_DIR}/{task.id}'
-                # os.makedirs(out_dir, exist_ok=True)
-                repo_url = patch_url(uncloned_repo.url)
-                out_dir = f'{BIN_DIR}/{task.id}'
-                clone_req = {'name': uncloned_repo.name, 'url': repo_url,
-                             'task_id': task.id, 'opt_id': build_opt.id,
-                             #  'commit_hexsha': task.commit_hexsha,
-                             'output_dir': out_dir,
-                             'repo_id': uncloned_repo._id,
-                             'updated_at': uncloned_repo.updated_at.strftime("%m/%d/%Y, %H:%M:%S"),
-                             'build_system': uncloned_repo.build_system,
-                             #  also add timestamp when this messsage sent
-                             'msg_time': time.time()}
-                if self.reproduce_mode:
-                    clone_req["mod_timestamp"] = task.mod_timestamp
-                thread_channel.basic_publish(
-                    exchange='build_opt', routing_key=f'worker.{build_opt.id}',
-                    body=json.dumps(clone_req),
-                    properties=pika.BasicProperties(delivery_mode=2))
-                waittime = max(0.1 - (time_after_query - time_before_query), 0)
-                # time.sleep(waittime)
-                if task_count % 10 == 0:
-                    logging.info('Placed %sth task on build option %d, took %ss, next dispatch in %ss', task_count,
-                                 task.build_opt_id, str(time_after_query - time_before_query)[:5], str(waittime)[:4])
-                task_count += 1
-                if sleep and time.time() > task_pausetime:
-                    logging.info(
-                        "Dispatch on %s will pause for 5min", build_opt_id)
-                    task_pausetime += sleep_interval
-                    time.sleep(300)
-            except Exception as e:
-                logging.info("Dispatch Err: %s", str(e))
-                self.channel = create_channel(
-                    self.rabbitmq_host, self.rabbitmq_port, 500, 350)
-                thread_channel = create_channel(
-                    self.rabbitmq_host, self.rabbitmq_port, 500, 350)
-                thread_channel.exchange_declare(
-                    exchange='build_opt', exchange_type='topic')
-                thread_channel.confirm_delivery()
-                db_man = DBManager(self.db_addr)
+                db_man.update_repo_status(status_id=task.id, clone_status=BuildStatus.PROCESSING)
+            except sqlalchemy.exc.OperationalError:
+                continue
+            time_after_query = time.time()
+            repo_url = patch_url(uncloned_repo.url)
+            out_dir = f'{BIN_DIR}/{task.id}'
+            # os.makedirs(out_dir, exist_ok=True)
+            repo_url = patch_url(uncloned_repo.url)
+            out_dir = f'{BIN_DIR}/{task.id}'
+            clone_req = {'name': uncloned_repo.name, 'url': repo_url,
+                            'task_id': task.id, 'opt_id': build_opt.id,
+                            #  'commit_hexsha': task.commit_hexsha,
+                            'output_dir': out_dir,
+                            'repo_id': uncloned_repo._id,
+                            'updated_at': uncloned_repo.updated_at.strftime("%m/%d/%Y, %H:%M:%S"),
+                            'build_system': uncloned_repo.build_system,
+                            'default_branch': uncloned_repo.default_branch,
+                            #  also add timestamp when this messsage sent
+                            'msg_time': time.time()}
+            thread_channel.basic_publish(
+                exchange='build_opt', routing_key=f'worker.{build_opt.id}',
+                body=json.dumps(clone_req),
+                properties=pika.BasicProperties(delivery_mode=2))
+            waittime = max(0.1 - (time_after_query - time_before_query), 0)
+            time.sleep(waittime)
+            if task_count % 100 == 0:
+                logging.info('Placed %sth task on build option %d, took %ss, next dispatch in %ss', task_count,
+                                task.build_opt_id, str(time_after_query - time_before_query)[:5], str(waittime)[:4])
+            task_count += 1
 
     def __recycle_clone(self):
         try:
@@ -208,24 +191,11 @@ class Coordinator:
             db_man = DBManager(self.db_addr)
         except:
             logging.info("Recycle start fail")
-        while True:
-            count = 0
-            try:
-                for repo in db_man.find_repo_by_status(build_status=BuildStatus.SUCCESS,
-                                                       clone_status=BuildStatus.SUCCESS,
-                                                       build_opt_id=None):
-                    for b_status in db_man.find_status_by_repoid(repo.id):
-                        if b_status.clone_status == BuildStatus.FAILED and b_status.build_status == BuildStatus.INIT:
-                            db_man.update_repo_status(
-                                status_id=b_status.id,
-                                clone_status=BuildStatus.INIT)
-                            count += 1
-                    if count % 100 == 0 and count != 0:
-                        logging.info("Recycled %s tasks", count)
-                time.sleep(1)
-            except Exception as err:
-                logging.info("Recycle thread err %s", err)
-            time.sleep(1)
+        # while True:
+        #     logging.info("Recycle thread running...")
+        #     # db_man.reset_failures()
+        #     logging.info("Recycle thread sleeping")
+        #     time.sleep(120)
 
     def __clean_worker(self):
         time.sleep(60)
@@ -250,7 +220,6 @@ class Coordinator:
                 thread_channel.start_consuming()
                 logging.critical("Consuming binary exited!")
             except Exception as err:
-                logging.critical("Saving binary failed!")
                 logging.critical(err)
 
     def __consume_clone(self):
@@ -265,7 +234,6 @@ class Coordinator:
                 thread_channel.start_consuming()
                 logging.critical("Consuming clone exited")
             except Exception as err:
-                logging.critical("Saving clone failed!")
                 logging.critical(err)
 
     def __consume_build(self):
@@ -280,7 +248,6 @@ class Coordinator:
                 thread_channel.start_consuming()
                 logging.critical("Consuming build exited")
             except Exception as err:
-                logging.critical("Saving build failed!")
                 logging.critical(err)
 
     def __consume_scraped_data(self):
@@ -295,7 +262,6 @@ class Coordinator:
                 thread_channel.start_consuming()
                 logging.critical("Consuming scrape exited")
             except Exception as err:
-                logging.critical("Saving scraped repo failed!")
                 logging.critical(err)
 
     def __clean_overtime(self):
@@ -320,18 +286,21 @@ class Coordinator:
             for instance in ec2_resource.instances.all():
                 if instance.tags:
                     for tag in instance.tags:
-                        cluster_auto_prefix = f"{self.cluster_name}-{AWS_AUTO_REBOOT_PREFIX}"
-                        if tag['Key'] == 'Name' and (cluster_auto_prefix in tag['Value']):
+                        print(tag['Key'], tag['Value'])
+                        if tag['Key'] == 'Name' and (AWS_AUTO_REBOOT_PREFIX in tag['Value']):
                             reboot_instance_ids.append(instance.id)
+            logging.info("Found instances %s", reboot_instance_ids)
             if reboot_instance_ids != []:
-                response = ec2_client.reboot_instances(
-                    InstanceIds=reboot_instance_ids, DryRun=False)
-                logging.info("Rebooting %s vms msg %s",
-                             len(reboot_instance_ids), response)
-            for _ in reboot_instance_ids:
-                for i in range(int(sleep_time/60)):
-                    logging.info("%s min to next reboot", sleep_time/60-i)
-                    time.sleep(60)
+                for instance_id in reboot_instance_ids:
+                    try:
+                        response = ec2_client.reboot_instances(
+                            InstanceIds=[instance_id])
+                        logging.info("Reboot instances out %s", response)
+                    except Exception as err:
+                        logging.info("Reboot instances err %s", err)
+            for i in range(int(sleep_time/60)):
+                logging.info("%s min to next reboot", sleep_time/60-i)
+                time.sleep(60)
 
     def recv_scrape_info(self, ch, method, _props, body):
         ''' store scraped messga to database page by page '''
@@ -356,13 +325,14 @@ class Coordinator:
         """ collect binary metadata from worker"""
         db_man = DBManager(self.db_addr)
         recv_msg = json.loads(body.decode())
-        logging.info("Received binary: %s on %s",
+        if "exe" in recv_msg['file_name'] or "dll" in recv_msg['file_name']:
+            logging.info("Received binary: %s on %s",
                      recv_msg['file_name'], recv_msg['task_id'])
-        db_man.insert_binary(
-            file_name=recv_msg['file_name'],
-            description='',
-            status_id=recv_msg['task_id']
-        )
+            db_man.insert_binary(
+                file_name=recv_msg['file_name'],
+                description='',
+                status_id=recv_msg['task_id']
+            )
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
     def recv_build_info(self, ch, method, _props, body):
@@ -375,16 +345,17 @@ class Coordinator:
             ch.basic_ack(delivery_tag=method.delivery_tag)
             return
         task = db_man.find_status_by_id(recv_msg['task_id'])
-        if task.clone_status != BuildStatus.SUCCESS:
-            print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> Clone failed but still built!")
-        db_man.update_repo_status(
-            status_id=recv_msg['task_id'],
-            build_time=recv_msg['build_time'],
-            build_status=recv_msg['status'],
-            build_msg=recv_msg['msg'][-500:],
-            commit_hexsha=recv_msg['commit_hexsha'])
-        logging.info("BUILD task on buildopt %s updated to %s\n%s",
-                     recv_msg['opt_id'], recv_msg['status'], " ".join(recv_msg['msg'].split())[-500:])
+        if task.clone_status != BuildStatus.SUCCESS or task.build_status != BuildStatus.INIT:
+            print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> ERR!")
+        else:
+            db_man.update_repo_status(
+                status_id=recv_msg['task_id'],
+                build_time=recv_msg['build_time'],
+                build_status=recv_msg['status'],
+                build_msg=recv_msg['msg'][-500:])
+            status_msg = ["INIT", "","FAILED", "SUCC"][int(recv_msg['status'])]
+            logging.info("BUILD task on buildopt %s updated to %s msg: %s",
+                        recv_msg['opt_id'], status_msg, " ".join(recv_msg['msg'].split())[-500:])
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
     def recv_clone_info(self, ch, method, _props, body):
@@ -402,8 +373,8 @@ class Coordinator:
             clone_msg=recv_msg['msg'][-200:])
         task = db_man.find_status_by_id(recv_msg['task_id'])
         if task.clone_status != BuildStatus.SUCCESS:
-            logging.info("CLONE task on buildopt %s updated to %s: %s",
-                         recv_msg['opt_id'], task.clone_status, recv_msg['msg'])
+            logging.info("CLONE task on buildopt %s updated to %s",
+                         recv_msg['opt_id'], task.clone_status)
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
     def __daemon(self):

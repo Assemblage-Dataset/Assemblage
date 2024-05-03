@@ -2,7 +2,7 @@
 constant
 
 """
-import os
+
 
 class BuildStatus:
     """
@@ -27,7 +27,7 @@ SUPPORTED_LANGUAGE = ['c', 'c++', 'c#']
 
 BIN_DIR = '/binaries'
 WORKER_TIMEOUT_THRESHOLD = 600
-TASK_TIMEOUT_THRESHOLD = 600
+TASK_TIMEOUT_THRESHOLD = 60
 
 # set this to max worker size for one build type
 MAX_MQ_SIZE = 3600
@@ -44,14 +44,11 @@ SCRAPE_CHECKPOINT = f"{BIN_DIR}/scrape-checkpoint"
 
 # Windows related constants
 LOG_FILE = "assemblage.log"
-BINPATH = "/Binaries"
-if os.name=="nt":
-    BINPATH = "Binaries"
-
+BINPATH = "Binaries"
 PDBPATH = "Pdbs"
 BUILDPATH = "Builds"
 PDBJSONNAME = "pdbinfo.json"
 WIN_PREFIX = "C:\\Assemblage\\repo-scraper-builder\\Binaries\\"
 
-AWS_AUTO_REBOOT_PREFIX = "auto-worker"
-REPO_SIZE_THRESHOLD = 50
+AWS_AUTO_REBOOT_PREFIX = "assemblage-auto-worker"
+REPO_SIZE_THRESHOLD = 0

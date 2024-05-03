@@ -125,10 +125,17 @@ class BasicWorker:
         logging.info("Job queue started ....")
         self.register()
         logging.info("Worker registered ....")
-        self.t_daemon = threading.Thread(target=self.control_thread)
+        self.threads = []
+        self.threads.append(threading.Thread(target=self.control_thread))
+        self.threads.append(threading.Thread(target=self.job_thread))
+
+        for t in self.threads:
+            t.start()
+        for t in self.threads:
+            t.join()
         self.t_daemon.start()
-        self.t_job = threading.Thread(target=self.job_thread)
-        self.t_job.start()
-        logging.info("Worker %s inited", self.uuid)
-        self.t_daemon.join()
-        self.t_job.join()
+        # self.t_job =
+        # self.t_job.start()
+        # logging.info("Worker %s inited", self.uuid)
+        # self.t_daemon.join()
+        # self.t_job.join()

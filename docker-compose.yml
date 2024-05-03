@@ -1,0 +1,172 @@
+version: "3"
+services:
+  # coordinator:
+  #   image: assemblage-gcc:default
+  #   command: ["python3", "start_coordinator.py", "--config", "assemblage/configure/coordinator_config.json"]
+  #   ports:
+  #     - "50052:50052" # gRPC port
+  #   depends_on:
+  #     - "rabbitmq"
+  #   volumes:
+  #     - shared-data:/binaries
+  #   deploy:
+  #     restart_policy:
+  #       condition: on-failure
+
+  0-worker:
+    image: assemblage-gcc:default
+    command: ["python3", "start_worker.py", "--config", "assemblage/configure/linux.json","--type", "builder"]
+    volumes:
+      - shared-data:/binaries
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 8192M
+      restart_policy:
+        condition: on-failure
+      replicas: 2
+
+  1-worker:
+    image: assemblage-gcc:default
+    command: ["python3", "start_worker.py", "--config", "assemblage/configure/linux1.json","--type", "builder"]
+    volumes:
+      - shared-data:/binaries
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 8192M
+      restart_policy:
+        condition: on-failure
+      replicas: 2
+
+  2-worker:
+    image: assemblage-gcc:default
+    command: ["python3", "start_worker.py", "--config", "assemblage/configure/linux2.json","--type", "builder"]
+    volumes:
+      - shared-data:/binaries
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 8192M
+      restart_policy:
+        condition: on-failure
+      replicas: 2
+
+  3-worker:
+    image: assemblage-clang:default
+    command: ["python3", "start_worker.py", "--config", "assemblage/configure/linux3.json","--type", "builder"]
+    volumes:
+      - shared-data:/binaries
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 8192M
+      restart_policy:
+        condition: on-failure
+      replicas: 2
+
+  4-worker:
+    image: assemblage-clang:default
+    command: ["python3", "start_worker.py", "--config", "assemblage/configure/linux4.json","--type", "builder"]
+    volumes:
+      - shared-data:/binaries
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 8192M
+      restart_policy:
+        condition: on-failure
+      replicas: 2
+
+  5-worker:
+    image: assemblage-gcc:default
+    command: ["python3", "start_worker.py", "--config", "assemblage/configure/linux5.json","--type", "builder"]
+    volumes:
+      - shared-data:/binaries
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 8192M
+      restart_policy:
+        condition: on-failure
+      replicas: 2
+
+  6-worker:
+    image: assemblage-clang:default
+    command: ["python3", "start_worker.py", "--config", "assemblage/configure/linux6.json","--type", "builder"]
+    volumes:
+      - shared-data:/binaries
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 8192M
+      restart_policy:
+        condition: on-failure
+      replicas: 2
+
+  7-worker:
+    image: assemblage-clang:default
+    command: ["python3", "start_worker.py", "--config", "assemblage/configure/linux7.json","--type", "builder"]
+    volumes:
+      - shared-data:/binaries
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 8192M
+      restart_policy:
+        condition: on-failure
+      replicas: 2
+
+  # rabbitmq:
+  #   image: rabbitmq:3-management
+  #   environment:
+  #     RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "-rabbit consumer_timeout 900000"
+  #   ports:
+  #     - "56723"
+  #     - "5672:5672"
+
+  # scraper:
+  #   image: assemblage-gcc:default
+  #   command: ["python", "start_worker.py", "--config", "assemblage/configure/scraper_config.json", "--type", "scraper"]
+  #   depends_on:
+  #     - "rabbitmq"
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 2048M
+  #     restart_policy:
+  #       condition: on-failure
+  #   volumes:
+  #     - shared-data:/binaries
+
+  # disasm:
+  #   image: assemblage-ddisasm:default
+  #   command: ["python", "start_worker.py", "--config", "assemblage/configure/disasm.json", "--type", "disasm"]
+  #   depends_on:
+  #     - "rabbitmq"
+  #   volumes:
+  #     - shared-data:/binaries
+  #   ports:
+  #     - 10086:10086
+  #     - 47173:47173
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 8192M
+  #     restart_policy:
+  #       condition: on-failure
+
+networks:
+   default:
+    name: assemblage-net-1
+
+volumes:
+  shared-data:

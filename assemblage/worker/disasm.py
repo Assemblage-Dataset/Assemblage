@@ -23,9 +23,9 @@ from tqdm import tqdm
 
 import boto3
 
-from assemblage.worker.profile import AWSProfile
 from assemblage.worker.base_worker import BasicWorker
-from assemblage.worker.build_method import post_processing_pdb, post_processing_s3, cmd_with_output
+from assemblage.worker.build_method import post_processing_pdb, post_processing_s3
+from assemblage.worker.build_method import cmd_with_output
 
 
 TMP_PATH = "tmp"
@@ -208,11 +208,12 @@ class DDisasmWorker(BasicWorker):
 class Dia2dumpProcessor(BasicWorker):
 
     def __init__(self, rabbitmq_host, rabbitmq_port, rpc_stub,
-                 worker_type, opt_id, aws_profile: AWSProfile):
+                 worker_type, opt_id, send_binary_method,
+                 s3_bucket_name="assemblage-data"):
         super().__init__(rabbitmq_host, rabbitmq_port, rpc_stub, worker_type, opt_id)
         self.sesh = boto3.session.Session(profile_name='assemblage')
         self.s3 = self.sesh.client('s3')
-        self.aws_profile = aws_profile
+        self.s3_bucket_name = s3_bucket_name
         try:
             os.makedirs(TMP_PATH)
         except:
@@ -231,7 +232,7 @@ class Dia2dumpProcessor(BasicWorker):
         logging.info("s3_path %s", s3_path)
         try:
             with open(dest_path, 'wb') as f:
-                self.s3.download_fileobj(self.aws_profile.s3_bucket_name, s3_path, f)
+                self.s3.download_fileobj(self.s3_bucket_name, s3_path, f)
             logging.info("S3 bucket downloaded")
         except Exception as err:
             logging.error(err)
@@ -239,7 +240,7 @@ class Dia2dumpProcessor(BasicWorker):
     def upload_to_s3(self, target_path, s3_path):
         try:
             with open(target_path, "rb") as fh:
-                self.s3.upload_fileobj(fh, self.aws_profile.s3_bucket_name, s3_path)
+                self.s3.upload_fileobj(fh, self.s3_bucket_name, s3_path)
             logging.info(f'Uploaded %s %s %s', target_path,
                          self.s3_bucket_name, s3_path)
         except Exception as e:
@@ -294,7 +295,7 @@ class Dia2dumpProcessor(BasicWorker):
         logging.info(cmd_with_output(
             f"aws s3 rm s3://assemblage-data/platform/windows/{onezipfile}"))
         post_processing_s3("platform/windows/" + f"{newfilename}.zip", os.path.join(
-            TMP_PATH, onezipfile_clean, newfilename+".zip"), self.aws_profile)
+            TMP_PATH, onezipfile_clean, newfilename+".zip"))
         cmd_with_output(
             f"del /f/q/s {os.path.join(TMP_PATH, onezipfile_clean)}")
         cmd_with_output(f"rmdir {os.path.join(TMP_PATH, onezipfile_clean)}")

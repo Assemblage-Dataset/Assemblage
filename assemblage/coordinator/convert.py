@@ -10,7 +10,6 @@ from assemblage.protobufs.assemblage_pb2 import BStatus, Repo, Worker, BuildOpt
 
 def pack_repo_msg(repodo):
     """ convert a RepoDO object into grpc message """
-    size = 0 if "size" not in repodo else repodo["size"]
     return Repo(
         id=repodo._id,
         url=repodo.url,
@@ -24,7 +23,6 @@ def pack_repo_msg(repodo):
         forked_commit_id=repodo.forked_commit_id,
         priority=repodo.priority,
         build_system=repodo.build_system,
-        size=size
     )
 
 
