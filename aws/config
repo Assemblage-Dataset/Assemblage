@@ -1,0 +1,7 @@
+[default]
+region = us-west-1
+output = json
+
+[assemblage]
+region = us-west-1
+output = json

@@ -1,0 +1,53 @@
+# Editors
+.vscode/
+.idea/
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# db
+*.db
+*.db_shm
+*.db_wal
+
+# python
+__pycache__/
+*.pyc
+
+# tmp
+.tmp/ 
+.bin/
+
+# log
+*.log
+
+# config.json
+
+.DS_Store
+
+build_msgs.txt
+
+# data
+*.csv
+*.json
+Pdbs/*
+Builds/*
+Binaries/*
+*.out
+*.txt
+db-data/
+dump_*
+*.txt
+*.out
+local_config/

@@ -1,0 +1,217 @@
+syntax = "proto3";
+
+service AssemblageService {
+    rpc queryRepo(RepoRequest) returns (stream Repo);
+    rpc failedRepo(RepoRequest) returns (stream Repo);
+    rpc clonedFailedRepo(RepoRequest) returns (stream Repo);
+    rpc dumpSuccessRepo(DumpRequest) returns (stream Repo);
+    rpc dumpSuccessStatus(DumpRequest) returns (stream BStatus);
+    rpc workerStatus(WorkerRequest) returns (stream Worker);
+    rpc buildRepo(BuildRequest) returns (BuildResponse);
+    rpc addBuildCmd(CmdRequest) returns (CmdResponse);
+    rpc buildInfo(BuildInfoRequest) returns (BuildInfoResponse);
+    rpc registWorker(RegisterRequest) returns (RegisterResponse);
+    rpc queryRepoInfo(RepoRequest) returns (RepoInfoResponse);
+    rpc sendBinary(stream BinaryChunk) returns (BinaryResponse);
+    rpc addBuildOpt(BuildOpt) returns (CmdResponse);
+    rpc checkProgress(ProgressRequest) returns (ProgressResponse);
+    rpc enableBuildOpt(enableBuildOptRequest) returns (enableBuildOptResponse);
+    rpc getBuildOpt(getBuildOptRequest) returns (stream BuildOpt);
+    rpc ping(PingRequest) returns (PongResponse);
+    rpc setWorkerOpt(SetOptRequest) returns (SetOptResponse);
+}
+
+message PingRequest {
+    int32 ping = 1;
+    string uuid = 2;
+    int32 task = 3;
+    string msg = 4;
+}
+
+message PongResponse {
+    int32 ping = 1;
+    string uuid = 2;
+    int32 task = 3;
+    string msg = 4;
+}
+
+message SetOptRequest {
+    string uuid = 1;
+    int32 opt = 2;
+    string msg = 3;
+}
+
+message SetOptResponse {
+    int32 status = 1;
+    string msg = 2;
+}
+
+message RepoRequest {
+    string name = 1;
+    uint32 opt_id = 2;
+}
+
+message DumpRequest {
+    int32 status = 1;
+    int32 start_timestamp = 2;
+    int32 end_timestamp = 3;
+    // some reserved field...
+}
+
+message WorkerRequest {
+    string req = 1;
+}
+
+message BuildRequest {
+    Repo requested_repo = 1;
+    string platform = 2;
+}
+
+message Cmd {
+    string cmd = 1;
+    repeated string build_args = 2;
+}
+
+message CmdRequest {
+    string platform = 1;
+    repeated Cmd command = 2;
+}
+
+message RegisterRequest {
+    uint32 pid = 1;
+    uint32 opt = 2;
+    string type = 3;
+    string uuid = 4;
+}
+
+message BuildResponse {
+    bool is_successful = 1;
+    string return_message = 2;
+    string platform = 3;
+}
+
+message CmdResponse {
+    string status = 1;
+}
+
+message Repo {
+    uint32 id = 1;
+    string url = 2;
+    string name = 3;
+    string description = 4;
+    string language = 5;
+    string created_at = 6;
+    uint32 forked_from = 7;
+    uint32 deleted = 8;
+    string updated_at = 9;
+    uint32 forked_commit_id = 10;
+    uint32 priority = 11;
+    string build_system = 12;
+}
+
+message BuildOpt {
+    uint32 id = 1;
+    string git = 2;
+    string platform = 3;
+    string language = 4;
+    string compiler_name = 5;
+    string compiler_flag = 6;
+    string build_system = 7;
+    string build_command = 8;
+    string library = 9;
+    bool enable = 10;
+}
+
+message BStatus {
+    uint32 id = 1;
+    uint32 priority = 2;
+    uint32 clone_status = 3;
+    string clone_msg = 4;
+    uint32 build_status = 5;
+    string build_msg = 6;
+    uint32 build_opt_id = 7; 
+    uint32 repo_id = 8;
+    uint32 mod_timestamp = 9;
+    uint32 build_time = 10;
+}
+
+message Worker {
+    uint32 pid = 1;
+    string platform = 2;
+    string job_type = 3;
+    uint32 opt_id = 4;
+    string uuid = 5;
+}
+
+message BuildInfoRequest {
+   string request = 1;
+}
+
+message BuildInfoResponse {
+   uint32 succeeded = 1;
+   uint32 failed = 2;
+   uint32 cloned = 3;
+   float disk_usage = 4;
+}
+
+message RegisterResponse {
+    int32 code = 1;
+    string msg = 2;
+}
+
+message RepoInfoResponse {
+    int32 total = 1;
+    int32 cloned = 2;
+    int32 built = 3;
+}
+
+message BinaryResponse {
+    int32 code = 1;
+    string msg = 2;
+}
+
+message BinaryChunk {
+    string name = 1;
+    uint32 seq = 2;
+    bytes content = 3;
+    uint32 worker_id = 4;
+    string repo_tag = 5;
+}
+
+message ProgressRequest {
+    string request = 1;
+}
+
+message ProgressResponse {
+    int32 hour_clone = 1;
+    int32 day_clone = 2;
+    int32 month_clone = 3;
+    int32 hour_build = 4;
+    int32 day_build = 5;
+    int32 month_build = 6;
+    int32 hour_fail_clone = 7;
+    int32 day_fail_clone = 8;
+    int32 month_fail_clone = 9;
+    int32 hour_fail_build = 10;
+    int32 day_fail_build = 11;
+    int32 month_fail_build = 12;
+    int32 hour_binary = 13;
+    int32 day_binary = 14;
+    int32 month_binary = 15;
+    int32 month_Windows_binary = 16;
+    int32 hour_Windows_binary = 17;
+    int32 day_Windows_binary = 18;
+}
+
+message enableBuildOptRequest {
+    int32 _id = 1;
+    bool enable = 2;
+}
+
+message enableBuildOptResponse {
+    string success = 1;
+}
+
+message getBuildOptRequest {
+    string request = 1;
+}
