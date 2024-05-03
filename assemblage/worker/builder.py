@@ -248,9 +248,8 @@ class Builder(BasicWorker):
                 'status': kwarg['status'],
                 'msg': kwarg['msg'][-1000:],
                 'task_id': repo['task_id'],
-                'build_time': kwarg['build_time'],
-                'commit_hexsha': kwarg['commit_hexsha']
-            }
+                'build_time': kwarg['build_time']
+                }
         elif kind == 'binary':
             ret = {
                 'task_id': kwarg['task_id'],
@@ -315,7 +314,6 @@ class Builder(BasicWorker):
                             url=url,
                             status="3",
                             msg="Received and building",
-                            commit_hexsha=commit_hexsha,
                             build_time=1)    
             build_msg, build_status = self.build_strategy.run_build(
                 repo=task,
