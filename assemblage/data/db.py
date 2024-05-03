@@ -19,7 +19,6 @@ from sqlalchemy.sql import Insert
 from assemblage.data.object import BuildDO, BuildOpt, RepoDO, Status
 from assemblage.consts import BuildStatus, SUPPORTED_LANGUAGE
 
-
 @compiles(Insert, "mysql")
 def mysql_upsert(insert, compiler, **kw):
     '''
@@ -29,7 +28,6 @@ def mysql_upsert(insert, compiler, **kw):
     so maybe it is okay for now.
     '''
     return compiler.visit_insert(insert.prefix_with("IGNORE"), **kw)
-
 
 class DBManager:
     """ manager for db query and connection """
@@ -66,9 +64,9 @@ class DBManager:
     def update_undisasmed_bin(self, bin_id):
         """  set a binary disasmed """
         with Session(self.engine) as session:
-            query = update(BuildDO).values(
-                disasmed=True).where(BuildDO._id == bin_id)
+            query = update(BuildDO).values(disasmed=True).where(BuildDO._id == bin_id)
             session.execute(query)
+
 
     def find_build_opt_by_id(self, opt_id):
         """ fetch a build object from database by it's id """
@@ -110,13 +108,12 @@ class DBManager:
                 statuses.append(_s[0])
             return statuses
 
-    # TODO: refactor to add repodo size limit
+    #TODO: refactor to add repodo size limit
     def find_status_by_status_code(self, clone_status, build_opt_id, build_status=None, limit=-1):
         """ find lines of record in status table by specific build/clone status code """
         with Session(self.engine) as session:
             # make sure every type of worker has same chance to work, and also make query faster
-            enabled_opt_query = select(BuildOpt).where(
-                BuildOpt._id == build_opt_id)
+            enabled_opt_query = select(BuildOpt).where(BuildOpt._id == build_opt_id)
             boptid = session.execute(enabled_opt_query).all()
             build_sys = boptid[0][0].build_system
             if build_status:
@@ -126,7 +123,7 @@ class DBManager:
                     Status.build_opt_id == build_opt_id,
                 )
             else:
-                query = select(Status).join_from(Status, RepoDO).where(
+                    query = select(Status).join_from(Status, RepoDO).where(
                     Status.clone_status == clone_status,
                     Status.build_opt_id == build_opt_id,
                     RepoDO.build_system.contains(build_sys),
@@ -157,8 +154,7 @@ class DBManager:
         original sql : SELECT * FROM  projects WHERE name LIKE ?
         """
         if repo_name != '' and repo_url != '' and build_opt != 0:
-            print(
-                f"Searching NAME and URL and BUILDOPT: {repo_name}; {repo_url}; {build_opt}")
+            print(f"Searching NAME and URL and BUILDOPT: {repo_name}; {repo_url}; {build_opt}")
             with Session(self.engine) as session:
                 query = select(Status).join_from(RepoDO, BuildOpt).where(
                     RepoDO.name.like(f"%{repo_name}%"),
@@ -186,8 +182,7 @@ class DBManager:
         else:
             print(f"SEARCHING FOR NAME ONLY: {repo_name}")
             with Session(self.engine) as session:
-                result = session.query(RepoDO).filter(
-                    RepoDO.name.like(f'%{repo_name}%'))
+                result = session.query(RepoDO).filter(RepoDO.name.like(f'%{repo_name}%'))
                 for _r in result:
                     yield _r
 
@@ -262,8 +257,7 @@ class DBManager:
     def bulk_insert_b_status(self, b_status_msg_list):
         """ this assume all repo and build option used in b_status is already in database """
         with Session(self.engine) as session:
-            bstatus_list = [Status(**status_msg)
-                            for status_msg in b_status_msg_list]
+            bstatus_list = [Status(**status_msg) for status_msg in b_status_msg_list]
             session.bulk_save_objects(bstatus_list)
             session.commit()
 
@@ -306,7 +300,7 @@ class DBManager:
             # logging.info("%s", all_opt)
             if not repoonly:
                 for opt in all_opt:
-                    if repos_msg['build_system'] in opt[0].build_system:
+                    if opt[0].build_system in repos_msg['build_system']:
                         _s = Status()
                         _s.clone_status = BuildStatus.INIT
                         _s.clone_msg = ''
@@ -338,14 +332,13 @@ class DBManager:
             session.flush()
             session.commit()
 
-    def add_build_option(self, _id, platform, language, compiler_name, compiler_flag,
+    def add_build_option(self, platform, language, compiler_name, compiler_flag,
                          build_system, build_command, library, enable=True):
         """
         insert build option into BuildOpt table for repo contain certain build system&language
         """
         with Session(self.engine) as session:
             opt = BuildOpt()
-            opt._id = _id
             opt.platform = platform
             opt.language = language
             opt.compiler_name = compiler_name
@@ -370,7 +363,7 @@ class DBManager:
             session.commit()
 
     def add_build_option_without_repo(self, platform, language, compiler_name, compiler_flag,
-                                      build_system, build_command, library, enable=True, _id=-1):
+                         build_system, build_command, library, enable=True, _id=-1):
         """
         insert build option into BuildOpt table for repo contain certain build system&language
         """
@@ -401,22 +394,22 @@ class DBManager:
         data_result = {}
         with Session(self.engine) as session:
             for time_str, interval in interval_map.items():
-                data_result[f'{time_str}_clone'] = int(session.query(func.count(Status._id)).
+                data_result[f'{time_str}_clone'] = int(session.query(func.count(Status._id)). \
                                                        where(
                     Status.clone_status == BuildStatus.SUCCESS,
                     Status.mod_timestamp > int(time.time()) - interval
                 ).all()[0][0])
-                data_result[f'{time_str}_fail_clone'] = int(session.query(func.count(Status._id)).
+                data_result[f'{time_str}_fail_clone'] = int(session.query(func.count(Status._id)). \
                                                             where(
                     Status.clone_status == BuildStatus.FAILED,
                     Status.mod_timestamp > int(time.time()) - interval
                 ).all()[0][0])
-                data_result[f'{time_str}_build'] = int(session.query(func.count(Status._id)).
+                data_result[f'{time_str}_build'] = int(session.query(func.count(Status._id)). \
                                                        where(
                     Status.build_status == BuildStatus.SUCCESS,
                     Status.mod_timestamp > int(time.time()) - interval
                 ).all()[0][0])
-                data_result[f'{time_str}_fail_build'] = int(session.query(func.count(Status._id)).
+                data_result[f'{time_str}_fail_build'] = int(session.query(func.count(Status._id)). \
                                                             where(
                     or_(
                         Status.build_status == BuildStatus.FAILED,
@@ -424,20 +417,19 @@ class DBManager:
                     ),
                     Status.mod_timestamp > int(time.time()) - interval
                 ).all()[0][0])
-                cur_dtime = datetime.datetime.fromtimestamp(
-                    int(time.time()) - interval)
-                data_result[f'{time_str}_binary'] = int(session.query(func.count(BuildDO._id)).
+                cur_dtime = datetime.datetime.fromtimestamp(int(time.time()) - interval)
+                data_result[f'{time_str}_binary'] = int(session.query(func.count(BuildDO._id)). \
                                                         where(
                     BuildDO.build_date > cur_dtime
                 ).all()[0][0])
-                data_result[f'{time_str}_Windows_binary'] = int(session.query(func.count(BuildDO._id)).
-                                                                where(
+                data_result[f'{time_str}_Windows_binary'] = int(session.query(func.count(BuildDO._id)). \
+                                                        where(
                     BuildDO.build_date > cur_dtime,
-                    or_(BuildDO.file_name.endswith(".exe"),
-                        BuildDO.file_name.endswith(".dll"))
+                    or_(BuildDO.file_name.endswith(".exe"), BuildDO.file_name.endswith(".dll"))
                 ).all()[0][0])
         # logging.info(data_result)
         return data_result
+
 
     def dump_repos(self, status, start_timestamp: int, end_timestamp: int):
         """ dump the successful binary in an given time period (time in int) """
@@ -459,6 +451,7 @@ class DBManager:
             ).all()
             return successful_bstatus
 
+
     def enable_build_option(self, _id, is_enabled: bool) -> str:
         """
         Enable a buildOpt in the database
@@ -466,8 +459,7 @@ class DBManager:
         """
         with Session(self.engine) as session:
             try:
-                build_option = session.query(BuildOpt).filter(
-                    BuildOpt._id == _id).first()
+                build_option = session.query(BuildOpt).filter(BuildOpt._id == _id).first()
                 build_option.enable = is_enabled
                 session.commit()
                 return "Success"
@@ -495,6 +487,5 @@ class DBManager:
         return all enabled build option
         """
         with Session(self.engine) as session:
-            build_options = session.query(BuildOpt).where(
-                BuildOpt.enable == true()).all()
+            build_options = session.query(BuildOpt).where(BuildOpt.enable == true()).all()
             yield from build_options

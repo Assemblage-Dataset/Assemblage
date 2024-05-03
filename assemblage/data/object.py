@@ -48,7 +48,7 @@ class Status(Base):
 class BuildOpt(Base):
     """ build option for how to build a repo """
     __tablename__ = 'buildopt'
-    _id = Column(Integer, primary_key=True)
+    _id = Column(Integer, primary_key=True, autoincrement=True)
     # git = Column(String(length=255), default='')
     platform = Column(String(length=255), default='')
     language = Column(String(length=255), default='')
@@ -149,7 +149,6 @@ def init_clean_database(db_str):
     except Exception as err:
         print(err)
     print("Finished")
-
 
 if __name__ == '__main__':
     with open("assemblage/configure/coordinator_config.json") as f:

@@ -2,7 +2,6 @@
 constant
 
 """
-import os
 
 class BuildStatus:
     """
@@ -20,7 +19,6 @@ class BuildStatus:
     EXCLUDE = 7
     COMMAND_FAILED = 10
 
-
 PING_INTERVAL = 10
 SUPPORTED_BUILD = ["make", "cmake", "autoconf", "bootstrap", "sln"]
 SUPPORTED_LANGUAGE = ['c', 'c++', 'c#']
@@ -37,21 +35,17 @@ DB_PATH = "data/ghtorrent.db"
 
 DEST = "~/repos"
 
-G = "b89581cf542519aa28b2e0904fbefd31ae67c19a"
+G = ""
 
 RATELIMIT_URL = "https://api.github.com/rate_limit"
 SCRAPE_CHECKPOINT = f"{BIN_DIR}/scrape-checkpoint"
 
 # Windows related constants
 LOG_FILE = "assemblage.log"
-BINPATH = "/Binaries"
-if os.name=="nt":
-    BINPATH = "Binaries"
-
+BINPATH = "Binaries"
 PDBPATH = "Pdbs"
 BUILDPATH = "Builds"
 PDBJSONNAME = "pdbinfo.json"
 WIN_PREFIX = "C:\\Assemblage\\repo-scraper-builder\\Binaries\\"
 
 AWS_AUTO_REBOOT_PREFIX = "auto-worker"
-REPO_SIZE_THRESHOLD = 50

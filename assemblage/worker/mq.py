@@ -8,7 +8,6 @@ import logging
 import pika
 from pika.exchange_type import ExchangeType
 
-
 class MessageClient:
     ''' a rabbit mq wrapper for all different worker '''
 
@@ -61,14 +60,11 @@ class MessageClient:
         '''
         send message into the queue with name `kind`
         '''
-        logging.info("Sending %s", msg)
-        try:
-            self.channel.basic_publish(exchange=exchange,
+        # logging.info("Sending %s", msg)
+        self.channel.basic_publish(exchange=exchange,
                                    routing_key=kind,
                                    body=msg,
                                    properties=pika.BasicProperties(delivery_mode=2))
-        except Exception as err:
-            logging.error(err)
 
     def consume(self):
         ''' start to listen and handle data from input channel '''

@@ -1,0 +1,24 @@
+version: "3"
+services:
+
+  gcc-worker:
+    image: assemblage-gcc:default
+    command: ["python3", "start_worker.py", "--config", "assemblage/configure/worker_config.json","--type", "builder"]
+    volumes:
+      - shared-data:/binaries
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 4096M
+      restart_policy:
+        condition: on-failure
+
+
+networks:
+   default:
+      external:
+         name: assemblage-net
+
+volumes:
+  shared-data:

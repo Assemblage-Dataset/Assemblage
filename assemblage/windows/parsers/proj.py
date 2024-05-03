@@ -302,23 +302,22 @@ class Project(object):
                     self.__set_item_group_items_for_config(
                         platform, configuration, "ClCompile", label,
                         optimization_mode)
-        if optimization_mode != "":
+        if optimization_mode!= "":
             item_name = "ClCompile"
             label = "BasicRuntimeChecks"
             property_groups = self.xml.findall("./{" + _MS_BUILD_NAMESPACE +
-                                               "}ItemDefinitionGroup")
+                                            "}ItemDefinitionGroup")
             for group in property_groups:
-                items = group.findall(
-                    "{" + _MS_BUILD_NAMESPACE + "}" + item_name)
+                items = group.findall("{" + _MS_BUILD_NAMESPACE + "}" + item_name)
                 for item in items:
-                    subitem = item.find(
-                        "{" + _MS_BUILD_NAMESPACE + "}" + label)
+                    subitem = item.find("{" + _MS_BUILD_NAMESPACE + "}" + label)
                     try:
                         subitem.text = "Default"
                     except AttributeError:
                         self.__set_item_group_items_for_config(
                             platform, configuration, "ClCompile", label,
                             "Default")
+
 
     def set_favorsizeorspeed(self,
                              optimization,
@@ -498,9 +497,9 @@ class Project(object):
                                     return item.text
         except:
             return self.__property_group_item_for_config("All Configurations",
-                                                         "All Configurations",
-                                                         "Configuration",
-                                                         'PlatformToolset')
+                                                        "All Configurations",
+                                                        "Configuration",
+                                                        'PlatformToolset')
 
     def set_toolset_version(self, version):
         # self.__set_property_group_items_for_config(platform, configuration, None, 'LinkIncremental', string_value)

@@ -15,7 +15,7 @@ import subprocess
 from time import sleep, time
 import traceback
 import time
-import requests
+
 import grpc
 from prompt_toolkit import PromptSession, prompt
 from prompt_toolkit.patch_stdout import patch_stdout
@@ -35,8 +35,6 @@ from assemblage.protobufs.assemblage_pb2 import DumpRequest, RepoRequest, Worker
     ProgressRequest, Repo, BuildOpt, enableBuildOptRequest, getBuildOptRequest, SetOptRequest
 from assemblage.protobufs.assemblage_pb2_grpc import AssemblageServiceStub
 from assemblage.data.object import init_clean_database
-from assemblage.worker.build_method import cmd_with_output
-
 
 logging.basicConfig(level=logging.INFO)
 
@@ -63,7 +61,7 @@ COMMANDS = {
     'export': 'export [start_time] [end_time] : export repos into a json file,'
                        ' time format in "dd/mm/yyyy--hh:mm:s" e.g. export 09/02/2022--00:00:0 12/02/2022--00:00:0'
                        'You can also specify what columns you want to export, e.g. export 09/02/2022--00:00:0 12/02/2022--00:00:0 url,language',
-    'dumpconfig': 'Generate config JSON for workers',
+    'config': 'Generate config JSON for workers',
     'loadrepo': 'Load repo from json',
     'exit': 'Exit with code 0'
 }
@@ -150,6 +148,7 @@ def paginate_results(content, category):
                 yield [("", 'line {}: {}\n'.format(counter, print_repo(item)))]
             elif cag == "buildopt":
                 yield [("", 'line {}: {}\n'.format(counter, print_build_opt(item)))]
+
     p.add_source(GeneratorSource(send_repos(contents, category)))
     p.run()
 
@@ -172,16 +171,6 @@ def parse_cmd(raw_cmd) -> tuple:
         # string arg
         arguments = raw_cmd.split(' ')[1:]
     return command, arguments
-
-
-def get_public_ip():
-    """ get public ip """
-    try:
-        return requests.get('https://checkip.amazonaws.com').text.strip()
-    except:
-        out, err, exit_code = cmd_with_output(
-            f"dig +short myip.opendns.com @resolver1.opendns.com", platform='linux')
-        return out.decode().strip()
 
 
 class CommandValidator(Validator):
@@ -245,7 +234,7 @@ class CommandExecutor:
             self.__enable_build_opt()
         elif command == 'displayBuildOpt':
             self._display_buildopt()
-        elif command == 'dumpconfig':
+        elif command == 'config':
             self.__generateconfig()
         elif command == 'loadrepo':
             self.__loadrepos()
@@ -480,36 +469,24 @@ class CommandExecutor:
                 f_new.write(json.dumps(configs))
             print("Crawler token saved")
         if worker == "2":
-            server_addr = prompt(
-                "Do you want to use this machine's public ip? [y/n]: ")
-            if server_addr == "y":
-                server_addr = get_public_ip()
-            else:
-                server_addr = prompt("Input server address: ")
-            buildoptions = self._get_buildopt()
+            with open("assemblage/configure/windows_config._sample.json") as f:
+                configs = json.load(f)
+            server_addr = prompt("Input coordinator's ip address")
+            configs["rabbitmq_host"] = server_addr
+            configs["grpc_addr"] = f"{server_addr}:50052"
+            buildoptions = self._display_buildopt()
+            build_opt_id = prompt("Please choose a build option id to build")
+            configs["default_build_opt"] = build_opt_id
             for buildoption in buildoptions:
-                with open("assemblage/configure/worker_config_sample.json") as f:
-                    configs = json.load(f)
-                configs["rabbitmq_host"] = server_addr
-                configs["grpc_addr"] = f"{server_addr}:50052"
-                configs["default_build_opt"] = buildoption.id
-                configs["compiler"] = buildoption.compiler_name
-                configs["library"] = buildoption.library
-                configs["platform"] = buildoption.platform
-                configs["build_mode"] = buildoption.build_command
-                configs["optimization"] = buildoption.compiler_flag.replace(
-                    "-", "")
-                configs["random_pick"] = 0
-                configs["clone_proxy"] = []
-                configs["clone_proxy_token"] = ""
-                try:
-                    del configs["blacklist"]
-                    del configs["build_opt"]
-                except KeyError:
-                    pass
-                with open(f"assemblage/configure/windows_config{buildoption.id}.json", "w") as f_new:
-                    json.dump(configs, f_new, indent=4)
-                print(f"Windows worker config {buildoption.id} saved")
+                if buildoption._id == build_opt_id:
+                    configs["compiler"] = buildoption.compiler_name
+                    configs["library"] = buildoption.library
+                    configs["build_mode"] = buildoption.build_command
+                    configs["optimization"] = buildoption.compiler_flag.replace(
+                        "-", "")
+            with open("assemblage/configure/windows_config.json", "w") as f_new:
+                f_new.write(json.dumps(configs))
+            print("Windows worker config saved")
         if worker == "3":
             with open("assemblage/configure/worker_config_sample.json") as f:
                 configs = json.load(f)
@@ -567,7 +544,6 @@ class CommandExecutor:
     def __print_progress_status(self) -> None:
         # pylint: disable=line-too-long
         request = ProgressRequest(request='req')
-        print("Fetching progress status...")
         try:
             response = self.stub.checkProgress(request)
             print(
@@ -632,8 +608,7 @@ class CommandExecutor:
                     repo["_id"] = repo["id"]
                     del repo["id"]
                     db_man.insert_repos(repo, repoonly=True)
-                print(
-                    "Restore b_status, this will take long time, and it may seem stuck")
+                print("Restore b_status, this will take long time, and it may seem stuck")
                 for bstatus in tqdm(bstatus_list):
                     try:
                         bstatus["_id"] = bstatus["id"]
@@ -681,10 +656,12 @@ class CommandExecutor:
 
     def _display_buildopt(self):
         request = getBuildOptRequest(request="get")
+        print("Something happened here")
         try:
             build_options = []
             for build_option in self.stub.getBuildOpt(request):
                 build_options.append(build_option)
+                print("Latest version: buildopt")
             paginate_results(build_options, category="buildopt")
             return build_options
         except grpc.RpcError as rpc_error:
@@ -694,16 +671,6 @@ class CommandExecutor:
             else:
                 logging.info(f"RPC Error: {rpc_error}")
             return
-
-    def _get_buildopt(self):
-        request = getBuildOptRequest(request="get")
-        try:
-            build_options = []
-            for build_option in self.stub.getBuildOpt(request):
-                build_options.append(build_option)
-            return build_options
-        except grpc.RpcError as rpc_error:
-            return []
 
 
 def init_guide():

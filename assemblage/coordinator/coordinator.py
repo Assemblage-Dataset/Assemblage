@@ -22,11 +22,10 @@ from assemblage.protobufs.assemblage_pb2_grpc import add_AssemblageServiceServic
 from assemblage.coordinator.rpc import InfoService
 from assemblage.data.db import DBManager
 
-from assemblage.consts import AWS_AUTO_REBOOT_PREFIX, BIN_DIR, TASK_TIMEOUT_THRESHOLD, WORKER_TIMEOUT_THRESHOLD, BuildStatus, REPO_SIZE_THRESHOLD
+from assemblage.consts import AWS_AUTO_REBOOT_PREFIX, BIN_DIR, TASK_TIMEOUT_THRESHOLD, WORKER_TIMEOUT_THRESHOLD, BuildStatus
 
 formatter = logging.Formatter("%(asctime)s %(levelname)s:%(message)s",
                               "%Y-%m-%d %H:%M:%S")
-SLEEP_INTERVAL = 1200
 logging.basicConfig(format=formatter, level=logging.DEBUG)
 
 
@@ -81,8 +80,10 @@ class Coordinator:
     coordinator node, dispatch work to woker node and also collect data
     """
 
-    def __init__(self, rabbitmq_host, rabbitmq_port, grpc_addr, db_addr, cluster_name, aws_mode=0, reproduce_mode=0):
+    def __init__(self, rabbitmq_host, rabbitmq_port, grpc_addr, db_addr, cluster_name, aws_mode=0):
         logging.info("Coordinator Init")
+        for i in range(10):
+            time.sleep(1)
         self.rabbitmq_host = rabbitmq_host
         self.rabbitmq_port = rabbitmq_port
         self.channel = create_channel(
@@ -101,7 +102,6 @@ class Coordinator:
         self.grpc_addr = grpc_addr
         self.db_addr = db_addr
         self.cluster_name = cluster_name
-        self.reproduce_mode = reproduce_mode
         if aws_mode == 1:
             self.aws_flag = True
         else:
@@ -121,8 +121,9 @@ class Coordinator:
         rpc_server.start()
         rpc_server.wait_for_termination()
 
-    def __dispatch_task(self, build_opt_id, sleep=True):
+    def __dispatch_task(self, build_opt_id):
         """ send a number of task into worker, and the keep repo name if queue """
+        # TODO: Properly set overflow https://www.rabbitmq.com/maxlength.html#overflow-behaviour
         try:
             logging.info("__dispatch_task thread started on %s", build_opt_id)
             thread_channel = create_channel(
@@ -136,9 +137,9 @@ class Coordinator:
             logging.info("__dispatch_task start fail")
             exit(1)
         task_count = 0
-        sleep_interval = SLEEP_INTERVAL
+        sleep_interval = 3600
         task_pausetime = int(time.time()) - \
-            int(time.time()) % SLEEP_INTERVAL + sleep_interval
+            int(time.time()) % 3600 + sleep_interval
         while True:
             try:
                 time_before_query = time.time()
@@ -147,15 +148,10 @@ class Coordinator:
                     clone_status=BuildStatus.INIT,
                     build_status=BuildStatus.INIT,
                     limit=1)
-                if len(tasks) == 0:
-                    logging.info("__dispatch_task thread %s Idle", build_opt_id)
-                    time.sleep(2)
+                if len(tasks)==0:
                     continue
                 task = tasks[0]
                 uncloned_repo = db_man.find_repo_by_id(task.repo_id)
-                # if uncloned_repo.size < REPO_SIZE_THRESHOLD:
-                #     logging.info("Discard task %s size %s", task.repo_id, uncloned_repo.size)
-                #     continue
                 build_opt = db_man.find_build_opt_by_id(task.build_opt_id)
                 db_man.update_repo_status(
                     status_id=task.id, clone_status=BuildStatus.PROCESSING)
@@ -167,30 +163,31 @@ class Coordinator:
                 out_dir = f'{BIN_DIR}/{task.id}'
                 clone_req = {'name': uncloned_repo.name, 'url': repo_url,
                              'task_id': task.id, 'opt_id': build_opt.id,
-                             #  'commit_hexsha': task.commit_hexsha,
+                             'commit_hexsha': task.commit_hexsha,
                              'output_dir': out_dir,
                              'repo_id': uncloned_repo._id,
                              'updated_at': uncloned_repo.updated_at.strftime("%m/%d/%Y, %H:%M:%S"),
                              'build_system': uncloned_repo.build_system,
                              #  also add timestamp when this messsage sent
                              'msg_time': time.time()}
-                if self.reproduce_mode:
-                    clone_req["mod_timestamp"] = task.mod_timestamp
                 thread_channel.basic_publish(
                     exchange='build_opt', routing_key=f'worker.{build_opt.id}',
                     body=json.dumps(clone_req),
                     properties=pika.BasicProperties(delivery_mode=2))
                 waittime = max(0.1 - (time_after_query - time_before_query), 0)
-                # time.sleep(waittime)
-                if task_count % 10 == 0:
+                time.sleep(waittime)
+                if task_count % 100 == 0:
                     logging.info('Placed %sth task on build option %d, took %ss, next dispatch in %ss', task_count,
                                  task.build_opt_id, str(time_after_query - time_before_query)[:5], str(waittime)[:4])
                 task_count += 1
-                if sleep and time.time() > task_pausetime:
+                if time.time() > task_pausetime:
                     logging.info(
-                        "Dispatch on %s will pause for 5min", build_opt_id)
+                        "Dispatch on %s will pause for 10min", build_opt_id)
                     task_pausetime += sleep_interval
-                    time.sleep(300)
+                    for time_i in range(10):
+                        logging.info(
+                            "Dispatching sleeping, next dispatch happen in %smin", (10-time_i))
+                        time.sleep(60)
             except Exception as e:
                 logging.info("Dispatch Err: %s", str(e))
                 self.channel = create_channel(
@@ -220,7 +217,7 @@ class Coordinator:
                                 status_id=b_status.id,
                                 clone_status=BuildStatus.INIT)
                             count += 1
-                    if count % 100 == 0 and count != 0:
+                    if count % 1000 == 0 and count != 0:
                         logging.info("Recycled %s tasks", count)
                 time.sleep(1)
             except Exception as err:
@@ -250,7 +247,6 @@ class Coordinator:
                 thread_channel.start_consuming()
                 logging.critical("Consuming binary exited!")
             except Exception as err:
-                logging.critical("Saving binary failed!")
                 logging.critical(err)
 
     def __consume_clone(self):
@@ -265,7 +261,6 @@ class Coordinator:
                 thread_channel.start_consuming()
                 logging.critical("Consuming clone exited")
             except Exception as err:
-                logging.critical("Saving clone failed!")
                 logging.critical(err)
 
     def __consume_build(self):
@@ -280,7 +275,6 @@ class Coordinator:
                 thread_channel.start_consuming()
                 logging.critical("Consuming build exited")
             except Exception as err:
-                logging.critical("Saving build failed!")
                 logging.critical(err)
 
     def __consume_scraped_data(self):
@@ -295,7 +289,6 @@ class Coordinator:
                 thread_channel.start_consuming()
                 logging.critical("Consuming scrape exited")
             except Exception as err:
-                logging.critical("Saving scraped repo failed!")
                 logging.critical(err)
 
     def __clean_overtime(self):
@@ -314,7 +307,7 @@ class Coordinator:
         sesh = boto3.Session(profile_name='assemblage')
         ec2_resource = sesh.resource('ec2')
         ec2_client = sesh.client('ec2')
-        sleep_time = SLEEP_INTERVAL
+        sleep_time = 600
         while 1:
             reboot_instance_ids = []
             for instance in ec2_resource.instances.all():
@@ -330,7 +323,7 @@ class Coordinator:
                              len(reboot_instance_ids), response)
             for _ in reboot_instance_ids:
                 for i in range(int(sleep_time/60)):
-                    logging.info("%s min to next reboot", sleep_time/60-i)
+                    logging.info("%s min to next reboot", 10-i)
                     time.sleep(60)
 
     def recv_scrape_info(self, ch, method, _props, body):
@@ -356,8 +349,7 @@ class Coordinator:
         """ collect binary metadata from worker"""
         db_man = DBManager(self.db_addr)
         recv_msg = json.loads(body.decode())
-        logging.info("Received binary: %s on %s",
-                     recv_msg['file_name'], recv_msg['task_id'])
+        logging.info("Received binary: %s", recv_msg['file_name'])
         db_man.insert_binary(
             file_name=recv_msg['file_name'],
             description='',
@@ -383,6 +375,8 @@ class Coordinator:
             build_status=recv_msg['status'],
             build_msg=recv_msg['msg'][-500:],
             commit_hexsha=recv_msg['commit_hexsha'])
+        if "MSB4126" in recv_msg['msg'] or "MSB8036" in recv_msg['msg']:
+            recv_msg['msg'] = " ".join(list(set(re.findall(r"MSB\d+", recv_msg['msg']))))
         logging.info("BUILD task on buildopt %s updated to %s\n%s",
                      recv_msg['opt_id'], recv_msg['status'], " ".join(recv_msg['msg'].split())[-500:])
         ch.basic_ack(delivery_tag=method.delivery_tag)
@@ -420,12 +414,8 @@ class Coordinator:
             [x for x in db_man.all_enabled_build_options()]))
         for build_opt in db_man.all_enabled_build_options():
             logging.info("boot dispatching thread for %d ...", build_opt.id)
-            if build_opt.platform == 'linux':
-                t_dispatch_list.append(threading.Thread(
-                    target=self.__dispatch_task, args=(build_opt.id, False)))
-            else:
-                t_dispatch_list.append(threading.Thread(
-                    target=self.__dispatch_task, args=(build_opt.id, True)))
+            t_dispatch_list.append(threading.Thread(
+                target=self.__dispatch_task, args=(build_opt.id,)))
         t_rpc = threading.Thread(target=self.__rpc)
         # t_ddisasm = threading.Thread(target=self.__disasm_task)
         t_consume_clone = threading.Thread(target=self.__consume_clone)

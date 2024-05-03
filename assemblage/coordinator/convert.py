@@ -52,7 +52,7 @@ def pack_worker_msg(worker_info):
         platform=worker_info['platform'],
         job_type=worker_info['job_type'],
         opt_id=int(worker_info['opt_id']),
-        uuid=worker_info['uuid']
+        uuid = worker_info['uuid']
     )
 
 
@@ -78,25 +78,22 @@ def pack_buildOpt_msg(option):
         enable=option.enable
     )
 
-
 def pack_bstatus_msg(b_status):
     """ convert Status object to RPC message """
 
-    build_time = int(b_status.build_time) if int(
-        b_status.build_time) > 0 else 0
-    id = int(b_status._id) if int(b_status._id) > 0 else 0
-    mod_timestamp = int(b_status.mod_timestamp) if int(
-        b_status.mod_timestamp) > 0 else 0
+    build_time = int(b_status.build_time) if int(b_status.build_time)>0 else 0
+    id = int(b_status._id) if int(b_status._id)>0 else 0
+    mod_timestamp = int(b_status.mod_timestamp) if int(b_status.mod_timestamp)>0 else 0
 
     return BStatus(
-        id=id,
-        priority=int(b_status.priority),
-        clone_status=int(b_status.clone_status),
-        clone_msg=str(b_status.clone_msg),
-        build_status=int(b_status.build_status),
-        build_msg=str(b_status.build_msg),
-        build_opt_id=int(b_status.build_opt_id),
-        repo_id=int(b_status.repo_id),
-        mod_timestamp=mod_timestamp,
-        build_time=build_time
+        id = id,
+        priority = int(b_status.priority),
+        clone_status = int(b_status.clone_status),
+        clone_msg = str(b_status.clone_msg),
+        build_status = int(b_status.build_status),
+        build_msg = str(b_status.build_msg),
+        build_opt_id = int(b_status.build_opt_id),
+        repo_id = int(b_status.repo_id),
+        mod_timestamp = mod_timestamp,
+        build_time = build_time
     )

@@ -18,11 +18,9 @@ if not os.path.isdir(REPO_HOME):
 
 app = Flask(__name__)
 
-
 @app.route("/")
 def hello_world():
     return REPO_HOME
-
 
 @app.route("/delete", methods=["GET"])
 def delete():
@@ -33,7 +31,6 @@ def delete():
         return "0"
     else:
         return "1"
-
 
 @app.route("/clone", methods=["GET"])
 def clone():
@@ -46,14 +43,13 @@ def clone():
     print(repo_url)
     delete_outdated(REPO_HOME)
     auth = request.args.get('auth')
-    assert auth == "syracuse"
+    assert auth == "?"
     url_hash = hashlib.md5(repo_url.encode()).hexdigest()
     repo_tmp_path = f"{REPO_HOME}/{url_hash}"
     repo_zip = f"{REPO_HOME}/{url_hash}.zip"
     if os.path.exists(repo_zip):
         return "0"
-    res = os.system(
-        f"git clone --depth 1 {repo_url} {repo_tmp_path} && cd {repo_tmp_path} && zip -r {repo_zip} ./ && rm -rf {repo_tmp_path}")
+    res = os.system(f"git clone --depth 1 {repo_url} {repo_tmp_path} && cd {repo_tmp_path} && zip -r {repo_zip} ./ && rm -rf {repo_tmp_path}")
     return str(res)
 
 
@@ -66,7 +62,6 @@ def delete_outdated(dir, interval=60):
                 os.unlink(f)
             except Exception as err:
                 print(err)
-
 
 if __name__ == "__main__":
     print(REPO_HOME)
