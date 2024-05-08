@@ -24,10 +24,8 @@ We include __only__ the subset of binaries for which permissive licenses can be 
 Pdb files are too large to be included, but datasets with pdb files are also available upon request.
 
 1.Windows GitHub dataset (Processed to SQLite database, 62k, last updated: Apr 14th 2024):  
-*   SQLite databse (12G):  
-https://assemblage-lps.s3.us-west-1.amazonaws.com/public/winpe_licensed.sqlite.zip
-*   Binary dataset (7G):  
-https://assemblage-lps.s3.us-west-1.amazonaws.com/public/winpe_licensed.zip
+*   [SQLite databse (12G)](https://huggingface.co/datasets/changliu8541/Assemblage_PE/resolve/main/winpe.sqlite.zip)
+*   [Binary dataset (7G)](https://huggingface.co/datasets/changliu8541/Assemblage_PE/resolve/main/binaries.zip)
 
 2.Windows vcpkg dataset (Processed to SQLite database, 29k):
 
