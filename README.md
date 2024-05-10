@@ -29,11 +29,8 @@ Pdb files are too large to be included, but datasets with pdb files are also ava
 
 2.Windows vcpkg dataset (Processed to SQLite database, 29k):
 
-*   SQLite database (3.3GB):  
-https://assemblage-lps.s3.us-west-1.amazonaws.com/public/vcpkg.sqlite.zip
-
-*   Binary dataset (18G):  
-https://assemblage-lps.s3.us-west-1.amazonaws.com/public/vcpkg.zip
+*   [SQLite database, 21G inflated](https://huggingface.co/datasets/changliu8541/Assemblage_vcpkgDLL/resolve/main/vcpkg.sqlite.tar.gz)
+*   [Binary dataset with pdb files, 205G inflated](https://huggingface.co/datasets/changliu8541/Assemblage_vcpkgDLL/resolve/main/vcpkg.tar.xz)
 
 3.Linux GitHub dataset (Processed to SQLite database, 211k):
 
