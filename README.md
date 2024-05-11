@@ -35,8 +35,9 @@ Pdb files are too large to be included, but datasets with pdb files are also ava
 3.Linux GitHub dataset (Processed to SQLite database, 211k):
 
 *   SQLite database (23M):  
-https://assemblage-lps.s3.us-west-1.amazonaws.com/public/feb15_linux_licensed.sqlite
+https://huggingface.co/datasets/changliu8541/Assemblage_LinuxELF/resolve/main/linux.sqlite.tar.xz
 
 *   Binary dataset (72G):  
-https://assemblage-lps.s3.us-west-1.amazonaws.com/public/licensed_linux.zip
+https://huggingface.co/datasets/changliu8541/Assemblage_LinuxELF/resolve/main/binaries.tar.xz.partaa
+https://huggingface.co/datasets/changliu8541/Assemblage_LinuxELF/resolve/main/binaries.tar.xz.partab
 
