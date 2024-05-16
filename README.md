@@ -1,8 +1,8 @@
 # Assemblage
 
-Assemblage is a distributed binary corpus discovery, generation, and archival tool built to provide high-quality labeled metadata for the purposes of building training data for machine learning applications of binary analysis and other applications (static / dynamic analysis, reverse engineering, etc...).
+Assemblage is a distributed binary corpus discovery, generation, and archival tool built to provide high-quality labeled metadata for the purposes of building training data for machine learning applications of binary analysis and other applications (static / dynamic analysis, reverse engineering, etc...).  
 
-The code in this repository is published under MIT license.
+You can now find our paper on [arxiv](https://arxiv.org/abs/2405.03991)  
 
 ## Cloud infrastructure support
 
@@ -20,24 +20,27 @@ Meanwhile, a brief introduction to the APIs is provided at this [link](assemblag
 ## Dataset Availability
 
 We include __only__ the subset of binaries for which permissive licenses can be ascertained. 
+You can also read the [docs at this link](https://assemblagedocs.readthedocs.io/en/latest/dataset.html), and checkout our [data sheet](https://assemblage-dataset.net/assets/total-datasheet.pdf)
 
-Pdb files are too large to be included, but datasets with pdb files are also available upon request.
+<del>Pdb files are too large to be included, but datasets with pdb files are also available upon request.</del>  
+The dataset with pdb files are released and hosted on Hugging Face.
 
-1.Windows GitHub dataset (Processed to SQLite database, 62k, last updated: Apr 14th 2024):  
-*   [SQLite databse (12G)](https://huggingface.co/datasets/changliu8541/Assemblage_PE/resolve/main/winpe.sqlite.zip)
-*   [Binary dataset (7G)](https://huggingface.co/datasets/changliu8541/Assemblage_PE/resolve/main/binaries.zip)
+1.Windows GitHub dataset (67k, last updated: May 12th 2024, comes with function source code, address and comments):  
+*   [SQLite databse (8.5G)](https://huggingface.co/datasets/changliu8541/Assemblage_PE/resolve/main/winpe_pdbs.sqlite.tar.xz)
+*   [Binary dataset with pdb files (27G, ~200G inflated)](https://huggingface.co/datasets/changliu8541/Assemblage_PE/resolve/main/binaries.tar.xz)
+*   [Binary dataset with pdb files (5G, ~10G inflated)](https://huggingface.co/datasets/changliu8541/Assemblage_PE/resolve/main/binaries_nopdb.tar.xz)
 
-2.Windows vcpkg dataset (Processed to SQLite database, 29k):
+2.Windows vcpkg dataset (29k; comes with function address; source code and comments not included):
 
 *   [SQLite database, 21G inflated](https://huggingface.co/datasets/changliu8541/Assemblage_vcpkgDLL/resolve/main/vcpkg.sqlite.tar.gz)
 *   [Binary dataset with pdb files, 205G inflated](https://huggingface.co/datasets/changliu8541/Assemblage_vcpkgDLL/resolve/main/vcpkg.tar.xz)
 
-3.Linux GitHub dataset (Processed to SQLite database, 211k):
+3.Linux GitHub dataset (211k; only binary level information; function address, source code and comments not included):
 
-*   SQLite database (23M):  
-https://huggingface.co/datasets/changliu8541/Assemblage_LinuxELF/resolve/main/linux.sqlite.tar.xz
+*   [SQLite database (23M)](https://huggingface.co/datasets/changliu8541/Assemblage_LinuxELF/resolve/main/linux.sqlite.tar.xz)
 
-*   Binary dataset (72G):  
-https://huggingface.co/datasets/changliu8541/Assemblage_LinuxELF/resolve/main/binaries.tar.xz.partaa
-https://huggingface.co/datasets/changliu8541/Assemblage_LinuxELF/resolve/main/binaries.tar.xz.partab
+*   Binary dataset (72G)
+    *   [parta](https://huggingface.co/datasets/changliu8541/Assemblage_LinuxELF/resolve/main/binaries.tar.xz.partaa)
+    *   [partb](https://huggingface.co/datasets/changliu8541/Assemblage_LinuxELF/resolve/main/binaries.tar.xz.partab)
 
+<sub>The code in this repository is published under MIT license.</sub>
