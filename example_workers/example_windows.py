@@ -14,14 +14,15 @@ import time
 import boto3
 
 from botocore.exceptions import ClientError
-from assemblage.consts import PDBJSONNAME, BINPATH
+from assemblage.consts import PDBJSONNAME, BINPATH, BuildStatus
 from assemblage.bootstrap import AssmeblageCluster
 from assemblage.worker.scraper import GithubRepositories
 from assemblage.worker.profile import AWSProfile
 from assemblage.worker.postprocess import PostAnalysis
-from assemblage.worker.build_method import BuildStartegy, DefaultBuildStrategy
+from assemblage.worker.build_method import BuildStartegy, DefaultBuildStrategy, cmd_with_output
 from assemblage.windows.parsers.proj import Project
 from assemblage.windows.parsers.sln import Solution
+from assemblage.worker.ctagswrap import get_functions
 
 time_now = int(time.time())
 start = time_now - time_now % 86400
@@ -30,16 +31,24 @@ aws_profile = AWSProfile("assemblage-test", "assemblage")
 
 
 def post_processing_pdb(dest_binfolder, build_mode, library, repoinfo, toolset,
-                        optimization):
+                        optimization, source_codedir="", commit="", movedir=""):
     """ Postprocess the pdb """
     bin_files = dia_list_binaries(dest_binfolder)
+    print(bin_files)
     outer_list = []
+    func_cache = {}
+    print(movedir)
+    if not os.path.isdir(movedir):
+        os.makedirs(movedir)
+    print(209)
     for _, binfile in enumerate(bin_files):
-        binfile_path = os.path.join(dest_binfolder, binfile)
-        # logging.info("Checking binary info %s: %s", binfile,
-        #              os.path.isfile(binfile))
-        funcs_infos, lines_infos, source_file = dia_get_func_funcinfo(
-            binfile_path)
+        print("Moving", binfile, os.path.join(movedir, os.path.basename(binfile)))
+        shutil.copy(binfile, os.path.join(movedir, os.path.basename(binfile)))
+        for f in os.listdir(os.path.dirname(binfile)):
+            if f.endswith(".pdb"):
+                shutil.copy(os.path.join(os.path.dirname(binfile), f), os.path.join(movedir, f))
+
+        funcs_infos, lines_infos, source_file = dia_get_func_funcinfo(binfile, source_codedir)
         item_dict = {}
         item_dict["functions"] = []
         item_dict["file"] = binfile
@@ -64,6 +73,82 @@ def post_processing_pdb(dest_binfolder, build_mode, library, repoinfo, toolset,
                     (rva_gap / rva_len) * 100)[:5] + "%"
             functions_val["function_info"] = funcs_infos[func_name]
             functions_val["lines"] = lines_infos[func_name]
+            if len(functions_val["lines"])>0:
+                functions_val["source_file"] = functions_val["lines"][0]["source_file"]
+
+            
+            if "MD5" in functions_val["source_file"]:
+                source_file_cleaned = functions_val["source_file"].split(" (MD5: ")[0]
+            elif " (0x3: " in functions_val["source_file"]:
+                source_file_cleaned = functions_val["source_file"].split(" (0x3: ")[0]
+            else:
+                source_file_cleaned = functions_val["source_file"]
+
+            if source_file_cleaned not in func_cache.keys():
+                func_cache[source_file_cleaned] = get_functions(source_file_cleaned)
+            funcsourceinfo = func_cache[source_file_cleaned]
+            for func in funcsourceinfo:
+                # print("FUNC looking for", func_name, func[0])     
+                if "::" in func_name and "::" in func[0]:
+                    pass
+                elif "::" in func_name:
+                    func_name = func_name.split("::")[-1]
+                elif "::" in func[0]:
+                    func[0] = func[0].split("::")[-1]
+                if func[0].lower() == func_name.lower():
+                    # print("FUNC matched function name", filter_ascii(func[0]).lower(), filter_ascii(func_name).lower())
+                    # print(func)
+                    # name, startline, endline, def, top comments, body, body comment, prototype
+                    functions_val["ctag_definitions"] = func[3]
+                    functions_val["top_comments"] = func[4]
+                    # functions_val["body_comments"] = func[6]
+                    # functions_val["source_codes_ctags"] = func[5]
+                    functions_val["prototype"] = func[7]
+                    functions_val["source_codes"] = func[9]
+
+                    for line_info_captured in functions_val["lines"]:
+                        if (not line_info_captured["source_code"]) and (line_info_captured["line_number"] in func[8].keys()):
+                            line_info_captured["source_code"] = func[8][line_info_captured["line_number"]]
+                            break
+                    break
+
+            # for filename, funcsourceinfo in func_cache.items():
+            #     # print("Matching", filename, functions_val["source_file"])
+            #     # filename : /assemblage/assemblage_recover/assemblage_tmp/xxx/xxx/xxx.cpp
+            #     # source_file_cleaned : c:\\\assemblage\\\builds\\\xx\\\xx-master\\\x.cpp (MD5: 5E7541B4C6EF43A6D29DB6964B29C554)
+            #     if "program files (x86)" in functions_val["source_file"] or "d:" in functions_val["source_file"]:
+            #         break
+            #     source_file_path = [x.lower() for x in PureWindowsPath(source_file_cleaned).parts][::-1]
+            #     filename_path = [x.lower() for x in PurePosixPath(filename).parts][::-1]
+            #     # print("FUNC Matching", source_file_path, filename_path)
+            #     if len(source_file_path)>0 and len(filename_path)>0 and\
+            #         source_file_path[0] == filename_path[0]:
+            #         # print("FUNC matched file name", source_file_path, filename_path)
+            #         # print("FUNC looking for", func_name, funcsourceinfo) 
+            #         for func in funcsourceinfo:
+            #             # print("FUNC looking for", func_name, func[0])     
+            #             if "::" in func_name and "::" in func[0]:
+            #                 pass
+            #             elif "::" in func_name:
+            #                 func_name = func_name.split("::")[-1]
+            #             elif "::" in func[0]:
+            #                 func[0] = func[0].split("::")[-1]
+            #             if func[0].lower() == func_name.lower():
+            #                 # print("FUNC matched function name", filter_ascii(func[0]).lower(), filter_ascii(func_name).lower())
+            #                 # print(func)
+            #                 # name, startline, endline, def, top comments, body, body comment, prototype
+            #                 functions_val["ctag_definitions"] = func[3]
+            #                 functions_val["top_comments"] = func[4]
+            #                 # functions_val["body_comments"] = func[6]
+            #                 # functions_val["source_codes_ctags"] = func[5]
+            #                 functions_val["prototype"] = func[7]
+            #                 functions_val["source_codes"] = func[9]
+
+            #                 for line_info_captured in functions_val["lines"]:
+            #                     if (not line_info_captured["source_code"]) and (line_info_captured["line_number"] in func[8].keys()):
+            #                         line_info_captured["source_code"] = func[8][line_info_captured["line_number"]]
+            #                         break
+            #                 break
             item_dict["functions"].append(functions_val)
         outer_list.append(item_dict)
     try:
@@ -75,13 +160,14 @@ def post_processing_pdb(dest_binfolder, build_mode, library, repoinfo, toolset,
         json_di["Binary_info_list"] = outer_list
         json_di["Optimization"] = optimization
         json_di["Pushed_at"] = repoinfo["updated_at"]
+        json_di["Commit"] = commit
         with open(os.path.join(dest_binfolder, PDBJSONNAME), "w") as outfile:
-            json.dump(json_di, outfile, sort_keys=False)
-        repoid = dest_binfolder.split("\\")[-1]
-        # with open(os.path.join(PDBPATH, f"{repoid}.json"), "w") as outfile:
-        #     json.dump(json_di, outfile, sort_keys=False, indent=4)
+            json.dump(json_di, outfile, sort_keys=False, indent=4)
     except FileNotFoundError:
         logging.info("Pdbjsonfile not found")
+    if not os.path.isdir(movedir):
+        os.makedirs(movedir)
+    shutil.move(os.path.join(dest_binfolder, PDBJSONNAME), movedir)
 
 
 def dia_get_func_funcinfo(binfile):
