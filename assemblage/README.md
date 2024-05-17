@@ -68,14 +68,11 @@ A crawler is provided with the system, it need a object of data source, which is
 GithubRepositories(
     git_token="some_token_here",
     qualifier={
-        "language:c",
-        "stars:>2",
-        "license:"mit"
     }, 
-    crawl_time_start= 1262322000,
+    crawl_time_start=1262322000,
     crawl_time_interval=86400,
     proxies=[],
-    build_sys_callback=(lambda files:1 in [for file in files if file.lower().endswith(".sln")])
+    build_sys_callback=(lambda files: return "")
 )
 
 ```
@@ -88,8 +85,7 @@ The exposed worker APIs locate in [api.py](api.py)
 
 ```
 from assemblage.worker.profile import AWSProfile
-from assemblage.worker.postprocess import PostAnalysis
-from assemblage.worker.build_method import *
+from assemblage.worker.build_method import BuildStartegy, DefaultBuildStrategy
 ```
 
 where the `BuildStartegy` specifies the behavior of Building process, and each abstract method represents each building stages. If you want to fully customize the building/post building behavior, provide the `clone_data`, `pre_build`, `run_build` and `post_build_hook` function with your code, the function input indicates the build configuration (you can ignore these if you pass in your own build configs)
@@ -117,9 +113,46 @@ where the `BuildStartegy` specifies the behavior of Building process, and each a
         No return value, this function processes the dest_binfolder and upload it
 
 
+## Examples
 
-## Example Workers
-
-Example workers can be found at [example_cluster.py](../example_cluster.py), [example_windows.py](../example_windows.py), [example_vcpkg.py](../example_vcpkg.py).
+Example workers can be found at [example_cluster.py](../example_workers/example_cluster.py), [example_windows.py](../example_workers/example_windows.py), [example_vcpkg.py](../example_workers/example_vcpkg.py).
 If you don't need customization, check [stable branches](https://github.com/harp-lab/Assemblage/branches) that has been deployed and tested on AWS for months.
 
+
+### Example Windows Setup
+
+To setup the system to generate Windows PE binaries, we need to first sprcify the repositories to crawl, so on the coordinator side
+
+```
+GithubRepositories(
+    git_token="some_token_here",
+    qualifier={
+        "language:c",
+        "stars:>2",
+        "license:"mit"
+    }, 
+    crawl_time_start= 1262322000,
+    crawl_time_interval=86400,
+    proxies=[],
+    build_sys_callback=(lambda files:1 in [for file in files if file.lower().endswith(".sln")])
+)
+```
+
+is used to create one crawler using the provided token, to crawl the repositories written in C, has more than 2 stars and has mit license. And `build_sys_callback` will take in a function, which will return the build tool from the files in this repository.
+
+After reposotories are crawled, it will be packed to tasks with a series of build configurations, which can be defined as 
+
+```
+build_option(
+    1, platform="windows", language="c++",
+    compiler_name="v143",
+    compiler_flag="-Od",
+    build_command="Debug",
+    library="x64",
+    build_system="sln")   
+```
+
+where the first argument is the channel worker would listen, and all tasks with this configuration will be distributed through this channel.
+
+Then after booting the coordinator, we need to configure the worker side, the [example_windows.py](../example_workers/example_windows.py) shows an implementation of Windows builder utilizing the msbuild.
+The class `WindowsDefaultStrategy` provides the implementation of a Windows worker that, `pre_build` first parse the `vcxproj` and `sln` files, change the configurations and store the files, `run_build` call the `msbuild` with customized configurations, then `post_build_hook` parse the `Dia2Dump` output and stores all the information for future reference.

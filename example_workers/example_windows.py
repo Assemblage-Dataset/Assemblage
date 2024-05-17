@@ -28,6 +28,7 @@ start = time_now - time_now % 86400
 querylap = 1440000
 aws_profile = AWSProfile("assemblage-test", "assemblage")
 
+
 def post_processing_pdb(dest_binfolder, build_mode, library, repoinfo, toolset,
                         optimization):
     """ Postprocess the pdb """
@@ -81,6 +82,7 @@ def post_processing_pdb(dest_binfolder, build_mode, library, repoinfo, toolset,
         #     json.dump(json_di, outfile, sort_keys=False, indent=4)
     except FileNotFoundError:
         logging.info("Pdbjsonfile not found")
+
 
 def dia_get_func_funcinfo(binfile):
     """ Process the bin to get the info and function"""
@@ -221,13 +223,14 @@ def get_build_system(_files):
     """Analyze build tool from file list"""
     return "sln"
 
+
 a_crawler = GithubRepositories(
     git_token="",
     qualifier={
         "language:c++",
         "topic:windows",
-    }, 
-    crawl_time_start= start,
+    },
+    crawl_time_start=start,
     crawl_time_interval=querylap,
     proxies=[],
     build_sys_callback=get_build_system
@@ -239,25 +242,26 @@ another_crawler = GithubRepositories(
         "language:c++",
         "topic:windows",
         # "stars:>10"
-    }, 
-    crawl_time_start= start,
+    },
+    crawl_time_start=start,
     crawl_time_interval=querylap,
     proxies=[],
     build_sys_callback=get_build_system
     # sort="stars", order="desc"
 )
 
+
 class WindowsDefaultStrategy(DefaultBuildStrategy):
 
     def pre_build(self, Platform,
-                        Buildmode,
-                        Target_dir,
-                        Optimization,
-                        _tmp_dir,
-                        VC_Version,
-                        Favorsizeorspeed="",
-                        Inlinefunctionexpansion="",
-                        Intrinsicfunctions=""):
+                  Buildmode,
+                  Target_dir,
+                  Optimization,
+                  _tmp_dir,
+                  VC_Version,
+                  Favorsizeorspeed="",
+                  Inlinefunctionexpansion="",
+                  Intrinsicfunctions=""):
         """ Modifying the build file to save flags """
         files = []
         for filename in glob.iglob(Target_dir + '**/**', recursive=True):
@@ -285,7 +289,8 @@ class WindowsDefaultStrategy(DefaultBuildStrategy):
                 if Favorsizeorspeed != "":
                     projobj.set_favorsizeorspeed(Favorsizeorspeed)
                 if Inlinefunctionexpansion != "":
-                    projobj.set_inlinefunctionexpansion(Inlinefunctionexpansion)
+                    projobj.set_inlinefunctionexpansion(
+                        Inlinefunctionexpansion)
                 if Intrinsicfunctions != "":
                     projobj.enable_intrinsicfunctions()
                 projobj.write()
@@ -300,7 +305,7 @@ class WindowsDefaultStrategy(DefaultBuildStrategy):
                 else:
                     optimization_mode = "Disabled"
                 logging.info("Read config: %s, correct: %s",
-                            projobj_saved.get_optimization(), optimization_mode)
+                             projobj_saved.get_optimization(), optimization_mode)
                 assert optimization_mode == projobj_saved.get_optimization()
         except FileNotFoundError:
             logging.error("Build File not exist")
@@ -315,7 +320,39 @@ class WindowsDefaultStrategy(DefaultBuildStrategy):
             return "Parsing file verification error", BuildStatus.FAILED, ""
         logging.info("Parsing success")
         return "Parsing success", BuildStatus.SUCCESS, slnfile
-    
+
+    def run_build(self,
+                  repo,
+                  target_dir,
+                  build_mode,
+                  library,
+                  optimization,
+                  slnfile=None,
+                  platform='linux',
+                  compiler_version='v142'):
+        """ Generate cmd to execute """
+        cmd = ["powershell", "-Command", "msbuild"]
+        if build_mode in ["Release", "Debug"]:
+            cmd.append(f"/property:Configuration={build_mode}")
+        if library == "x86" or library == "x86":
+            cmd.append("/property:Platform=x86")
+        elif library == "x64":
+            cmd.append("/property:Platform=x64")
+        elif library == "Mixed Platforms":
+            cmd.append("/property:Platform='Mixed Platforms'")
+        elif library == "Any CPU":
+            cmd.append("/p:Platform=Any CPU")
+        # cmd.append(f"/p:PlatformToolset={compiler_version}")
+        if compiler_version in ["v140", "v141"]:
+            cmd.append("/p:WindowsTargetPlatformVersion= ")
+        cmd.append("/maxcpucount:16")
+        cmd.append("/property:PostBuildEvent= ")
+        cmd.append("/property:OutDir=assemblage_outdir_bin/")
+        cmd.append(f"'{slnfile}'")
+        cmd = " ".join(cmd)
+        logging.info("Windows cmd generated: %s", cmd)
+        return cmd_with_output(cmd, 600, platform)
+
     def post_build_hook(self, dest_binfolder, build_mode, library, repoinfo, toolset,
                         optimization):
         """ Postprocess the pdb """
@@ -342,7 +379,8 @@ class WindowsDefaultStrategy(DefaultBuildStrategy):
                         rva_segs.append(
                             (info_dict["rva_start"], info_dict["rva_end"]))
                     rva_segs.sort()
-                    rva_len = int(rva_segs[-1][1], 16) - int(rva_segs[0][0], 16)
+                    rva_len = int(rva_segs[-1][1], 16) - \
+                        int(rva_segs[0][0], 16)
                     rva_gap = 0
                     for k in range(0, len(rva_segs) - 1):
                         rva_gap += int(rva_segs[k+1][0], 16) - \
@@ -369,27 +407,27 @@ class WindowsDefaultStrategy(DefaultBuildStrategy):
             #     json.dump(json_di, outfile, sort_keys=False, indent=4)
         except FileNotFoundError:
             logging.info("Pdbjsonfile not found")
-    
+
 
 test_cluster_windows = AssmeblageCluster(name="test"). \
-                build_system_analyzer(get_build_system). \
-                aws(aws_profile). \
-                message_broker(mq_addr="rabbitmq", mq_port=5672). \
-                mysql(). \
-                build_option(
-                    100, platform="windows", language="c++",
-                    compiler_name="v143",
-                    compiler_flag="-Od",
-                    build_command="Debug",
-                    library="x64",
-                    build_system="sln"). \
-                builder(
-                    "windows", "msvc", 100, docker_image="",
-                    custom_build_method=DefaultBuildStrategy(),
-                    aws_profile= aws_profile
-                ). \
-                scraper([a_crawler, another_crawler]). \
-                use_new_mysql_local()
+    build_system_analyzer(get_build_system). \
+    aws(aws_profile). \
+    message_broker(mq_addr="rabbitmq", mq_port=5672). \
+    mysql(). \
+    build_option(
+    100, platform="windows", language="c++",
+    compiler_name="v143",
+    compiler_flag="-Od",
+    build_command="Debug",
+    library="x64",
+    build_system="sln"). \
+    builder(
+    "windows", "msvc", 100, docker_image="",
+    custom_build_method=DefaultBuildStrategy(),
+    aws_profile=aws_profile
+). \
+    scraper([a_crawler, another_crawler]). \
+    use_new_mysql_local()
 
 
 test_cluster_windows.boot()
