@@ -128,7 +128,6 @@ def extract_function_bound_objdump(binary_file):
 
 class FunctionBoundaryAnalysis(PostAnalysis):
     """ analysis calculate function boundary inside a binary file """
-    # TODO: store this as an internal provided analysis in Assemblage API
 
     def analysis(self, bin_file, analysis_out_dir):
         fname = os.path.basename(bin_file)
@@ -173,29 +172,5 @@ test_cluster_c = AssmeblageCluster(name="test"). \
                 ). \
                 use_new_mysql_local()
 
-
-test_cluster_rust = AssmeblageCluster(name="test"). \
-                build_system_analyzer(get_build_system). \
-                aws(aws_profile). \
-                docker_network("assemblage-net", True). \
-                message_broker(). \
-                mysql(). \
-                scraper([github_rust_repo]). \
-                build_option(
-                    1, platform="linux", language="rust", 
-                    compiler_name="rustc",
-                    build_system="cargo"). \
-                builder(
-                    platform="linux", compiler="rustc", build_opt=1,
-                    docker_image="stargazermiao/rust",
-                    custom_build_method=RustBuild(),
-                    aws_profile= aws_profile). \
-                post_processor(
-                    name="function_boundary",
-                    analysis=FunctionBoundaryAnalysis("function_boundary"),
-                    opt_id=1,
-                    docker_image="stargazermiao/bn"
-                ). \
-                use_new_mysql_local()
 
 test_cluster_c.boot()

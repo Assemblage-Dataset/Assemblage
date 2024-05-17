@@ -1,4 +1,4 @@
-FROM ubuntu:focal
+FROM ubuntu:noble
 
 ENV PYTHON_VERSION 3.9.1
 
