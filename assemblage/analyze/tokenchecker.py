@@ -30,7 +30,7 @@ class TokenChecker:
             return int(rdict["rate"]["remaining"])
         except:
             return 0
-            
+
     def rate_reset(self, username, token):
         r = requests.get(RATELIMIT_URL, auth=(username, token))
         rdict = json.loads(r.text)
@@ -72,5 +72,6 @@ class TokenChecker:
     def code_reset(self, username, token):
         r = requests.get(RATELIMIT_URL, auth=(username, token))
         rdict = json.loads(r.text)
-        wait_time = int(rdict["resources"]["code_scanning_upload"]["reset"]) - int(time.time()) + 3
+        wait_time = int(
+            rdict["resources"]["code_scanning_upload"]["reset"]) - int(time.time()) + 3
         return max(0, wait_time)

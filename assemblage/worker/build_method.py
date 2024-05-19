@@ -18,14 +18,20 @@ import json
 import ftplib
 import git
 import yaml
+import shutil
+import time
 
 import boto3
 from botocore.exceptions import ClientError
 
+from git import Repo
 from assemblage.consts import BuildStatus, PDBJSONNAME, BINPATH
 from assemblage.windows.parsers.proj import Project
 from assemblage.windows.parsers.sln import Solution
 from assemblage.analyze.analyze import get_build_system
+from assemblage.worker.find_bin import is_elf
+from assemblage.worker.ctagswrap import get_functions
+from pathlib import PureWindowsPath, PurePosixPath
 
 logging.basicConfig(level=logging.INFO)
 
@@ -66,14 +72,31 @@ def cmd_with_output(cmd, timelimit=60, platform='linux', cwd=''):
                     os.killpg(os.getpgid(process.pid), signal.SIGTERM)
                 return b"subprocess.TimeoutExpired", b"subprocess.TimeoutExpired", 1
 
-def dia_get_func_funcinfo(binfile):
+def dia_get_func_funcinfo(binfile, source_code_prefix=""):
     """ Process the bin to get the info and function"""
-    binfile = binfile.replace("\\", "/")
-    cmd_args = [
-        "powershell", "-Command", "Dia2Dump", "-lines", "*", f"'{binfile}'"
-    ]
     file_cache = {}
-    out, _err, _exit_code = cmd_with_output(cmd_args, platform='windows')
+    if source_code_prefix:
+        for f in glob.glob(source_code_prefix + '/**/*', recursive=True):
+            if os.path.isfile(f) and ".git" not in f and len(os.path.basename(f))>3:
+                try:
+                    with open(f, 'r', encoding="utf-8") as source_f:
+                        assert os.path.basename(f).lower() not in file_cache.keys()
+                        file_cache[f] = source_f.readlines()
+                except Exception as e:
+                    try:
+                        with open(f, 'r', encoding="utf-16") as source_f:
+                            assert os.path.basename(f).lower() not in file_cache.keys()
+                            file_cache[f] = source_f.readlines()
+                    except Exception as e:
+                        pass
+
+    # binfile = binfile.replace("/", "\\")
+    binfolder = os.path.dirname(binfile)
+    binfile = binfile.split("\\")[-1]
+    print("BINFILE", binfile, binfolder)
+    cmd = f"Dia2Dump -lines * {binfile}"
+    out, _err, _exit_code = cmd_with_output(cmd, cwd=binfolder)
+    file_cache = {}
     try:
         lines_notclean = out.decode().split("\r\n")
     except:
@@ -82,11 +105,16 @@ def dia_get_func_funcinfo(binfile):
     lines = []
     for line in lines_notclean:
         lines.append(line.strip())
+
+    lines = []
+    for line in lines_notclean:
+        lines.append(line.strip())
     funcs_infos = {}
     rva_seg_length = 0
     dbg_seg_length = 0
     source_file = ""
     lines_infos = {}
+    file_hash_lookup = {}
     for i, line in enumerate(lines):
         lines_dict = {}
         if line.startswith("**"):
@@ -96,50 +124,42 @@ def dia_get_func_funcinfo(binfile):
             func_name_infoitem = {}
         if line.startswith("line"):
             if len(re.split(r"\w:\\", line)) == 2:
-                source_file = re.findall(r"\w:\\", line)[0] + re.split(
-                    r"\w:\\", line)[1]
-            rva = re.findall(r"at \[\w+\]",
-                             line)[0].replace("at ",
-                                              "").replace("[",
-                                                          "").replace("]", "")
-            length = int(
-                re.findall(r"len \= \w+", line)[0].replace("len = ", ""), 16)
-            line_number = int(
-                re.findall(r"line \d+", line)[0].replace("line ", ""))
+                source_file = re.findall(r"\w:\\", line)[0] + re.split(r"\w:\\", line)[1]
+                if "MD5" in source_file:
+                    source_file_cleaned = source_file.split(" (MD5: ")[0]
+                    source_file_md5 = source_file.split(" (MD5: ")[1].replace(")", "")
+                    file_hash_lookup[source_file_cleaned.strip()]=source_file_md5
+                if "0x3" in source_file:
+                    source_file_cleaned = source_file.split(" (0x3: ")[0]
+                    source_file_md5 = source_file.split(" (0x3: ")[1].replace(")", "")
+                    file_hash_lookup[source_file_cleaned.strip()]=source_file_md5
+            rva = re.findall(r"at \[\w+\]", line)[0].replace("at ", "").replace("[", "").replace("]", "")
+            length = int(re.findall(r"len \= \w+", line)[0].replace("len = ", ""), 16)
+            line_number = int(re.findall(r"line \d+", line)[0].replace("line ", ""))
             lines_dict["line_number"] = line_number
             lines_dict["rva"] = rva
             lines_dict["length"] = length
             lines_dict["source_code"] = ""
-            try:
-                source_file_cleaned = source_file.split(" (")[0]
-            except Exception:
-                source_file_cleaned = source_file
             if source_file_cleaned not in file_cache.keys():
                 try:
-                    with open(source_file_cleaned, 'r') as source_f:
-                        file_cache[source_file_cleaned] = source_f.readlines()
-                except Exception as excep:
-                    file_cache[source_file_cleaned] = []
-            try:
-                lines_dict["source_code"] = file_cache[source_file_cleaned][line_number-1].strip(
-                )
-            except Exception as err:
-                lines_dict["source_code"] = ""
-            lines_dict["source_file"] = source_file_cleaned
+                    file_cache[source_file_cleaned] = open(source_file_cleaned, 'r', encoding="utf-8", errors="ignore").readlines()
+                except:
+                    file_cache[source_file_cleaned] = [""]
+            filecontent = file_cache[source_file_cleaned]
+            if len(filecontent)>line_number-1:
+                lines_dict["source_code"] = filecontent[line_number-1].strip()
+            
+            lines_dict["source_file"] = source_file
+
             if "rva_start" not in func_name_infoitem.keys():
                 func_name_infoitem["rva_start"] = rva
             if line_number > 10000000:
                 dbg_seg_length = dbg_seg_length + length
             rva_seg_length = rva_seg_length + length
-            if not lines[i + 1].startswith("line"):
+            if i+1<len(lines) and (not lines[i + 1].startswith("line")):
                 func_name_infoitem["rva_end"] = str(
                     hex(int(rva, 16) + int(length))).replace("0x", "").rjust(
                         len(rva), "0")
-                if rva_seg_length != 0:
-                    func_name_infoitem["debug_ratio"] = str(
-                        (dbg_seg_length / rva_seg_length) * 100)[:5] + "%"
-                else:
-                    func_name_infoitem["debug_ratio"] = "0%"
                 if func_name in funcs_infos.keys():
                     funcs_infos[func_name].append(func_name_infoitem)
                 else:
@@ -154,25 +174,20 @@ def dia_get_func_funcinfo(binfile):
 def dia_list_binaries(dest_binfolder):
     """ get binary file under the binfolder """
     bfiles = []
-    if os.path.isdir(dest_binfolder):
-        files = os.listdir(dest_binfolder)
-        for single_file in files:
-            if single_file.endswith("exe") or single_file.endswith("dll"):
-                bfiles.append(single_file)
+    for single_file in glob.glob(dest_binfolder + '/**/*', recursive=True):
+        if os.path.isfile(single_file) and (single_file.lower().endswith("exe") or single_file.lower().endswith("dll") or single_file.lower().endswith("lib")):
+            bfiles.append(single_file)
     return bfiles
 
 
 def post_processing_pdb(dest_binfolder, build_mode, library, repoinfo, toolset,
-                        optimization):
+                        optimization, source_codedir="", commit="", clone_dir=""):
     """ Postprocess the pdb """
     bin_files = dia_list_binaries(dest_binfolder)
     outer_list = []
+    func_cache = {}
     for _, binfile in enumerate(bin_files):
-        binfile_path = os.path.join(dest_binfolder, binfile)
-        # logging.info("Checking binary info %s: %s", binfile,
-        #              os.path.isfile(binfile))
-        funcs_infos, lines_infos, source_file = dia_get_func_funcinfo(
-            binfile_path)
+        funcs_infos, lines_infos, source_file = dia_get_func_funcinfo(binfile, source_codedir)
         item_dict = {}
         item_dict["functions"] = []
         item_dict["file"] = binfile
@@ -197,8 +212,42 @@ def post_processing_pdb(dest_binfolder, build_mode, library, repoinfo, toolset,
                     (rva_gap / rva_len) * 100)[:5] + "%"
             functions_val["function_info"] = funcs_infos[func_name]
             functions_val["lines"] = lines_infos[func_name]
+            if len(functions_val["lines"])>0:
+                functions_val["source_file"] = functions_val["lines"][0]["source_file"]
+            if "MD5" in functions_val["source_file"]:
+                source_file_cleaned = functions_val["source_file"].split(" (MD5: ")[0]
+            elif " (0x3: " in functions_val["source_file"]:
+                source_file_cleaned = functions_val["source_file"].split(" (0x3: ")[0]
+            else:
+                source_file_cleaned = functions_val["source_file"]
+
+            if source_file_cleaned not in func_cache.keys():
+                func_cache[source_file_cleaned] = get_functions(source_file_cleaned)
+            funcsourceinfo = func_cache[source_file_cleaned]
+            for func in funcsourceinfo:
+                # print("FUNC looking for", func_name, func[0])     
+                if "::" in func_name and "::" in func[0]:
+                    pass
+                elif "::" in func_name:
+                    func_name = func_name.split("::")[-1]
+                elif "::" in func[0]:
+                    func[0] = func[0].split("::")[-1]
+                if func[0].lower() == func_name.lower():
+                    # name, startline, endline, def, top comments, body, body comment, prototype
+                    functions_val["ctag_definitions"] = func[3]
+                    functions_val["top_comments"] = func[4]
+                    functions_val["prototype"] = func[7]
+                    functions_val["source_codes"] = func[9]
+
+                    for line_info_captured in functions_val["lines"]:
+                        if (not line_info_captured["source_code"]) and (line_info_captured["line_number"] in func[8].keys()):
+                            line_info_captured["source_code"] = func[8][line_info_captured["line_number"]]
+                            break
+                    break
+
             item_dict["functions"].append(functions_val)
         outer_list.append(item_dict)
+    commit = Repo(clone_dir).head.object.hexsha
     try:
         json_di = {}
         json_di["Platform"] = library
@@ -208,13 +257,14 @@ def post_processing_pdb(dest_binfolder, build_mode, library, repoinfo, toolset,
         json_di["Binary_info_list"] = outer_list
         json_di["Optimization"] = optimization
         json_di["Pushed_at"] = repoinfo["updated_at"]
+        json_di["Commit"] = commit
+        json_di["License"] = repoinfo["license"]
+        
         with open(os.path.join(dest_binfolder, PDBJSONNAME), "w") as outfile:
-            json.dump(json_di, outfile, sort_keys=False)
-        repoid = dest_binfolder.split("\\")[-1]
-        # with open(os.path.join(PDBPATH, f"{repoid}.json"), "w") as outfile:
-        #     json.dump(json_di, outfile, sort_keys=False, indent=4)
+            json.dump(json_di, outfile, sort_keys=False, indent=4)
     except FileNotFoundError:
         logging.info("Pdbjsonfile not found")
+
 
 
 def post_processing_compress(dest_binfolder, repo, build_opt, num):
@@ -225,7 +275,7 @@ def post_processing_compress(dest_binfolder, repo, build_opt, num):
         cmd = f"cd {BINPATH}/{repo_fname}&&7z a -r -tzip {zipname}.zip *"
         out, _err, _exit_code = cmd_with_output(cmd, platform='windows')
     else:
-        cmd = f"cd {BINPATH}&&zip -r {zipname}.zip {repo_fname}"
+        cmd = f"cd {BINPATH}&&zip -r {zipname}.zip {dest_binfolder}"
         out, _err, _exit_code = cmd_with_output(cmd, platform='linux')
     logging.info("Compress output %s", zipname)
     return f"{zipname}.zip"
@@ -243,7 +293,7 @@ def post_processing_ftp(serveraddr, zipfile_path, _repo, zipfile_name):
 
 
 def post_processing_s3(dest_url, file_location):
-    sesh = boto3.Session(profile_name='assemblage')
+    sesh = boto3.Session(profile_name='default')
     s3 = sesh.client('s3')
     try:
         logging.info("Sending file_location %s to %s.",
@@ -416,72 +466,59 @@ def build(target_dir,
             return "UnicodeDecodeError", BuildStatus.FAILED, build_file
         if exit_code == 0:
             return 'success', BuildStatus.SUCCESS, build_file
-        return output_dec, BuildStatus.FAILED, build_file
-    # else:
-    #     # No SLN file provided
-    #     rule_based_build(target_dir,
-    #                 build_tool,
-    #                 platform,
-    #                 build_mode,
-    #                 library,
-    #                 optimization,
-    #                 tmp_dir,
-    #                 compiler_version,
-    #                 favorsizeorspeed,
-    #                 inlinefunctionexpansion,
-    #                 intrinsicfunctions)
+        else:
+            return output_dec, BuildStatus.FAILED, build_file
+    else:
+        return "NO BUILD FILE FOUND", BuildStatus.FAILED, build_file
 
+# The make for Linux is based on GHCC
+# Check out https://github.com/huzecong/ghcc
 
+def make(directory):
+    if "configure.ac" in os.listdir(directory) or "configure.in" in os.listdir(directory):
+        start_time = time.time()
+        if os.path.isfile(os.path.join(directory, "autogen.sh")):
+            cmd_with_output(["chmod", "+x", "./autogen.sh"], cwd=directory)
+            cmd_with_output(["./autogen.sh"], cwd=directory, timeout=timeout)
+        else:
+            cmd_with_output(["autoreconf", "--force", "--install"], cwd=directory, timeout=timeout)
+        end_time = time.time()
+        if timeout is not None:
+            timeout = max(1.0, timeout - int(end_time - start_time))
 
-def rule_based_build(target_dir,
-                    build_tool,
-                    platform,
-                    build_mode="Release",
-                    library="x64",
-                    optimization="Od",
-                    tmp_dir="Builds",
-                    compiler_version="v142",
-                    favorsizeorspeed="",
-                    inlinefunctionexpansion="Obd",
-                    intrinsicfunctions=False):
+    if os.path.isfile(os.path.join(directory, "configure")):
+        start_time = time.time()
+        cmd_with_output(["chmod", "+x", "./configure"], cwd=directory)
+        _out, _err, exit_code = cmd_with_output(["./configure", "--disable-werror"], cwd=directory, timeout=timeout)
+        end_time = time.time()
+        if exit_code != 0 and end_time - start_time <= 3:
+            # The configure file might not support `--disable-werror` and died instantly. Try again without the flag.
+            cmd_with_output(["./configure"], cwd=directory, timeout=timeout, )
+            end_time = time.time()
+        timeout = max(1.0, timeout - int(end_time - start_time))
+    try:
+        return cmd_with_output(["make", "--keep-going", "-j4"], cwd=directory, timeout=timeout, )
+    except subprocess.CalledProcessError as err:
+        return b"", bytes(err, 'utf-8'), BuildStatus.FAILED
 
-    """"
-    Deaql with CI script
-    """
-    files = glob.glob(target_dir + '**/**', recursive=True)
-    readme = ""
-    for file_path in files:
-        if file_path.lower().endswith("reeadme.md"):
-            readme = file_path
-            break
-    if os.path.isdir(os.path.join(target_dir, ".github", "workflows")):
-        for file in files:
-            if file.endswith(".yml") or file.endswith(".yaml"):
-                with open(file, "r") as stream:
-                    try:
-                        yml = yaml.safe_load(stream)
-                        if "windows" in yml["jobs"]["build"]["runs-on"]:
-                            steps = [x["run"] for x in yml["jobs"]["build"]["steps"] if "run" in x]
-                            for step in steps:
-                                cmd = step.replace("\n", "&&")
-                                out, err, exit_code = cmd_with_output(cmd, 600, platform, cwd=target_dir)
-                    except Exception as exc:
-                        logging.error(exc)
-        return 'success', BuildStatus.SUCCESS, ""
-    if readme:
-        with open(readme, "r", encoding="utf-8-sig") as f:
-            content = f.readliens()
-        windows_related_flag = 0
-        code_block_flag = 0
-        windows_related_keywords = ["MSVC", "Visual Studio"]
-        cmd_blacklist = ["del", "rm", "dd", "delete", "remove", "rmdir", "mkdir", "copy", "cp", "mv", "move", "touch", "echo", "cat", "type", "find", "grep", "sed", "awk", "sort", "uniq", "wc", "diff", "patch", "tar", "zip", "unzip", "gzip", "gunzip", "bzip2", "bunzip2", "xz", "unxz", "lzma", "unlzma", "7z", "chown", "chmod", "chgrp", "chroot", "ln", "ls", "pwd", "mkdir", "rmdir", "rm", "mv", "cp", "df", "du", "free", "sync", "shutdown", "reboot", "halt", "poweroff", "mount", "umount", "fdisk", "mountvol"]
-        for line in content:
-            for keyword in windows_related_keywords:
-                if keyword.lower() in line.lower():
-                    windows_related_flag = 1
-            if line.startswith("```"):
-                code_block_flag = not code_block_flag
-            if code_block_flag and windows_related_flag and line:
-                cmd = line.replace("\n", "")
-                if cmd != "```" and not any(x in cmd.lower() for x in cmd_blacklist):
-                    out, err, exit_code = cmd_with_output(cmd, 600, platform, cwd=target_dir)
+def linux_build(task, clone_folder, dest_folder, compile_timeout=300):
+
+    makefile_dirs = []
+    file_before_make = []
+    for file_path in glob.iglob(clone_folder + '**/**', recursive=True):
+        makefile_dirs.append(os.path.dirname(file_path))
+        file_before_make.append(file_path)
+    if os.path.exists(dest_folder):
+        shutil.rmtree(dest_folder)
+    os.makedirs(dest_folder)
+
+    for make_dir in makefile_dirs:
+        make(make_dir)
+    bins_found = []
+    for file_path in glob.iglob(clone_folder + '**/**', recursive=True):
+        if file_path not in file_before_make and is_elf(file_path):
+            shutil.move(file_path, os.path.join(dest_folder, os.path.basename(file_path)))
+            bins_found.append(os.path.join(dest_folder, os.path.basename(file_path)))
+    with open(os.path.join(dest_folder, "pdbinfo.json"), "w") as f:
+        json.dump(task, f)
+    return bins_found

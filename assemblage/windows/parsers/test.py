@@ -2,8 +2,8 @@ import unittest
 from proj import Project
 import uuid
 
-class TestStringMethods(unittest.TestCase):
 
+class TestStringMethods(unittest.TestCase):
 
     def test_change_version(self):
         version = str(uuid.uuid4())
@@ -33,27 +33,28 @@ class TestStringMethods(unittest.TestCase):
     #     proj.write()
     #     proj = Project("non_standard.vcxproj")
     #     self.assertEqual(proj.get_optimization(), "Full")
-    
+
     # def test_set_favorsizeorspeed(self):
     #     proj = Project("p.vcxproj")
     #     proj.set_favorsizeorspeed("Ot")
     #     proj.write()
     #     proj = Project("p.vcxproj")
-    #     self.assertEqual(proj.get_favorsizeorspeed(), "Speed")      
+    #     self.assertEqual(proj.get_favorsizeorspeed(), "Speed")
 
     # def test_set_inlinefunctionexpansion(self):
     #     proj = Project("p.vcxproj")
     #     proj.set_inlinefunctionexpansion("Ob1")
     #     proj.write()
     #     proj = Project("p.vcxproj")
-    #     self.assertEqual(proj.get_inlinefunctionexpansion(), "OnlyExplicitInline")   
+    #     self.assertEqual(proj.get_inlinefunctionexpansion(), "OnlyExplicitInline")
 
     # def test_set_intrinsicfunctions(self):
     #     proj = Project("p.vcxproj")
     #     proj.disable_intrinsicfunctions()
     #     proj.write()
     #     proj = Project("p.vcxproj")
-    #     self.assertEqual(proj.get_intrinsicfunctions(), "false")   
+    #     self.assertEqual(proj.get_intrinsicfunctions(), "false")
+
 
 if __name__ == '__main__':
     unittest.main()

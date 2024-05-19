@@ -26,6 +26,8 @@ from assemblage.consts import BINPATH, PDBPATH, TASK_TIMEOUT_THRESHOLD, BuildSta
 from assemblage.worker.base_worker import BasicWorker
 from assemblage.worker import build_method
 from assemblage.worker.find_bin import find_elf_bin
+from assemblage.worker.build_method import cmd_with_output
+
 from assemblage.protobufs.assemblage_pb2 import getBuildOptRequest
 
 
@@ -258,90 +260,18 @@ class Builder(BasicWorker):
     def clone(self, repo, clone_dir):
         """ Clone repo """
         logging.info("Cloning %s", repo["url"])
-        zip_url = repo["url"]+"/archive/refs/heads/master.zip"
-        if self.platform == "linux":
-            tmp_filename = os.urandom(16).hex()
-            out, err, exit_code0 = build_method.cmd_with_output(
-                f"wget -O {tmp_filename} {zip_url}", 60, self.platform)
-            out, err, exit_code1 = build_method.cmd_with_output(
-                f"unzip {tmp_filename} -d {clone_dir}", 60, self.platform)
-            cloned_folder = ""
-            try:
-                cloned_folder = os.listdir(clone_dir)[0]
-            except:
-                "Cloned folder not exist", BuildStatus.FAILED
-            out, err, exit_code = build_method.cmd_with_output(
-                f"cd {clone_dir}/{cloned_folder}&&mv * ../", 60, self.platform)
-            if exit_code == 0:
-                return b'CLONE SUCCESS', BuildStatus.SUCCESS
-        if self.platform == "windows":
-            if "mod_timestamp" not in repo:
-                try:
-                    logging.info("Downloading zip %s", zip_url)
-                    response = requests.get(zip_url)
-                    tmp_file_path = os.path.join(self.tmp_dir, hashlib.md5(repo["url"].encode()).hexdigest(
-                            )+''.join(random.choice(string.ascii_lowercase) for _ in range(5))+".zip")
-                    open(tmp_file_path, "wb").write(response.content)
-                    shutil.unpack_archive(tmp_file_path, clone_dir)
-                    os.remove(tmp_file_path)
-                    return b'CLONE SUCCESS', BuildStatus.SUCCESS
-                except Exception as err:
-                    logging.info(err)
-                    return bytes(str(err), "utf-8"),  BuildStatus.FAILED
-            else:
-                out, err, exit_code = build_method.cmd_with_output([
-                    'gh', 'repo', 'clone', repo['url'], clone_dir, "--", "--depth",
-                    "1", "--recursive"
-                ], 60, self.platform)
+        # https://github.com/nuxt/nuxt/
+        #     git@github.com:nuxt/nuxt.git
 
-                if exit_code == 10:
-                    return err, BuildStatus.TIMEOUT
-
-                elif exit_code == 0:
-                        try:
-                            repo = Repo(clone_dir)
-                            for commit in list(repo.iter_commits()):
-                                if commit.committed_date<repo["mod_timestamp"]:
-                                    repo.git.checkout(commit.id)
-                                    break
-                            return b'CLONE SUCCESS', BuildStatus.SUCCESS
-                        except Exception as err:
-                            logging.info(err)
-                            return (str(err)).encode(), BuildStatus.FAILED
-                else:
-                    return out + err, BuildStatus.FAILED
-
-    def clone_from_proxy(self, repo, clone_dir):
-        """ clone from proxy server """
-        logging.info("Cloning %s with proxy", repo["url"])
-        proxy_chosen = random.choice(self.clone_proxy_servers)
-        zip_url = f"http://{proxy_chosen}/" + \
-            hashlib.md5(repo["url"].encode()).hexdigest()+".zip"
-        logging.info("Cloning %s to %s", zip_url, clone_dir)
+        git_url = repo["url"].replace("https://", "git@")+".git"
+        git_url = git_url.replace("/", ":", 1)                                                                                                                               
         try:
-            response = requests.get(f"http://{proxy_chosen}/proxy/clone", {
-                                    "repo_url": repo["url"], "auth": self.clone_proxy_token}, timeout=60)
+            print(f"git clone {git_url} {clone_dir} --depth=1")
+            os.system(f"git clone {git_url} {clone_dir} --depth=1")
+            return b'CLONE SUCCESS', BuildStatus.SUCCESS
         except Exception as err:
             logging.info(err)
-            return (str(err)).encode(), BuildStatus.FAILED
-        os.makedirs(clone_dir)
-        tmp_file_path = os.path.join(self.tmp_dir, hashlib.md5(
-            repo["url"].encode()).hexdigest()+".zip")
-        logging.info("Proxy response: %s", response.text)
-        try:
-            if int(response.text) == 0:
-                response = requests.get(zip_url)
-                open(tmp_file_path, "wb").write(response.content)
-                shutil.unpack_archive(tmp_file_path, clone_dir)
-                os.remove(tmp_file_path)
-                logging.info("Sending delete request")
-                response = requests.get(f"http://{proxy_chosen}/proxy/delete", {
-                                        "zip_url": hashlib.md5(repo["url"].encode()).hexdigest()+".zip"}, timeout=10)
-                return b'CLONE SUCCESS', BuildStatus.SUCCESS
-            else:
-                return bytes(response.text, "utf-8"), BuildStatus.FAILED
-        except Exception as err:
-            return bytes(str(err), "utf-8"), BuildStatus.FAILED
+            return bytes(str(err), "utf-8"),  BuildStatus.FAILED
 
     def job_handler(self, ch, method, _props, body):
         """
@@ -363,22 +293,6 @@ class Builder(BasicWorker):
         logging.info("Worker %s received a task to build %s at %s buildsys: %s",
                      self.uuid[:5], url,
                      datetime.datetime.now().strftime("%H:%M:%S"), task['build_system'])
-        # if task['build_system'] != "sln" and self.platform == 'windows':
-        #     self.send_msg(kind='clone',
-        #                   url=task['url'],
-        #                   repo=task,
-        #                   status=BuildStatus.BLACKLIST,
-        #                   msg="non-sln sent to Windows")
-        #     logging.info("non-sln sent to Windows")
-        #     return
-        # for item in self.blacklist:
-        #     if task['name'] in item or item in task['name']:
-        #         self.send_msg(kind='clone',
-        #                       url=task['url'],
-        #                       repo=task,
-        #                       status=BuildStatus.BLACKLIST,
-        #                       msg="blacklist")
-        #         return
         clone_dir = self.get_clone_dir(task)
         clone_msg, clone_status = self.clone(task, clone_dir)
         folders = []
@@ -386,7 +300,7 @@ class Builder(BasicWorker):
         for filename in glob.iglob(clone_dir + '**/**', recursive=True):
             original_files.append(filename)
         # respond to events before we pause to build
-        self.mq_client.conn.process_data_events()
+        self.mq_client.conn.process_data_events(time_limit=0)
         self.send_msg(repo=task,
                       kind='clone',
                       url=task['url'],
@@ -395,83 +309,53 @@ class Builder(BasicWorker):
         if clone_status == BuildStatus.SUCCESS:
             logging.info("Clone SUCCESS, Attempting to build `%s`", url)
             folders.append(clone_dir)
-            build_task_configs = []
-            build_task_configs.append(
-                (self.library, self.build_mode,
-                 self.compiler_version, self.compiler_flag)
-            )
-            build_count = 0
-            for library, mode, version, opti in build_task_configs:
-                compiler_flag = opti
-                build_mode = mode
-                compiler_version = version
-                platform = library
-                before_build_time = int(time.time())
-                commit_hexsha = None
-                if 'commit_hexsha' in task:
-                    commit_hexsha = task['commit_hexsha']
-                build_msg, build_status, _ = build_method.build(
-                    target_dir=clone_dir,
-                    build_tool="only needed by linux",
-                    compiler_version=compiler_version,
-                    library=library,
-                    build_mode=build_mode,
-                    optimization=compiler_flag,
-                    platform=self.platform,
-                    commit_hexsha=commit_hexsha)
-                after_build_time = int(time.time())
-                dest_binfolder = self.scan_binaries(
-                        clone_dir, task, original_files=original_files)
-                head_hexsha = ""
+            compiler_flag = self.compiler_flag
+            build_mode = self.build_mode
+            compiler_version = self.compiler_version
+            platform = self.library
+            before_build_time = int(time.time())
+            build_msg, build_status, _ = build_method.build(
+                target_dir=clone_dir,
+                platform=self.platform,
+                build_tool="only needed by linux",
+                compiler_version=compiler_version,
+                library=self.library,
+                build_mode=build_mode,
+                optimization=compiler_flag,
+                commit_hexsha="")
+            after_build_time = int(time.time())
+            dest_binfolder = self.scan_binaries(
+                    clone_dir, task, original_files=original_files)
+            head_hexsha = ""
+            self.send_msg(repo=task,
+                            kind='build',
+                            url=url,
+                            status=build_status,
+                            msg=build_msg,
+                            commit_hexsha=head_hexsha,
+                            build_time=(after_build_time - before_build_time))
+            self.built_b_status_list.append((url, self.opt_id))
+            logging.info("Build exit %s", build_msg.replace("\n", " "))
+            if build_status == BuildStatus.SUCCESS:
+
+                build_method.post_processing_pdb(dest_binfolder,
+                                                        build_mode, platform,
+                                                        task, compiler_version,
+                                                        compiler_flag, source_codedir=clone_dir, commit=head_hexsha, clone_dir='')
+                zip_file = build_method.post_processing_compress(
+                    dest_binfolder, task, self.opt_id, 0)
+                repo_fname = dest_binfolder.split("\\")[-1]
+                file_location = f"{BINPATH}/{repo_fname}/{zip_file}"
+                logging.info("Posting binary `%s` to S3.", repo_fname)
                 try:
-                    username = task["url"].split("/")[-2]
-                    reponame = task["url"].split("/")[-1]
-                    r = requests.get(
-                        url=f"https://api.github.com/repos/{username}/{reponame}/commits")
-                    head_hexsha = r.json()[0]['commit']['tree']['sha']
-                except:
-                    pass
-                logging.info("Commit hexsha %s", head_hexsha)
-                self.send_msg(repo=task,
-                              kind='build',
-                              url=url,
-                              status=build_status,
-                              msg=build_msg,
-                              commit_hexsha=head_hexsha,
-                              build_time=(after_build_time - before_build_time))
-                self.built_b_status_list.append((url, self.opt_id))
-                logging.info("Build exit %s", build_msg.replace("\n", " "))
-                if build_status == BuildStatus.SUCCESS:
-                    if self.platform == "windows":
-                        build_method.post_processing_pdb(dest_binfolder,
-                                                         build_mode, platform,
-                                                         task, compiler_version,
-                                                         compiler_flag)
-                    zip_file = build_method.post_processing_compress(
-                        dest_binfolder, task, self.opt_id, build_count)
-                    if self.platform == "windows":
-                        repo_fname = dest_binfolder.split("\\")[-1]
-                        file_location = f"{BINPATH}/{repo_fname}/{zip_file}"
-                    else:
-                        repo_fname = dest_binfolder.split("/")[-1]
-                        file_location = f"{BINPATH}/{zip_file}"
-                    if self.send_binary_method.lower() == "ftp":
-                        build_method.post_processing_ftp(
-                            self.server_addr, file_location, task, zip_file)
-                        self.send_msg("post_analysis", task,
-                                      file_name=f"/binaries/ftp/{zip_file}")
-                    elif self.send_binary_method.lower() == "s3":
-                        logging.info("Posting binary `%s` to S3.", repo_fname)
-                        try:
-                            s3_file = build_method.post_processing_s3(
-                                "platform/"+self.platform+"/"+str(task["task_id"])+".zip", file_location)
-                            if s3_file:
-                                self.send_msg("post_analysis",
-                                              task, file_name=s3_file)
-                        except Exception as e:
-                            logging.error("Error posting binary to S3: %s", e)
-                    folders.append(os.path.join(self.bin_dir, dest_binfolder))
-                build_count += 1
+                    s3_file = build_method.post_processing_s3(
+                        "platform/"+self.platform+"/"+str(task["task_id"])+".zip", file_location)
+                    if s3_file:
+                        self.send_msg("post_analysis",
+                                        task, file_name=s3_file)
+                except Exception as e:
+                    logging.error("Error posting binary to S3: %s", e)
+                folders.append(os.path.join(self.bin_dir, dest_binfolder))
         else:
             logging.info("Clone FAILURE %s: %s", url, clone_msg)
             if "rate limit" in clone_msg.decode():
@@ -479,3 +363,4 @@ class Builder(BasicWorker):
         build_method.clean(folders, platform=self.platform)
         logging.debug("Worker %s finished %s at %s", self.uuid[:5], url,
                       datetime.datetime.now().strftime("%H:%M:%S"))
+        # exit()

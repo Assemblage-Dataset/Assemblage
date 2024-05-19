@@ -1,6 +1,6 @@
 # repo-scraper-builder
 
-* Find C/C++ projects on GitHub
+* Crawl C/C++ projects from GitHub and store them into database
 * Clone repos local machine
 * Experiment with build systems and flags to get diversity of binaries
 * Maintain record of repo/binary metadata throughout
@@ -9,7 +9,8 @@ Design document notes: https://docs.google.com/document/d/1p9SvTGqZT9zI8eYj6Z1dH
 https://docs.google.com/document/d/1pjuG1iYjtir0W1pzO09rr49sehRp5bbLsamGmyPzJw4/edit
 
 ## AWS
-Assemblage support aws deployment, please copy your `.aws` folder to `{ASSEMBLAGE_HOME}/aws` before system initialization.
+Assemblage support aws deployment, please copy your `.aws` folder to `{ASSEMBLAGE_HOME}/aws` before system initialization, which should contains the private key and geo information, under the profile called `assemblage`
+
 
 ## Set up env for developing & testing
 
@@ -59,7 +60,10 @@ docker-compose up -d
 ```
 
 5. Boot CLI
+
+As Google changed some of the codes, you need to add the flag `PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python` to boot CLI tools
+
 ```
 pip3 install pyfiglet prompt_toolkit pyfiglet plotext pypager grpcio grpcio-tools
-python3 cli.py --server $(docker inspect --format '{{ $network := index .NetworkSettings.Networks "assemblage-net" }}{{ $network.IPAddress}}'  assemblage_coordinator_1):50052
+PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python python3 cli.py --server $(docker inspect --format '{{ $network := index .NetworkSettings.Networks "assemblage-net" }}{{ $network.IPAddress}}'  assemblage_coordinator_1):50052
 ```

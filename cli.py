@@ -15,7 +15,7 @@ import subprocess
 from time import sleep, time
 import traceback
 import time
-
+import requests
 import grpc
 from prompt_toolkit import PromptSession, prompt
 from prompt_toolkit.patch_stdout import patch_stdout
@@ -35,6 +35,8 @@ from assemblage.protobufs.assemblage_pb2 import DumpRequest, RepoRequest, Worker
     ProgressRequest, Repo, BuildOpt, enableBuildOptRequest, getBuildOptRequest, SetOptRequest
 from assemblage.protobufs.assemblage_pb2_grpc import AssemblageServiceStub
 from assemblage.data.object import init_clean_database
+from assemblage.worker.build_method import cmd_with_output
+
 
 logging.basicConfig(level=logging.INFO)
 
@@ -61,7 +63,7 @@ COMMANDS = {
     'export': 'export [start_time] [end_time] : export repos into a json file,'
                        ' time format in "dd/mm/yyyy--hh:mm:s" e.g. export 09/02/2022--00:00:0 12/02/2022--00:00:0'
                        'You can also specify what columns you want to export, e.g. export 09/02/2022--00:00:0 12/02/2022--00:00:0 url,language',
-    'config': 'Generate config JSON for workers',
+    'dumpconfig': 'Generate config JSON for workers',
     'loadrepo': 'Load repo from json',
     'exit': 'Exit with code 0'
 }
@@ -148,7 +150,6 @@ def paginate_results(content, category):
                 yield [("", 'line {}: {}\n'.format(counter, print_repo(item)))]
             elif cag == "buildopt":
                 yield [("", 'line {}: {}\n'.format(counter, print_build_opt(item)))]
-
     p.add_source(GeneratorSource(send_repos(contents, category)))
     p.run()
 
@@ -171,6 +172,16 @@ def parse_cmd(raw_cmd) -> tuple:
         # string arg
         arguments = raw_cmd.split(' ')[1:]
     return command, arguments
+
+
+def get_public_ip():
+    """ get public ip """
+    try:
+        return requests.get('https://checkip.amazonaws.com').text.strip()
+    except:
+        out, err, exit_code = cmd_with_output(
+            f"dig +short myip.opendns.com @resolver1.opendns.com", platform='linux')
+        return out.decode().strip()
 
 
 class CommandValidator(Validator):
@@ -234,7 +245,7 @@ class CommandExecutor:
             self.__enable_build_opt()
         elif command == 'displayBuildOpt':
             self._display_buildopt()
-        elif command == 'config':
+        elif command == 'dumpconfig':
             self.__generateconfig()
         elif command == 'loadrepo':
             self.__loadrepos()
@@ -360,9 +371,9 @@ class CommandExecutor:
                 "build_time": b_status.build_time})
 
         print(f"{len(b_statuses)} buildtasks found")
-
+        fname = f'{os.urandom(4).hex()}__{start_time}__{end_time}.json'.replace("/", "_")
         print("Saving")
-        with open(f'dump__{start_time}__{end_time}.json'.replace("/", "_"), 'w') as dump_f:
+        with open(fname, 'w') as dump_f:
             out_obj = json.dumps(
                 {'buildopt': build_opts,
                  'b_status': b_statuses,
@@ -469,24 +480,36 @@ class CommandExecutor:
                 f_new.write(json.dumps(configs))
             print("Crawler token saved")
         if worker == "2":
-            with open("assemblage/configure/windows_config._sample.json") as f:
-                configs = json.load(f)
-            server_addr = prompt("Input coordinator's ip address")
-            configs["rabbitmq_host"] = server_addr
-            configs["grpc_addr"] = f"{server_addr}:50052"
-            buildoptions = self._display_buildopt()
-            build_opt_id = prompt("Please choose a build option id to build")
-            configs["default_build_opt"] = build_opt_id
+            server_addr = prompt(
+                "Do you want to use this machine's public ip? [y/n]: ")
+            if server_addr == "y":
+                server_addr = get_public_ip()
+            else:
+                server_addr = prompt("Input server address: ")
+            buildoptions = self._get_buildopt()
             for buildoption in buildoptions:
-                if buildoption._id == build_opt_id:
-                    configs["compiler"] = buildoption.compiler_name
-                    configs["library"] = buildoption.library
-                    configs["build_mode"] = buildoption.build_command
-                    configs["optimization"] = buildoption.compiler_flag.replace(
-                        "-", "")
-            with open("assemblage/configure/windows_config.json", "w") as f_new:
-                f_new.write(json.dumps(configs))
-            print("Windows worker config saved")
+                with open("assemblage/configure/worker_config_sample.json") as f:
+                    configs = json.load(f)
+                configs["rabbitmq_host"] = server_addr
+                configs["grpc_addr"] = f"{server_addr}:50052"
+                configs["default_build_opt"] = buildoption.id
+                configs["compiler"] = buildoption.compiler_name
+                configs["library"] = buildoption.library
+                configs["platform"] = buildoption.platform
+                configs["build_mode"] = buildoption.build_command
+                configs["optimization"] = buildoption.compiler_flag.replace(
+                    "-", "")
+                configs["random_pick"] = 0
+                configs["clone_proxy"] = []
+                configs["clone_proxy_token"] = ""
+                try:
+                    del configs["blacklist"]
+                    del configs["build_opt"]
+                except KeyError:
+                    pass
+                with open(f"assemblage/configure/windows_config{buildoption.id}.json", "w") as f_new:
+                    json.dump(configs, f_new, indent=4)
+                print(f"Windows worker config {buildoption.id} saved")
         if worker == "3":
             with open("assemblage/configure/worker_config_sample.json") as f:
                 configs = json.load(f)
@@ -544,6 +567,7 @@ class CommandExecutor:
     def __print_progress_status(self) -> None:
         # pylint: disable=line-too-long
         request = ProgressRequest(request='req')
+        print("Fetching progress status...")
         try:
             response = self.stub.checkProgress(request)
             print(
@@ -587,36 +611,32 @@ class CommandExecutor:
         with open(repo_json_path, "r") as repo_json_f:
             parsed_json = json.loads(repo_json_f.read())
             print(parsed_json.keys())
-            repo_list = parsed_json['projects']
+            repo_list = parsed_json['projects'] if 'projects' in parsed_json else []
             opt_list = parsed_json['buildopt']
             bstatus_list = parsed_json['b_status']
-            print(f"{len(repo_list)} repos found, {len(bstatus_list)} b_status found")
+            print(f"{len(opt_list)} opt found, {len(repo_list)} repos found, {len(bstatus_list)} b_status found")
             if input("Reconstruct databse will delete ALL data in databse! Are you sure? [y/n]").strip().lower() != 'y':
-                return
-            if input("Wipe the database? [y/n]").strip().lower() != 'y':
                 return
             if input("Reconstruct database? [y/n]").strip().lower() == 'y':
                 init_clean_database(mysql_conn_str)
                 print("Restore buildopt")
-                for opt in tqdm(opt_list):
-                    opt['enable'] = True
+                for opt in opt_list:
+                    opt['enable'] = 1
                     opt["_id"] = opt["id"]
                     del opt["id"]
-                    db_man.add_build_option_without_repo(opt)
+                db_man.bulk_insert_buildopt(opt_list)
                 print("Restore repos")
-                for repo in tqdm(repo_list):
+                for repo in repo_list:
                     repo["_id"] = repo["id"]
                     del repo["id"]
-                    db_man.insert_repos(repo, repoonly=True)
-                print("Restore b_status, this will take long time, and it may seem stuck")
-                for bstatus in tqdm(bstatus_list):
-                    try:
-                        bstatus["_id"] = bstatus["id"]
-                        del bstatus["id"]
-                        db_man.insert_b_status(bstatus)
-                    except Exception as err:
-                        print(err)
-            db_man.shutdown()
+                for bstatus in bstatus_list:
+                    bstatus["_id"] = bstatus["id"]
+                    del bstatus["id"]
+                db_man.bulk_insert_repos(repo_list)
+                db_man.bulk_insert_b_status(bstatus_list)
+                print("Restore done")
+        db_man.reset_bstatus()
+        db_man.shutdown()
 
     def __enable_build_opt(self):
         build_option_id = prompt("Enter Build Option ID: ")
@@ -656,12 +676,10 @@ class CommandExecutor:
 
     def _display_buildopt(self):
         request = getBuildOptRequest(request="get")
-        print("Something happened here")
         try:
             build_options = []
             for build_option in self.stub.getBuildOpt(request):
                 build_options.append(build_option)
-                print("Latest version: buildopt")
             paginate_results(build_options, category="buildopt")
             return build_options
         except grpc.RpcError as rpc_error:
@@ -671,6 +689,16 @@ class CommandExecutor:
             else:
                 logging.info(f"RPC Error: {rpc_error}")
             return
+
+    def _get_buildopt(self):
+        request = getBuildOptRequest(request="get")
+        try:
+            build_options = []
+            for build_option in self.stub.getBuildOpt(request):
+                build_options.append(build_option)
+            return build_options
+        except grpc.RpcError as rpc_error:
+            return []
 
 
 def init_guide():
@@ -851,13 +879,13 @@ def main(server_addr):
     with grpc.insecure_channel(server_addr) as channel:
         stub = AssemblageServiceStub(channel)
         executor = CommandExecutor(stub, server_addr)
-        try:
-            executor.exec('progress')
-        except grpc.RpcError as rpc_error:  # catch coordinator not being active
-            traceback.print_exc()
-            if rpc_error.code() == grpc.StatusCode.UNAVAILABLE:
-                logging.info(
-                    'CLI Failed To connect to any addresses; Coordinator may be inactive')
+        # try:
+        #     executor.exec('progress')
+        # except grpc.RpcError as rpc_error:  # catch coordinator not being active
+        #     traceback.print_exc()
+        #     if rpc_error.code() == grpc.StatusCode.UNAVAILABLE:
+        #         logging.info(
+        #             'CLI Failed To connect to any addresses; Coordinator may be inactive')
         while True:
             try:
                 cmd = session.prompt(PROMPT, validator=cmd_validator)

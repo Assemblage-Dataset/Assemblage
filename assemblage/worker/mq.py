@@ -8,6 +8,7 @@ import logging
 import pika
 from pika.exchange_type import ExchangeType
 
+
 class MessageClient:
     ''' a rabbit mq wrapper for all different worker '''
 

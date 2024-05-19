@@ -8,14 +8,14 @@ def get_build_system(files):
     """Analyze build tool from file list"""
     build_systems = {"make": ["makefile"],
                      "cmake": ["cmakelists.txt"],
-                    #  "travisci": [".travis.yml"],
-                    #  "circleci": ["config.yml"],
-                    #  "rake": ["rakefile"],
+                     #  "travisci": [".travis.yml"],
+                     #  "circleci": ["config.yml"],
+                     #  "rake": ["rakefile"],
                      "sln": [".sln"],
                      "autoconf": ["configure"],
-                    #  "java": ["build.gradle", "gradlew", "pom.xml"],
-                    #  "ninja": ["ninja", "build.ninja"],
-                    #  "bootstrap": ["bootstrap"]
+                     #  "java": ["build.gradle", "gradlew", "pom.xml"],
+                     #  "ninja": ["ninja", "build.ninja"],
+                     #  "bootstrap": ["bootstrap"]
                      }
     build_tools_list = []
     for fname in files:

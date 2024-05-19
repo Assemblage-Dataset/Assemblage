@@ -3,6 +3,7 @@ constant
 
 """
 
+
 class BuildStatus:
     """
     Clone and build status codes
@@ -19,13 +20,14 @@ class BuildStatus:
     EXCLUDE = 7
     COMMAND_FAILED = 10
 
+
 PING_INTERVAL = 10
 SUPPORTED_BUILD = ["make", "cmake", "autoconf", "bootstrap", "sln"]
 SUPPORTED_LANGUAGE = ['c', 'c++', 'c#']
 
 BIN_DIR = '/binaries'
 WORKER_TIMEOUT_THRESHOLD = 600
-TASK_TIMEOUT_THRESHOLD = 600
+TASK_TIMEOUT_THRESHOLD = 60
 
 # set this to max worker size for one build type
 MAX_MQ_SIZE = 3600
@@ -35,7 +37,7 @@ DB_PATH = "data/ghtorrent.db"
 
 DEST = "~/repos"
 
-G = ""
+G = "b89581cf542519aa28b2e0904fbefd31ae67c19a"
 
 RATELIMIT_URL = "https://api.github.com/rate_limit"
 SCRAPE_CHECKPOINT = f"{BIN_DIR}/scrape-checkpoint"
@@ -45,7 +47,8 @@ LOG_FILE = "assemblage.log"
 BINPATH = "Binaries"
 PDBPATH = "Pdbs"
 BUILDPATH = "Builds"
-PDBJSONNAME = "pdbinfo.json"
+PDBJSONNAME = "assemblage_meta.json"
 WIN_PREFIX = "C:\\Assemblage\\repo-scraper-builder\\Binaries\\"
 
-AWS_AUTO_REBOOT_PREFIX = "auto-worker"
+AWS_AUTO_REBOOT_PREFIX = "assemblage-auto-worker"
+REPO_SIZE_THRESHOLD = 0

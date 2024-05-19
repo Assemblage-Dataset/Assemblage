@@ -60,7 +60,7 @@ class Scraper(BasicWorker):
         self.token = git_token
         self.lang = lang
         self.token_checker = TokenChecker()
-        self.page_size = 100
+        self.page_size = 10
         self.tmp_dir = os.path.realpath(tmp_dir)
         self.rabbitmq_port = rabbitmq_port
         self.rabbitmq_host = rabbitmq_host
@@ -90,9 +90,9 @@ class Scraper(BasicWorker):
                 json.dump([int(time.time())], record_file, indent=4)
 
     def check_crawled(self, interval):
-        while os.path.exists('crawled.json.lock'):
-            time.sleep(0.25)
-        f = open('crawled.json.lock', 'w')
+        while os.path.exists(self.record_file+'.lock'):
+            time.sleep(1)
+        f = open(self.record_file+'.lock', 'w')
         f.close()
         try:
             with open(self.record_file, "r") as record_file:
@@ -104,7 +104,7 @@ class Scraper(BasicWorker):
         with open(self.record_file, "w") as record_file:
             json.dump([newtime], record_file, indent=4)
         try:
-            os.remove('crawled.json.lock')
+            os.remove(self.record_file+'.lock')
         except:
             pass
         return oldtime
@@ -126,72 +126,87 @@ class Scraper(BasicWorker):
             time.sleep(3600-int(time.time()) % 3600)
             self.queries = 0
 
-    def send_repo(self, repo):
+    def send_repo(self, repo, nocheck=False):
         ''' scrape project folder and check if build file exists '''
-        try:
-            url = repo["url"]
-            self.query_limit()
-            # Avoid secondary rate limit
-            default_branch = repo["default_branch"]
-            if self.sln_only:
-                try:
-                    page = requests.get(url + f"/git/trees/{default_branch}",
-                                        auth=("", self.token), proxies=self.random_proxy(), timeout=10)
-                    if "secondary rate limit" in page.text:
-                        logging.info(page.text.replace("\n", ""))
-                        time.sleep(120)
-                        page = requests.get(url + f"/git/trees/{default_branch}",
-                                            auth=("", self.token), proxies=self.random_proxy(), timeout=10)
-                    elif "rate limit" in page.text:
-                        logging.info("Crawler %s rate limit, sleep %ss", self.workerid,
-                                    self.token_checker.rate_reset("", self.token))
-                        time.sleep(self.token_checker.rate_reset("", self.token))
-                        page = requests.get(url + f"/git/trees/{default_branch}",
-                                            auth=("", self.token), proxies=self.random_proxy(), timeout=10)
-                except Exception as err:
-                    logging.info(err)
-                    return
-                repo_page = json.loads(page.text)
-                files_list = []
-                files = []
-                if "tree" in repo_page.keys():
-                    files_list = repo_page["tree"]
-                else:
-                    return
-                for record in files_list:
-                    if "path" in record.keys():
-                        files.append(record["path"])
-                build_tool = get_build_system(files)
-            # logging.info("Crawler-%s got %s, %s in pool",
-            #              self.workerid, build_tool, len(self.repocache))
-            name = repo["name"]
-            url = repo["url"]
-            language = repo["language"]
-            owner_id = repo["owner"]["id"]
-            description = repo["description"] or ""
-            created_at = github_time_to_mysql_time(repo["created_at"])
-            updated_at = github_time_to_mysql_time(repo["pushed_at"])
-            size = int(repo['size'])
-            self.repocache.append({
-                'name': name,
-                'url': url,
-                'language': language,
-                'owner_id': owner_id,
-                'description': description[:200],
-                'created_at': created_at,
-                'updated_at': updated_at,
-                'size': size,
-                'build_system': build_tool
-            })
-        except Exception as err:
-            logging.info(err)
+        url = repo["url"]
+        self.query_limit()
+        # Avoid secondary rate limit
+        # logging.info("Processing %s", url)
+        default_branch = repo["default_branch"]
+        page = requests.get(url + f"/git/trees/{default_branch}",
+                            auth=("", self.token), proxies=self.random_proxy(), timeout=10)
+        if "secondary rate limit" in page.text:
+            logging.info(page.text.replace("\n", ""))
+            time.sleep(60)
+            page = requests.get(url + f"/git/trees/{default_branch}",
+                                auth=("", self.token), proxies=self.random_proxy(), timeout=10)
+        elif "rate limit" in page.text:
+            logging.info("Crawler %s rate limit, sleep %ss", self.workerid,
+                            self.token_checker.rate_reset("", self.token))
+            time.sleep(
+                self.token_checker.rate_reset("", self.token))
+            page = requests.get(url + f"/git/trees/{default_branch}",
+                                auth=("", self.token), proxies=self.random_proxy(), timeout=10)
+        repo_page = json.loads(page.text)
+        files_list = []
+        files = []
+        if "tree" in repo_page.keys():
+            files_list = repo_page["tree"]
+        else:
+            return
+        for record in files_list:
+            if "path" in record.keys():
+                files.append(record["path"])
+        build_tool = get_build_system(files)
+
+        page = requests.get(url,
+                            auth=("", self.token), proxies=self.random_proxy(), timeout=10)
+        if "secondary rate limit" in page.text:
+            logging.info(page.text.replace("\n", ""))
+            time.sleep(120)
+            page = requests.get(url,auth=("", self.token), proxies=self.random_proxy(), timeout=10)
+        elif "rate limit" in page.text:
+            logging.info("Crawler %s rate limit, sleep %ss", self.workerid,
+                            self.token_checker.rate_reset("", self.token))
+            time.sleep(
+                self.token_checker.rate_reset("", self.token))
+            page = requests.get(url,auth=("", self.token), proxies=self.random_proxy(), timeout=10)
+
+        repo = json.loads(page.text)
+        name = repo["name"]
+        url = repo["url"]
+        language = repo["language"]
+        owner_id = repo["owner"]["id"]
+        description = repo["description"] or ""
+        created_at = github_time_to_mysql_time(repo["created_at"])
+        updated_at = github_time_to_mysql_time(repo["pushed_at"])
+        size = int(repo['size'])
+        self.repocache.append({
+            'name': name,
+            'url': url,
+            'language': language,
+            'owner_id': owner_id,
+            'description': description[:200],
+            'created_at': created_at,
+            'updated_at': updated_at,
+            'size': size,
+            'build_system': build_tool,
+            'star': int(repo['stargazers_count']),
+            'watching': int(repo['subscribers_count']),
+            'topics': ','.join(repo['topics'] if 'topics' in repo else []),
+            'fork': int(repo['forks_count']),
+            'license': repo['license']['key'] if ('license' in repo) and repo['license'] and ('key' in repo['license']) else "null",
+            'default_branch': repo['default_branch']
+        })
+        # logging.info("Crawler %s sent %s repos, total: %s", self.workerid,
+        #                 len(self.repocache), self.sent)
         while len(self.repocache) >= self.bundle_number:
             try:
                 self.mq_client.send_kind_msg(
                     'scrape', json.dumps(self.repocache))
                 self.repocache = []
                 self.sent += self.bundle_number
-                logging.info("Crawler %s sent %s repos, total: %s",
+                logging.info("Crawler %s flushed %s repos, total: %s",
                              self.workerid, self.bundle_number, self.sent)
             except Exception as err:
                 logging.info("Sending repos errored: %s", str(err))
@@ -205,10 +220,11 @@ class Scraper(BasicWorker):
                 }])
 
     def run(self):
+        logging.info("Crawler %s inited %s", self.workerid, datetime.utcfromtimestamp(self.crawl_time_start).isoformat())
         crawl_time = self.crawl_time_start
         while crawl_time > 1262322000:
-            # logging.info("Crawler %s checking %s", self.workerid, datetime.utcfromtimestamp(crawl_time).isoformat())
-            crawl_time = self.check_crawled(self.crawl_time_interval)
+            logging.info("Crawler %s checking %s", self.workerid, datetime.utcfromtimestamp(crawl_time).isoformat())
+            # crawl_time = self.check_crawled(self.crawl_time_interval)
             time_start = datetime.utcfromtimestamp(crawl_time).isoformat()
             time_end = datetime.utcfromtimestamp(
                 crawl_time + self.crawl_time_interval).isoformat()
@@ -218,28 +234,27 @@ class Scraper(BasicWorker):
                 query_s = f'created:{time_start}+08:00..{time_end}+08:00 language:{self.lang}'
             total_count = 999
             payload = {'q': query_s,
-                        'per_page': self.page_size, 'page': -1}
+                       'per_page': self.page_size, 'page': -1}
             while payload['page'] * self.page_size < total_count:
-                try:
                     payload['page'] += 1
                     before = int(time.time())
                     r = requests.get("https://api.github.com/search/repositories",
-                                        payload,
-                                        auth=("", self.token), proxies=self.random_proxy(), timeout=10)
+                                     payload,
+                                     auth=("", self.token), proxies=self.random_proxy(), timeout=10)
                     after = int(time.time())
-                    logging.info("Crawler %s request respond in %ss",
-                                self.workerid, after-before)
+                    # logging.info("Crawler %s request respond in %ss",
+                    #             self.workerid, after-before)
                     rdict = json.loads(r.text)
                     while "message" in rdict.keys() and "rate limit" in rdict["message"]:
                         logging.info("Crawler %s got %s", self.workerid,
-                                    rdict["message"].replace("/n", ""))
-                        time.sleep(360)
+                                     rdict["message"].replace("/n", ""))
+                        time.sleep(60)
                         if "secondary" in rdict["message"]:
-                            time.sleep(360)
+                            time.sleep(60)
                         before = int(time.time())
                         r = requests.get("https://api.github.com/search/repositories",
-                                        payload,
-                                        auth=("", self.token), proxies=self.random_proxy(), timeout=10)
+                                         payload,
+                                         auth=("", self.token), proxies=self.random_proxy(), timeout=10)
                         after = int(time.time())
                         logging.info(
                             "Crawler %s request respond in %ss with rate limit", self.workerid, after-before)
@@ -247,15 +262,14 @@ class Scraper(BasicWorker):
                     if 'items' in rdict.keys():
                         total_count = min(rdict["total_count"], total_count)
                         logging.info("Crawler %s query: %s page:%s, GitHub respond %s repos",
-                                    self.workerid, payload['page'], time_start[:-7], total_count)
+                                     self.workerid, payload['page'], time_start[:-7], total_count)
                         repos_per_page = rdict["items"]
-                        repos_added = set()
                         for repo in repos_per_page:
-                            # if repo["url"] not in repos_added and repo["size"] > 15:
+                            try:
                                 self.send_repo(repo)
-                                repos_added.add(repo["url"])
-                except Exception as err:
-                    logging.info(err)
+                            except:
+                                pass
             crawl_time -= self.crawl_time_interval
             crawl_time = int(crawl_time)
         logging.info("Crawler %s End Task", self.workerid)
+        os.remove(self.record_file)

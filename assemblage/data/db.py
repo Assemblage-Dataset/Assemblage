@@ -19,6 +19,7 @@ from sqlalchemy.sql import Insert
 from assemblage.data.object import BuildDO, BuildOpt, RepoDO, Status
 from assemblage.consts import BuildStatus, SUPPORTED_LANGUAGE
 
+
 @compiles(Insert, "mysql")
 def mysql_upsert(insert, compiler, **kw):
     '''
@@ -28,6 +29,7 @@ def mysql_upsert(insert, compiler, **kw):
     so maybe it is okay for now.
     '''
     return compiler.visit_insert(insert.prefix_with("IGNORE"), **kw)
+
 
 class DBManager:
     """ manager for db query and connection """
@@ -64,9 +66,9 @@ class DBManager:
     def update_undisasmed_bin(self, bin_id):
         """  set a binary disasmed """
         with Session(self.engine) as session:
-            query = update(BuildDO).values(disasmed=True).where(BuildDO._id == bin_id)
+            query = update(BuildDO).values(
+                disasmed=True).where(BuildDO._id == bin_id)
             session.execute(query)
-
 
     def find_build_opt_by_id(self, opt_id):
         """ fetch a build object from database by it's id """
@@ -108,12 +110,13 @@ class DBManager:
                 statuses.append(_s[0])
             return statuses
 
-    #TODO: refactor to add repodo size limit
+    # TODO: refactor to add repodo size limit
     def find_status_by_status_code(self, clone_status, build_opt_id, build_status=None, limit=-1):
         """ find lines of record in status table by specific build/clone status code """
         with Session(self.engine) as session:
             # make sure every type of worker has same chance to work, and also make query faster
-            enabled_opt_query = select(BuildOpt).where(BuildOpt._id == build_opt_id)
+            enabled_opt_query = select(BuildOpt).where(
+                BuildOpt._id == build_opt_id)
             boptid = session.execute(enabled_opt_query).all()
             build_sys = boptid[0][0].build_system
             if build_status:
@@ -123,7 +126,7 @@ class DBManager:
                     Status.build_opt_id == build_opt_id,
                 )
             else:
-                    query = select(Status).join_from(Status, RepoDO).where(
+                query = select(Status).join_from(Status, RepoDO).where(
                     Status.clone_status == clone_status,
                     Status.build_opt_id == build_opt_id,
                     RepoDO.build_system.contains(build_sys),
@@ -135,13 +138,12 @@ class DBManager:
             for _s in result:
                 statuses.append(_s[0])
             return statuses
-
+        
     def reset_timeout_status(self, timeout):
         """ reset all timeout status record back to uncloned """
         with Session(self.engine) as session:
             query = update(Status).values(
-                clone_status=BuildStatus.INIT,
-                build_status=BuildStatus.INIT).where(
+                clone_status=BuildStatus.INIT).where(
                 Status.clone_status == BuildStatus.PROCESSING,
             )
             session.execute(query)
@@ -154,7 +156,8 @@ class DBManager:
         original sql : SELECT * FROM  projects WHERE name LIKE ?
         """
         if repo_name != '' and repo_url != '' and build_opt != 0:
-            print(f"Searching NAME and URL and BUILDOPT: {repo_name}; {repo_url}; {build_opt}")
+            print(
+                f"Searching NAME and URL and BUILDOPT: {repo_name}; {repo_url}; {build_opt}")
             with Session(self.engine) as session:
                 query = select(Status).join_from(RepoDO, BuildOpt).where(
                     RepoDO.name.like(f"%{repo_name}%"),
@@ -182,7 +185,8 @@ class DBManager:
         else:
             print(f"SEARCHING FOR NAME ONLY: {repo_name}")
             with Session(self.engine) as session:
-                result = session.query(RepoDO).filter(RepoDO.name.like(f'%{repo_name}%'))
+                result = session.query(RepoDO).filter(
+                    RepoDO.name.like(f'%{repo_name}%'))
                 for _r in result:
                     yield _r
 
@@ -191,6 +195,7 @@ class DBManager:
                            clone_msg='', commit_hexsha=''):
         """ update the build/clone status of a repo for one build option """
         status_val = {'mod_timestamp': time.time(), 'build_time': build_time}
+        # status_val = {}
         if build_status is None and clone_status is None:
             return
         if build_status is not None:
@@ -205,6 +210,19 @@ class DBManager:
             # if status_id is not None:
             update_stmt = update(Status).values(
                 **status_val).where(Status._id == status_id)
+            session.execute(update_stmt)
+            session.commit()
+
+    def update_b_status_priority(self, status_id, result):
+        """ update the build/clone status of a repo for one build option """
+        with Session(self.engine) as session:
+            looking = select(Status).where(Status._id == status_id).first()
+            result = session.execute(looking)
+            repoid = result[0].repo_id
+
+        with Session(self.engine) as session:
+            update_stmt = update(Status).values(
+                {"priority": result}).where(Status.repo_id == repoid)
             session.execute(update_stmt)
             session.commit()
 
@@ -233,22 +251,12 @@ class DBManager:
     def bulk_insert_repos(self, repo_msg_list):
         """ used to import lot of repos at a time """
         # clean id if exists in message
-        for repo_msg in repo_msg_list:
-            if "id" in repo_msg.keys():
-                del repo_msg["id"]
-            if "_id" in repo_msg.keys():
-                del repo_msg["_id"]
         with Session(self.engine) as session:
             repo_list = [RepoDO(**repo_msg) for repo_msg in repo_msg_list]
             session.bulk_save_objects(repo_list)
             session.commit()
 
     def bulk_insert_buildopt(self, opt_msg_list):
-        for opt_msg in opt_msg_list:
-            if "id" in opt_msg.keys():
-                del opt_msg["id"]
-            if "_id" in opt_msg.keys():
-                del opt_msg["_id"]
         with Session(self.engine) as session:
             opt_list = [BuildOpt(**opt_msg) for opt_msg in opt_msg_list]
             session.bulk_save_objects(opt_list)
@@ -257,7 +265,8 @@ class DBManager:
     def bulk_insert_b_status(self, b_status_msg_list):
         """ this assume all repo and build option used in b_status is already in database """
         with Session(self.engine) as session:
-            bstatus_list = [Status(**status_msg) for status_msg in b_status_msg_list]
+            bstatus_list = [Status(**status_msg)
+                            for status_msg in b_status_msg_list]
             session.bulk_save_objects(bstatus_list)
             session.commit()
 
@@ -268,16 +277,16 @@ class DBManager:
             _s.clone_msg = ''
             _s.build_status = BuildStatus.INIT
             _s.build_msg = ''
-            _s.build_opt_id = b_status_msg["build_opt_id"]
-            _s.mod_timestamp = int(b_status_msg["mod_timestamp"])
-            _s.repo_id = b_status_msg["repo_id"]
+            _s.build_opt_id = int(b_status_msg["build_opt_id"])
+            _s.mod_timestamp = int(time.time())
+            _s.repo_id = int(b_status_msg["repo_id"])
             _s.build_time = 0
             session.add(_s)
             session.flush()
             session.commit()
         return 1
 
-    def insert_repos(self, repos_msg, cascade=True, repoonly=False):
+    def insert_repos(self, repos_msg, cascade=True, repoonly=False, update=True):
         """
         Query repo to build on command
         if cascade is `True`, it will also add possible b_status for it
@@ -312,6 +321,31 @@ class DBManager:
                         session.add(_s)
             session.commit()
         return 1
+
+    def update_repos(self, repos_msg):
+        """
+        Query repo to build on command
+        if cascade is `True`, it will also add possible b_status for it
+        since current database is very dirty, many duplicate URL,
+        so have to use some strange code here
+        https://api.github.com/lua/lua
+        TODO: maybe change ORM to core API, so we can avoid upsert problem,
+        but this may make query complicated
+        """
+        with Session(self.engine) as session:
+            query = update(RepoDO).values(
+                star=repos_msg["star"],
+                watching=repos_msg["watching"],
+                fork=repos_msg["fork"],
+                license=repos_msg["license"],
+                topics=repos_msg["topics"],
+                default_branch=repos_msg["default_branch"],
+                )\
+            .where(
+                RepoDO.url == repos_msg["url"]
+            )
+            session.execute(query)
+            session.commit()
 
     def insert_binary(self, file_name, description, status_id):
         """
@@ -363,7 +397,7 @@ class DBManager:
             session.commit()
 
     def add_build_option_without_repo(self, platform, language, compiler_name, compiler_flag,
-                         build_system, build_command, library, enable=True, _id=-1):
+                                      build_system, build_command, library, enable=True, _id=-1):
         """
         insert build option into BuildOpt table for repo contain certain build system&language
         """
@@ -394,22 +428,22 @@ class DBManager:
         data_result = {}
         with Session(self.engine) as session:
             for time_str, interval in interval_map.items():
-                data_result[f'{time_str}_clone'] = int(session.query(func.count(Status._id)). \
+                data_result[f'{time_str}_clone'] = int(session.query(func.count(Status._id)).
                                                        where(
                     Status.clone_status == BuildStatus.SUCCESS,
                     Status.mod_timestamp > int(time.time()) - interval
                 ).all()[0][0])
-                data_result[f'{time_str}_fail_clone'] = int(session.query(func.count(Status._id)). \
+                data_result[f'{time_str}_fail_clone'] = int(session.query(func.count(Status._id)).
                                                             where(
                     Status.clone_status == BuildStatus.FAILED,
                     Status.mod_timestamp > int(time.time()) - interval
                 ).all()[0][0])
-                data_result[f'{time_str}_build'] = int(session.query(func.count(Status._id)). \
+                data_result[f'{time_str}_build'] = int(session.query(func.count(Status._id)).
                                                        where(
                     Status.build_status == BuildStatus.SUCCESS,
                     Status.mod_timestamp > int(time.time()) - interval
                 ).all()[0][0])
-                data_result[f'{time_str}_fail_build'] = int(session.query(func.count(Status._id)). \
+                data_result[f'{time_str}_fail_build'] = int(session.query(func.count(Status._id)).
                                                             where(
                     or_(
                         Status.build_status == BuildStatus.FAILED,
@@ -417,19 +451,20 @@ class DBManager:
                     ),
                     Status.mod_timestamp > int(time.time()) - interval
                 ).all()[0][0])
-                cur_dtime = datetime.datetime.fromtimestamp(int(time.time()) - interval)
-                data_result[f'{time_str}_binary'] = int(session.query(func.count(BuildDO._id)). \
+                cur_dtime = datetime.datetime.fromtimestamp(
+                    int(time.time()) - interval)
+                data_result[f'{time_str}_binary'] = int(session.query(func.count(BuildDO._id)).
                                                         where(
                     BuildDO.build_date > cur_dtime
                 ).all()[0][0])
-                data_result[f'{time_str}_Windows_binary'] = int(session.query(func.count(BuildDO._id)). \
-                                                        where(
+                data_result[f'{time_str}_Windows_binary'] = int(session.query(func.count(BuildDO._id)).
+                                                                where(
                     BuildDO.build_date > cur_dtime,
-                    or_(BuildDO.file_name.endswith(".exe"), BuildDO.file_name.endswith(".dll"))
+                    or_(BuildDO.file_name.endswith(".exe"),
+                        BuildDO.file_name.endswith(".dll"))
                 ).all()[0][0])
         # logging.info(data_result)
         return data_result
-
 
     def dump_repos(self, status, start_timestamp: int, end_timestamp: int):
         """ dump the successful binary in an given time period (time in int) """
@@ -451,7 +486,6 @@ class DBManager:
             ).all()
             return successful_bstatus
 
-
     def enable_build_option(self, _id, is_enabled: bool) -> str:
         """
         Enable a buildOpt in the database
@@ -459,7 +493,8 @@ class DBManager:
         """
         with Session(self.engine) as session:
             try:
-                build_option = session.query(BuildOpt).filter(BuildOpt._id == _id).first()
+                build_option = session.query(BuildOpt).filter(
+                    BuildOpt._id == _id).first()
                 build_option.enable = is_enabled
                 session.commit()
                 return "Success"
@@ -487,5 +522,23 @@ class DBManager:
         return all enabled build option
         """
         with Session(self.engine) as session:
-            build_options = session.query(BuildOpt).where(BuildOpt.enable == true()).all()
+            build_options = session.query(BuildOpt).where(
+                BuildOpt.enable == true()).all()
             yield from build_options
+
+    def reset_bstatus(self):
+        with Session(self.engine) as session:
+            query = update(Status).values(
+                build_status=BuildStatus.INIT,
+                clone_status=BuildStatus.INIT
+                )
+            session.execute(query)
+            session.commit()
+
+    def reset_failures(self):
+        with Session(self.engine) as session:
+            query = update(Status).values(
+                clone_status=BuildStatus.INIT
+                ).where(Status.clone_status == BuildStatus.FAILED)
+            session.execute(query)
+            session.commit()

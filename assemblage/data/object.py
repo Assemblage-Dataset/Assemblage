@@ -110,6 +110,12 @@ class RepoDO(Base):
     # priority high: 2, mid: 1, low 0
     priority = Column(Integer, default=0)
     size = Column(Integer, default=0)
+    star = Column(Integer, default=0)
+    watching = Column(Integer, default=0)
+    fork = Column(Integer, default=0)
+    license = Column(String(length=255), default='')
+    default_branch = Column(String(length=255), default='')
+    topics = Column(Text, default='')
     build_system = Column(String(length=255), default='', index=True)
     statuses = relationship("Status", cascade="all, delete",
                             passive_deletes=True)
@@ -144,11 +150,12 @@ def init_clean_database(db_str):
     except Exception as err:
         print(err)
     try:
-        print("Creating tables, don't exit program")
+        print("Creating tables")
         Base.metadata.create_all(engine)
     except Exception as err:
         print(err)
     print("Finished")
+
 
 if __name__ == '__main__':
     with open("assemblage/configure/coordinator_config.json") as f:

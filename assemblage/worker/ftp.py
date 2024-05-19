@@ -15,8 +15,10 @@ FTP_DEFAULT_PWD = "assemblage"
 
 logging.getLogger('pyftpdlib').setLevel(logging.WARNING)
 
+
 class AssemblageFtpSever:
     """ a FTP server for slog """
+
     def __init__(self, base_dir) -> None:
         self.base_dir = base_dir
         self.authorizer = DummyAuthorizer()
@@ -37,4 +39,5 @@ class AssemblageFtpSever:
 
     def add_user(self, username, pwd):
         """ add a user to ftp """
-        self.authorizer.add_user(username, pwd, self.base_dir, perm='elradfmwMT')
+        self.authorizer.add_user(
+            username, pwd, self.base_dir, perm='elradfmwMT')

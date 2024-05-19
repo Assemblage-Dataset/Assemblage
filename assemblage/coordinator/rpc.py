@@ -17,7 +17,7 @@ from assemblage.protobufs.assemblage_pb2 import RegisterResponse, RepoInfoRespon
 from assemblage.consts import BIN_DIR
 from assemblage.data.db import DBManager
 from assemblage.coordinator.convert import pack_bstatus_msg, unpack_repo_msg, pack_repo_msg, pack_worker_msg, \
-     pack_buildOpt_msg
+    pack_buildOpt_msg
 
 logging.basicConfig(level=logging.INFO)
 
@@ -32,19 +32,19 @@ class InfoService(AssemblageService):
     def queryRepo(self, request, _context):
         # pylint: disable=arguments-differ
         """ search repo info by repo name """
-        repo_name, repo_url = request.name.split(";")[0], request.name.split(";")[1]
+        repo_name, repo_url = request.name.split(
+            ";")[0], request.name.split(";")[1]
         opt_id = request.opt_id
         logging.info('query repo name contains %s %s', repo_name, repo_url)
         for repo in self.db_man.search_repo(
-            repo_name=repo_name,
-            repo_url=repo_url,
-            build_opt=opt_id):
+                repo_name=repo_name,
+                repo_url=repo_url,
+                build_opt=opt_id):
             repo = pack_repo_msg(repo)
             yield repo
 
     def failedRepo(self, request, _context):
         # pylint: disable=arguments-differ
-
         """ print all build failed repo """
         logging.info(">>>>>>>>>>>>>>>>>>>Logging Failed builds")
         for repo in self.db_man.find_repo_by_status(clone_status=3, build_status=request.name):
@@ -71,10 +71,8 @@ class InfoService(AssemblageService):
             rep.msg = "success"
         return rep
 
-
     def registWorker(self, request, _context):
         # pylint: disable=arguments-differ
-
         """ register a work into coordinator """
         compiler_ = request.type.split(";")[0]
         platform_ = request.type.split(";")[1]
@@ -147,7 +145,8 @@ class InfoService(AssemblageService):
         """
         print("COORDINATOR CALLING DB")
         self.db_man.insert_repos(unpack_repo_msg(request.requested_repo))
-        response = BuildResponse(is_successful=3, return_message='Successful', platform='linux')
+        response = BuildResponse(
+            is_successful=3, return_message='Successful', platform='linux')
 
         return response
 
@@ -239,13 +238,13 @@ class InfoService(AssemblageService):
             request.start_timestamp,
             request.end_timestamp)
         logging.info("%s, %s, %s", request.status,
-            request.start_timestamp,
-            request.end_timestamp)
+                     request.start_timestamp,
+                     request.end_timestamp)
         logging.info("%d found", len(repos))
         for r in repos:
             repo = pack_repo_msg(r)
             yield repo
-    
+
     def dumpSuccessStatus(self, request, _context):
         """
         dump all success build status
@@ -258,14 +257,13 @@ class InfoService(AssemblageService):
         for _b in b_status_list:
             b_status = pack_bstatus_msg(_b)
             yield b_status
-        
+
     # def restoreBstatus(self, request, _context):
     #     """
     #     Insert the b_status back to databse
     #     """
     #     logging.info("RPC restoreBstatus")
 
-        
     #     logging.info("%s, %s, %s", request.status,
     #         request.start_timestamp,
     #         request.end_timestamp)

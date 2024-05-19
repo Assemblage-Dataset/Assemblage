@@ -28,6 +28,14 @@ def find_elf_bin(path: str) -> set:
                 continue
     return file_paths
 
+def is_elf(path):
+    with open(path, 'rb') as f:
+        try:
+            ef = ELFFile(f)
+            if ef.header['e_type'] == 'ET_EXEC' or ef.header['e_type'] == 'ET_DYN':
+                return 1
+        except ELFError:
+            return 0
 
 if __name__ == '__main__':
     print(list(find_elf_bin('./')))
