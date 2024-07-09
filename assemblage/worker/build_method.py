@@ -18,7 +18,6 @@ import shutil
 import signal
 import json
 import ftplib
-import yaml
 import random
 import string
 import hashlib
@@ -26,7 +25,6 @@ import hashlib
 import boto3
 from botocore.exceptions import ClientError
 import requests
-from git import Repo
 
 from assemblage.worker.profile import AWSProfile
 from assemblage.consts import BuildStatus, PDBJSONNAME, BINPATH

@@ -40,7 +40,6 @@ build_msgs.txt
 
 # data
 *.csv
-*.json
 Pdbs/*
 Builds/*
 Binaries/*
@@ -51,3 +50,5 @@ dump_*
 *.txt
 *.out
 local_config/
+
+Binaries
