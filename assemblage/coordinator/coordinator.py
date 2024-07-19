@@ -146,36 +146,33 @@ class Coordinator:
                     build_opt_id=build_opt_id,
                     clone_status=BuildStatus.INIT,
                     build_status=BuildStatus.INIT,
-                    priority=1,
                     limit=1)
                 if len(tasks) == 0:
-                    tasks = db_man.find_status_by_status_code(
-                        build_opt_id=build_opt_id,
-                        clone_status=BuildStatus.INIT,
-                        build_status=BuildStatus.INIT,
-                        priority=0,
-                        limit=1)
-                if len(tasks) == 0:
-                    logging.info("No task to dispatch on %s", build_opt_id)
-                    time.sleep(1)
+                    logging.info("__dispatch_task thread %s Idle", build_opt_id)
+                    time.sleep(2)
                     continue
                 task = tasks[0]
                 uncloned_repo = db_man.find_repo_by_id(task.repo_id)
+                # if uncloned_repo.size < REPO_SIZE_THRESHOLD:
+                #     logging.info("Discard task %s size %s", task.repo_id, uncloned_repo.size)
+                #     continue
                 build_opt = db_man.find_build_opt_by_id(task.build_opt_id)
                 db_man.update_repo_status(
                     status_id=task.id, clone_status=BuildStatus.PROCESSING)
                 time_after_query = time.time()
                 repo_url = patch_url(uncloned_repo.url)
                 out_dir = f'{BIN_DIR}/{task.id}'
+                # os.makedirs(out_dir, exist_ok=True)
                 repo_url = patch_url(uncloned_repo.url)
                 out_dir = f'{BIN_DIR}/{task.id}'
                 clone_req = {'name': uncloned_repo.name, 'url': repo_url,
                              'task_id': task.id, 'opt_id': build_opt.id,
-                             'commit_hexsha': uncloned_repo.commit,
+                             #  'commit_hexsha': task.commit_hexsha,
                              'output_dir': out_dir,
                              'repo_id': uncloned_repo._id,
                              'updated_at': uncloned_repo.updated_at.strftime("%m/%d/%Y, %H:%M:%S"),
                              'build_system': uncloned_repo.build_system,
+                             #  also add timestamp when this messsage sent
                              'msg_time': time.time()}
                 if self.reproduce_mode:
                     clone_req["mod_timestamp"] = task.mod_timestamp
@@ -184,6 +181,7 @@ class Coordinator:
                     body=json.dumps(clone_req),
                     properties=pika.BasicProperties(delivery_mode=2))
                 waittime = max(0.1 - (time_after_query - time_before_query), 0)
+                # time.sleep(waittime)
                 if task_count % 10 == 0:
                     logging.info('Placed %sth task on build option %d, took %ss, next dispatch in %ss', task_count,
                                  task.build_opt_id, str(time_after_query - time_before_query)[:5], str(waittime)[:4])
@@ -385,12 +383,8 @@ class Coordinator:
             build_status=recv_msg['status'],
             build_msg=recv_msg['msg'][-500:],
             commit_hexsha=recv_msg['commit_hexsha'])
-        logging.info("BUILD task on buildopt %s updated to %s, updating subsequent tasks...",
-                     recv_msg['opt_id'], recv_msg['status'])
-        if recv_msg['status'] == BuildStatus.SUCCESS:
-            for task in db_man.find_status_by_repoid(task.repo_id):
-                db_man.update_repo_status(status_id=task.id,
-                                            priority=1)
+        logging.info("BUILD task on buildopt %s updated to %s\n%s",
+                     recv_msg['opt_id'], recv_msg['status'], " ".join(recv_msg['msg'].split())[-500:])
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
     def recv_clone_info(self, ch, method, _props, body):
@@ -443,7 +437,7 @@ class Coordinator:
         t_recycle_worker = threading.Thread(target=self.__recycle_clone)
         t_reboot_worker = threading.Thread(target=self.__reboot_worker)
         t_daemon = threading.Thread(target=self.__daemon)
-        logging.info("Threads created")
+        logging.info("Processes ready")
         t_clean_worker.start()
         t_clean_task.start()
         for t_dispatch in t_dispatch_list:

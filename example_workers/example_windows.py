@@ -14,39 +14,31 @@ import time
 import boto3
 
 from botocore.exceptions import ClientError
-from assemblage.consts import PDBJSONNAME, BINPATH, BuildStatus
+from assemblage.consts import PDBJSONNAME, BINPATH
 from assemblage.bootstrap import AssmeblageCluster
 from assemblage.worker.scraper import GithubRepositories
 from assemblage.worker.profile import AWSProfile
 from assemblage.worker.postprocess import PostAnalysis
-from assemblage.worker.build_method import BuildStartegy, DefaultBuildStrategy, cmd_with_output
+from assemblage.worker.build_method import BuildStartegy, DefaultBuildStrategy
 from assemblage.windows.parsers.proj import Project
 from assemblage.windows.parsers.sln import Solution
-from assemblage.worker.ctagswrap import get_functions
 
 time_now = int(time.time())
 start = time_now - time_now % 86400
 querylap = 1440000
 aws_profile = AWSProfile("assemblage-test", "assemblage")
 
-
 def post_processing_pdb(dest_binfolder, build_mode, library, repoinfo, toolset,
                         optimization, source_codedir="", commit="", movedir=""):
     """ Postprocess the pdb """
     bin_files = dia_list_binaries(dest_binfolder)
-    print(bin_files)
     outer_list = []
     func_cache = {}
-    print(movedir)
     if not os.path.isdir(movedir):
         os.makedirs(movedir)
-    print(209)
     for _, binfile in enumerate(bin_files):
         print("Moving", binfile, os.path.join(movedir, os.path.basename(binfile)))
         shutil.copy(binfile, os.path.join(movedir, os.path.basename(binfile)))
-        for f in os.listdir(os.path.dirname(binfile)):
-            if f.endswith(".pdb"):
-                shutil.copy(os.path.join(os.path.dirname(binfile), f), os.path.join(movedir, f))
 
         funcs_infos, lines_infos, source_file = dia_get_func_funcinfo(binfile, source_codedir)
         item_dict = {}
@@ -170,14 +162,40 @@ def post_processing_pdb(dest_binfolder, build_mode, library, repoinfo, toolset,
     shutil.move(os.path.join(dest_binfolder, PDBJSONNAME), movedir)
 
 
-def dia_get_func_funcinfo(binfile):
+
+def dia_get_func_funcinfo(binfile, source_code_prefix=""):
     """ Process the bin to get the info and function"""
-    binfile = binfile.replace("\\", "/")
-    cmd_args = [
-        "powershell", "-Command", "Dia2Dump", "-lines", "*", f"'{binfile}'"
-    ]
     file_cache = {}
-    out, _err, _exit_code = cmd_with_output(cmd_args, platform='windows')
+    if source_code_prefix:
+        for f in glob.glob(source_code_prefix + '/**/*', recursive=True):
+            if os.path.isfile(f) and ".git" not in f and len(os.path.basename(f))>3:
+                try:
+                    with open(f, 'r', encoding="utf-8") as source_f:
+                        assert os.path.basename(f).lower() not in file_cache.keys()
+                        file_cache[f] = source_f.readlines()
+                except Exception as e:
+                    try:
+                        with open(f, 'r', encoding="utf-16") as source_f:
+                            assert os.path.basename(f).lower() not in file_cache.keys()
+                            file_cache[f] = source_f.readlines()
+                    except Exception as e:
+                        pass
+
+    if len(file_cache.keys())<1:
+        return {}, {}, ""
+
+    # binfile = binfile.replace("/", "\\")
+    binfolder = os.path.dirname(binfile)
+    binfile = binfile.split("\\")[-1]
+    print("BINFILE", binfile, binfolder)
+    # cmd_args = [
+    #     "powershell", "-Command", "Dia2Dump", "-lines", "*", f"'{binfile}'"
+    # ]
+    cmd = f"Dia2Dump -lines * {binfile}"
+    out, _err, _exit_code = cmd_with_output(cmd, cwd=binfolder)
+    file_cache = {}
+    # out, _err, _exit_code = cmd_with_output(cmd_args, platform='windows')
+    # print(cmd, out, _err)
     try:
         lines_notclean = out.decode().split("\r\n")
     except:
@@ -186,11 +204,16 @@ def dia_get_func_funcinfo(binfile):
     lines = []
     for line in lines_notclean:
         lines.append(line.strip())
+
+    lines = []
+    for line in lines_notclean:
+        lines.append(line.strip())
     funcs_infos = {}
     rva_seg_length = 0
     dbg_seg_length = 0
     source_file = ""
     lines_infos = {}
+    file_hash_lookup = {}
     for i, line in enumerate(lines):
         lines_dict = {}
         if line.startswith("**"):
@@ -200,50 +223,42 @@ def dia_get_func_funcinfo(binfile):
             func_name_infoitem = {}
         if line.startswith("line"):
             if len(re.split(r"\w:\\", line)) == 2:
-                source_file = re.findall(r"\w:\\", line)[0] + re.split(
-                    r"\w:\\", line)[1]
-            rva = re.findall(r"at \[\w+\]",
-                             line)[0].replace("at ",
-                                              "").replace("[",
-                                                          "").replace("]", "")
-            length = int(
-                re.findall(r"len \= \w+", line)[0].replace("len = ", ""), 16)
-            line_number = int(
-                re.findall(r"line \d+", line)[0].replace("line ", ""), 16)
+                source_file = re.findall(r"\w:\\", line)[0] + re.split(r"\w:\\", line)[1]
+                if "MD5" in source_file:
+                    source_file_cleaned = source_file.split(" (MD5: ")[0]
+                    source_file_md5 = source_file.split(" (MD5: ")[1].replace(")", "")
+                    file_hash_lookup[source_file_cleaned.strip()]=source_file_md5
+                if "0x3" in source_file:
+                    source_file_cleaned = source_file.split(" (0x3: ")[0]
+                    source_file_md5 = source_file.split(" (0x3: ")[1].replace(")", "")
+                    file_hash_lookup[source_file_cleaned.strip()]=source_file_md5
+            rva = re.findall(r"at \[\w+\]", line)[0].replace("at ", "").replace("[", "").replace("]", "")
+            length = int(re.findall(r"len \= \w+", line)[0].replace("len = ", ""), 16)
+            line_number = int(re.findall(r"line \d+", line)[0].replace("line ", ""))
             lines_dict["line_number"] = line_number
             lines_dict["rva"] = rva
             lines_dict["length"] = length
             lines_dict["source_code"] = ""
-            try:
-                source_file_cleaned = source_file.split(" (")[0]
-            except Exception:
-                source_file_cleaned = source_file
             if source_file_cleaned not in file_cache.keys():
                 try:
-                    with open(source_file_cleaned, 'r') as source_f:
-                        file_cache[source_file_cleaned] = source_f.readlines()
-                except Exception as excep:
-                    file_cache[source_file_cleaned] = []
-            try:
-                lines_dict["source_code"] = file_cache[source_file_cleaned][line_number].strip(
-                )
-            except Exception as err:
-                lines_dict["source_code"] = ""
-            lines_dict["source_file"] = source_file_cleaned
+                    file_cache[source_file_cleaned] = open(source_file_cleaned, 'r', encoding="utf-8", errors="ignore").readlines()
+                except:
+                    file_cache[source_file_cleaned] = [""]
+            filecontent = file_cache[source_file_cleaned]
+            if len(filecontent)>line_number-1:
+                lines_dict["source_code"] = filecontent[line_number-1].strip()
+            
+            lines_dict["source_file"] = source_file
+
             if "rva_start" not in func_name_infoitem.keys():
                 func_name_infoitem["rva_start"] = rva
             if line_number > 10000000:
                 dbg_seg_length = dbg_seg_length + length
             rva_seg_length = rva_seg_length + length
-            if not lines[i + 1].startswith("line"):
+            if i+1<len(lines) and (not lines[i + 1].startswith("line")):
                 func_name_infoitem["rva_end"] = str(
                     hex(int(rva, 16) + int(length))).replace("0x", "").rjust(
                         len(rva), "0")
-                if rva_seg_length != 0:
-                    func_name_infoitem["debug_ratio"] = str(
-                        (dbg_seg_length / rva_seg_length) * 100)[:5] + "%"
-                else:
-                    func_name_infoitem["debug_ratio"] = "0%"
                 if func_name in funcs_infos.keys():
                     funcs_infos[func_name].append(func_name_infoitem)
                 else:
@@ -253,6 +268,7 @@ def dia_get_func_funcinfo(binfile):
             else:
                 lines_infos[func_name] = [lines_dict]
     return funcs_infos, lines_infos, source_file
+
 
 
 def dia_list_binaries(dest_binfolder):
@@ -270,10 +286,14 @@ def post_processing_compress(dest_binfolder, repo, build_opt, num):
     """ Compress the binary file """
     repo_fname = dest_binfolder.split("\\")[-1]
     zipname = str(repo["repo_id"])+"_"+str(build_opt)+"_"+str(num)
-    cmd = f"cd {BINPATH}/{repo_fname}&&7z a -r -tzip {zipname}.zip *"
-    out, _err, _exit_code = cmd_with_output(cmd, platform='windows')
+    if os.name == "nt":
+        cmd = f"cd {BINPATH}/{repo_fname}&&7z a -r -tzip {zipname}.zip *"
+        out, _err, _exit_code = cmd_with_output(cmd, platform='windows')
+    else:
+        cmd = f"cd {BINPATH}&&zip -r {zipname}.zip {repo_fname}"
+        out, _err, _exit_code = cmd_with_output(cmd, platform='linux')
+    logging.info("Compress output %s", zipname)
     return f"{zipname}.zip"
-
 
 def post_processing_s3(dest_url, file_location, aws_profile: AWSProfile):
     sesh = boto3.Session(profile_name=aws_profile.profile_name)
@@ -291,32 +311,34 @@ def post_processing_s3(dest_url, file_location, aws_profile: AWSProfile):
 
 def clean(folders, platform):
     """ Delete the dirs to free space """
-    for folder in folders:
-        folder_name_cleaned = os.path.abspath(folder)
-        try:
-            _out, _err, _exit_code = cmd_with_output(
-                f"DEL /F/Q/S {folder_name_cleaned}", platform='windows')
-            _out, _err, _exit_code = cmd_with_output(
-                f"RMDIR /Q/S {folder_name_cleaned}", platform='windows')
-            logging.info("Cleaned %s", folder_name_cleaned)
-        except subprocess.CalledProcessError as e:
-            logging.error("Clean err %s", e.output)
-        except UnicodeDecodeError:
-            logging.error("Clean UnicodeDecodeError")
-
+    if platform == 'windows':
+        for folder in folders:
+            folder_name_cleaned = os.path.abspath(folder)
+            try:
+                _out, _err, _exit_code = cmd_with_output(
+                    f"DEL /F/Q/S {folder_name_cleaned}", platform='windows')
+                _out, _err, _exit_code = cmd_with_output(
+                    f"RMDIR /Q/S {folder_name_cleaned}", platform='windows')
+                logging.info("Cleaned %s", folder_name_cleaned)
+            except subprocess.CalledProcessError as e:
+                logging.error("Clean err %s", e.output)
+            except UnicodeDecodeError:
+                logging.error("Clean UnicodeDecodeError")
+    elif platform == 'linux':
+        for folder in folders:
+            os.system(f"rm -rf {folder}")
 
 def get_build_system(_files):
     """Analyze build tool from file list"""
     return "sln"
-
 
 a_crawler = GithubRepositories(
     git_token="",
     qualifier={
         "language:c++",
         "topic:windows",
-    },
-    crawl_time_start=start,
+    }, 
+    crawl_time_start= start,
     crawl_time_interval=querylap,
     proxies=[],
     build_sys_callback=get_build_system
@@ -328,26 +350,25 @@ another_crawler = GithubRepositories(
         "language:c++",
         "topic:windows",
         # "stars:>10"
-    },
-    crawl_time_start=start,
+    }, 
+    crawl_time_start= start,
     crawl_time_interval=querylap,
     proxies=[],
     build_sys_callback=get_build_system
     # sort="stars", order="desc"
 )
 
-
 class WindowsDefaultStrategy(DefaultBuildStrategy):
 
     def pre_build(self, Platform,
-                  Buildmode,
-                  Target_dir,
-                  Optimization,
-                  _tmp_dir,
-                  VC_Version,
-                  Favorsizeorspeed="",
-                  Inlinefunctionexpansion="",
-                  Intrinsicfunctions=""):
+                        Buildmode,
+                        Target_dir,
+                        Optimization,
+                        _tmp_dir,
+                        VC_Version,
+                        Favorsizeorspeed="",
+                        Inlinefunctionexpansion="",
+                        Intrinsicfunctions=""):
         """ Modifying the build file to save flags """
         files = []
         for filename in glob.iglob(Target_dir + '**/**', recursive=True):
@@ -375,8 +396,7 @@ class WindowsDefaultStrategy(DefaultBuildStrategy):
                 if Favorsizeorspeed != "":
                     projobj.set_favorsizeorspeed(Favorsizeorspeed)
                 if Inlinefunctionexpansion != "":
-                    projobj.set_inlinefunctionexpansion(
-                        Inlinefunctionexpansion)
+                    projobj.set_inlinefunctionexpansion(Inlinefunctionexpansion)
                 if Intrinsicfunctions != "":
                     projobj.enable_intrinsicfunctions()
                 projobj.write()
@@ -391,7 +411,7 @@ class WindowsDefaultStrategy(DefaultBuildStrategy):
                 else:
                     optimization_mode = "Disabled"
                 logging.info("Read config: %s, correct: %s",
-                             projobj_saved.get_optimization(), optimization_mode)
+                            projobj_saved.get_optimization(), optimization_mode)
                 assert optimization_mode == projobj_saved.get_optimization()
         except FileNotFoundError:
             logging.error("Build File not exist")
@@ -406,39 +426,7 @@ class WindowsDefaultStrategy(DefaultBuildStrategy):
             return "Parsing file verification error", BuildStatus.FAILED, ""
         logging.info("Parsing success")
         return "Parsing success", BuildStatus.SUCCESS, slnfile
-
-    def run_build(self,
-                  repo,
-                  target_dir,
-                  build_mode,
-                  library,
-                  optimization,
-                  slnfile=None,
-                  platform='linux',
-                  compiler_version='v142'):
-        """ Generate cmd to execute """
-        cmd = ["powershell", "-Command", "msbuild"]
-        if build_mode in ["Release", "Debug"]:
-            cmd.append(f"/property:Configuration={build_mode}")
-        if library == "x86" or library == "x86":
-            cmd.append("/property:Platform=x86")
-        elif library == "x64":
-            cmd.append("/property:Platform=x64")
-        elif library == "Mixed Platforms":
-            cmd.append("/property:Platform='Mixed Platforms'")
-        elif library == "Any CPU":
-            cmd.append("/p:Platform=Any CPU")
-        # cmd.append(f"/p:PlatformToolset={compiler_version}")
-        if compiler_version in ["v140", "v141"]:
-            cmd.append("/p:WindowsTargetPlatformVersion= ")
-        cmd.append("/maxcpucount:16")
-        cmd.append("/property:PostBuildEvent= ")
-        cmd.append("/property:OutDir=assemblage_outdir_bin/")
-        cmd.append(f"'{slnfile}'")
-        cmd = " ".join(cmd)
-        logging.info("Windows cmd generated: %s", cmd)
-        return cmd_with_output(cmd, 600, platform)
-
+    
     def post_build_hook(self, dest_binfolder, build_mode, library, repoinfo, toolset,
                         optimization):
         """ Postprocess the pdb """
@@ -465,8 +453,7 @@ class WindowsDefaultStrategy(DefaultBuildStrategy):
                         rva_segs.append(
                             (info_dict["rva_start"], info_dict["rva_end"]))
                     rva_segs.sort()
-                    rva_len = int(rva_segs[-1][1], 16) - \
-                        int(rva_segs[0][0], 16)
+                    rva_len = int(rva_segs[-1][1], 16) - int(rva_segs[0][0], 16)
                     rva_gap = 0
                     for k in range(0, len(rva_segs) - 1):
                         rva_gap += int(rva_segs[k+1][0], 16) - \
@@ -493,27 +480,27 @@ class WindowsDefaultStrategy(DefaultBuildStrategy):
             #     json.dump(json_di, outfile, sort_keys=False, indent=4)
         except FileNotFoundError:
             logging.info("Pdbjsonfile not found")
-
+    
 
 test_cluster_windows = AssmeblageCluster(name="test"). \
-    build_system_analyzer(get_build_system). \
-    aws(aws_profile). \
-    message_broker(mq_addr="rabbitmq", mq_port=5672). \
-    mysql(). \
-    build_option(
-    100, platform="windows", language="c++",
-    compiler_name="v143",
-    compiler_flag="-Od",
-    build_command="Debug",
-    library="x64",
-    build_system="sln"). \
-    builder(
-    "windows", "msvc", 100, docker_image="",
-    custom_build_method=DefaultBuildStrategy(),
-    aws_profile=aws_profile
-). \
-    scraper([a_crawler, another_crawler]). \
-    use_new_mysql_local()
+                build_system_analyzer(get_build_system). \
+                aws(aws_profile). \
+                message_broker(mq_addr="rabbitmq", mq_port=5672). \
+                mysql(). \
+                build_option(
+                    100, platform="windows", language="c++",
+                    compiler_name="v143",
+                    compiler_flag="-Od",
+                    build_command="Debug",
+                    library="x64",
+                    build_system="sln"). \
+                builder(
+                    "windows", "msvc", 100, docker_image="",
+                    custom_build_method=DefaultBuildStrategy(),
+                    aws_profile= aws_profile
+                ). \
+                scraper([a_crawler, another_crawler]). \
+                use_new_mysql_local()
 
 
 test_cluster_windows.boot()

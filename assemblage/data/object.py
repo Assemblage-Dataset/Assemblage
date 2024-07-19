@@ -25,17 +25,19 @@ class Status(Base):
     _id = Column(Integer, primary_key=True, autoincrement=True,)
     # priority high: 2, mid: 1, low 0
     priority = Column(Integer, default=0, nullable=False, index=True)
-    # 0 : Normal 1 : Prioritized
+    # 0 : not started 1 : processing 2 : failed 3 : success 10 : command failed
     clone_status = Column(Integer, default=0)
     clone_msg = Column(String(length=255), default='')
     build_status = Column(Integer, default=0)
     build_msg = Column(Text, default='')
-    build_opt_id = Column(Integer, ForeignKey('buildopt._id', ondelete="CASCADE"))
+    build_opt_id = Column(Integer, ForeignKey(
+        'buildopt._id', ondelete="CASCADE"))
     repo_id = Column(Integer, ForeignKey("projects._id", ondelete="CASCADE"))
     mod_timestamp = Column(Integer, default=-1)
     build_time = Column(Integer, default=-1)
-    # commit_hexsha = Column(String(length=255), default='')
-    binaries = relationship('BuildDO', cascade="all, delete", passive_deletes=True)
+    commit_hexsha = Column(String(length=255), default='')
+    binaries = relationship(
+        'BuildDO', cascade="all, delete", passive_deletes=True)
 
     @property
     def id(self):
@@ -76,6 +78,7 @@ class BuildDO(Base):
     description = Column(Text, default='')
     build_date = Column(DateTime, default=datetime.datetime.utcnow)
     disasmed = Column(Boolean, default=False)
+
     status_id = Column(Integer, ForeignKey('b_status._id', ondelete="CASCADE"))
 
     def __repr__(self):
@@ -107,14 +110,12 @@ class RepoDO(Base):
     # priority high: 2, mid: 1, low 0
     priority = Column(Integer, default=0)
     size = Column(Integer, default=0)
-    commit = Column(String(length=16), default='')
     build_system = Column(String(length=255), default='', index=True)
-    reserved = Column(String(length=64), default='')
     statuses = relationship("Status", cascade="all, delete",
                             passive_deletes=True)
 
     def __repr__(self):
-        return f'Repo(id={self._id} ,name={self.name}, url={self.url}, head={self.commit})'
+        return f'Repo(id={self._id} ,name={self.name}, url={self.url})'
 
     @property
     def id(self):

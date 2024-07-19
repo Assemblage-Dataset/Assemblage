@@ -191,11 +191,11 @@ class DBManager:
                 for _r in result:
                     yield _r
 
-    def update_repo_status(self, url=None, opt_id=None, status_id=None, build_time=0,
+    def update_repo_status(self, url=None, opt_id=None, status_id=None, build_time=-1,
                            build_status=None, build_msg='', clone_status=None,
-                           clone_msg='', commit_hexsha='', priority=0):
+                           clone_msg='', commit_hexsha=''):
         """ update the build/clone status of a repo for one build option """
-        status_val = {'mod_timestamp': time.time(), 'build_time': time.time(), 'priority': priority}
+        status_val = {'mod_timestamp': time.time(), 'build_time': build_time}
         if build_status is None and clone_status is None:
             return
         if build_status is not None:
