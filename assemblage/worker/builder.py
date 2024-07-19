@@ -57,8 +57,7 @@ class Builder(BasicWorker):
                  ):
         super().__init__(rabbitmq_host, rabbitmq_port, rpc_stub, worker_type,
                          opt_id)
-        logging.info(
-            ">>>>>>>>>>>>>>>>>>>>>> Init worker <<<<<<<<<<<<<<<<<<<<<<<<<<<")
+        logging.info("Worker inited")
         self.compiler_version = compiler
         self.compiler_flag = compiler_flag
         self.library = library
@@ -248,8 +247,9 @@ class Builder(BasicWorker):
                 'status': kwarg['status'],
                 'msg': kwarg['msg'][-1000:],
                 'task_id': repo['task_id'],
-                'build_time': kwarg['build_time']
-                }
+                'build_time': kwarg['build_time'],
+                'commit_hexsha': kwarg['commit_hexsha']
+            }
         elif kind == 'binary':
             ret = {
                 'task_id': kwarg['task_id'],
@@ -314,6 +314,7 @@ class Builder(BasicWorker):
                             url=url,
                             status="3",
                             msg="Received and building",
+                            commit_hexsha=commit_hexsha,
                             build_time=1)    
             build_msg, build_status = self.build_strategy.run_build(
                 repo=task,
@@ -338,3 +339,35 @@ class Builder(BasicWorker):
         build_method.clean(folders, platform=self.platform)
         logging.debug("Worker %s finished %s at %s", self.uuid[:5], url,
                       datetime.datetime.now().strftime("%H:%M:%S"))
+
+
+class StandaloneBuilder:
+
+    def __init__(self, project, build_mode, optimization, cpuarch, compiler_version, build_strategy=DefaultBuildStrategy):
+        assert "url" in project
+        assert build_mode.lower() in ['debug', 'release']
+        assert optimization.lower() in ['o1', 'o2', 'o3', 'od', 'os', 'ox']
+        self.project = project
+        self.build_strategy = DefaultBuildStrategy()
+        self.cpuarch = cpuarch
+        self.build_mode = build_mode
+        self.optimization = optimization
+        self.compiler_version = compiler_version
+
+    def boot(self):
+        clone_dir = self.build_strategy.get_clone_dir(self.project)
+        self.build_strategy.clone_data(self.project)
+        self.build_strategy.pre_build(self.cpuarch,
+                    self.build_mode,
+                    clone_dir,
+                    self.optimization,
+                    os.urandom(4).hex(),
+                    self.compiler_version)
+        self.build_strategy.run_build(self.project,
+                clone_dir,
+                self.build_mode,
+                self.library,
+                self.optimization,
+                slnfile=None,
+                platform='windows',
+                compiler_version='v142')

@@ -317,13 +317,13 @@ class AssmeblageCluster:
                 df.write(t)
 
     def build_builder_image(self):
-        for bd in self.builder_configs:
-            os.system(f"docker build -t {bd['compiler']} -f "
-                      f" {os.getcwd()}/docker/{bd['compiler']}/Dockerfile {os.getcwd()}")
-        for pc in self.postprocessor_configs:
-            os.system(f"docker build -t {pc['name']} -f "
-                      f" {os.getcwd()}/docker/{pc['name']}/Dockerfile {os.getcwd()}")
-
+        if self.platform == "linux":
+            for bd in self.builder_configs:
+                os.system(f"docker build -t {bd['compiler']} -f "
+                        f" {os.getcwd()}/docker/{bd['compiler']}/Dockerfile {os.getcwd()}")
+            for pc in self.postprocessor_configs:
+                os.system(f"docker build -t {pc['name']} -f "
+                        f" {os.getcwd()}/docker/{pc['name']}/Dockerfile {os.getcwd()}")
 
     def generate_cluster_compose_file(self):
         script_name = os.path.basename(__main__.__file__)
@@ -446,7 +446,6 @@ class AssmeblageCluster:
                 logging.error("Buildopt %d not exists", builder_config['build_opt'])
                 exit()
             if os.name == 'nt':
-                # FIXME: fix Windows
                 from assemblage.consts import BUILDPATH
                 while 1:
                     worker = Builder(
