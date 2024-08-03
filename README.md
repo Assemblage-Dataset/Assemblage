@@ -6,7 +6,7 @@ You can now find our paper on [arxiv](https://arxiv.org/abs/2405.03991)
 
 ## Deployment and Dataset Availability
 
-A brief introduction to the APIs is provided at this [link](assemblage/README.md#workers-api-and-deployment), and deployment instructions can be found [here](https://assemblagedocs.readthedocs.io/en/latest/deployment.html)
+A brief introduction to the APIs and deployment can be found [here](https://assemblagedocs.readthedocs.io/)
 
 We include __**only**__ the subset of binaries for which permissive licenses can be ascertained, please checkout our [data sheet](https://assemblage-dataset.net/assets/total-datasheet.pdf).   
 For up to date info and download, please visit the [dataset page](https://assemblagedocs.readthedocs.io/en/latest/dataset.html)
