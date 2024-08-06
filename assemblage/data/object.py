@@ -107,6 +107,7 @@ class RepoDO(Base):
     updated_at = Column(
         DateTime, default=datetime.datetime(1970, 1, 1, 0, 0, 1))
     forked_commit_id = Column(Integer, default=0)
+    branch = Column(String(length=16), default='master')
     # priority high: 2, mid: 1, low 0
     priority = Column(Integer, default=0)
     size = Column(Integer, default=0)
@@ -137,18 +138,9 @@ def init_clean_database(db_str):
         RepoDO.__table__.drop(engine)
         BuildOpt.__table__.drop(engine)
     except Exception as err:
-        print(err)
-    try:
-        if not database_exists(db_str):
-            create_database(db_str)
-    except Exception as err:
-        print(err)
-    try:
-        print("Creating tables, don't exit program")
-        Base.metadata.create_all(engine)
-    except Exception as err:
-        print(err)
-    print("Finished")
+        pass
+    print("Creating tables")
+    Base.metadata.create_all(engine)
 
 
 if __name__ == '__main__':

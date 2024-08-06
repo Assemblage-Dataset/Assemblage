@@ -33,6 +33,7 @@ from assemblage.windows.parsers.proj import Project
 from assemblage.windows.parsers.sln import Solution
 from assemblage.analyze.analyze import get_build_system
 from assemblage.worker.ctags import get_functions
+from typing import Tuple
 
 logging.basicConfig(level=logging.INFO)
 
@@ -72,10 +73,17 @@ def cmd_with_output(cmd, timelimit=60, platform='linux', cwd=''):
                     os.killpg(os.getpgid(process.pid), signal.SIGTERM)
                 return b"subprocess.TimeoutExpired", b"subprocess.TimeoutExpired", 1
 
+def clean(folders):
+    """ Clean the folders, may not be empty """
+    for folder in folders:
+        if os.path.exists(folder):
+            shutil.rmtree(folder, ignore_errors=False, onerror=None)
+            
+
 class BuildStartegy:
 
     @abstractclassmethod
-    def clone_data(self, repo) -> tuple[bytes, int, str]:
+    def clone_data(self, repo) -> Tuple[bytes, int, str]:
         """
         callback function of how a repository is cloned to local
         TODO: add definition of repo here
@@ -87,7 +95,7 @@ class BuildStartegy:
 
     @abstractclassmethod    
     def run_build(self, repo, target_dir, build_mode, library, optimization, slnfile,
-                  platform, compiler_version) -> tuple[bytes, bytes, int]:
+                  platform, compiler_version) -> Tuple[bytes, bytes, int]:
         """ callback function to build command, return...."""
 
     
@@ -100,7 +108,7 @@ class BuildStartegy:
                     VC_Version,
                     Favorsizeorspeed="",
                     Inlinefunctionexpansion="",
-                    Intrinsicfunctions="") -> tuple[bytes, int, str]:
+                    Intrinsicfunctions="") -> Tuple[bytes, int, str]:
         """
         pre processing hook
         return:
