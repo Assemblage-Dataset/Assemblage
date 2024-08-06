@@ -126,7 +126,7 @@ class AssmeblageCluster:
         return self
 
     def builder(self, platform="linux", compiler="gcc", build_opt=0,
-                docker_image="assemblage-gcc:default",
+                docker_image="assemblage-gh:base",
                 blacklist=[
                     "linux", "llvm-mirror", "llvm",
                     "llvm-project", "git", "php-src",
@@ -199,9 +199,7 @@ class AssmeblageCluster:
     def _prepare_gh(self):
         os.system("docker pull stargazermiao/assemblage-gh")
         os.system("docker tag stargazermiao/assemblage-gh assemblage-gh:base")
-        print("Assemblage gh image not found")
         os.system('sh pre_build.sh')
-        input("About to stop rabbitmq!")
         os.system("docker stop rabbitmq && docker rm rabbitmq")
 
     def _build_coordinator_image(self):

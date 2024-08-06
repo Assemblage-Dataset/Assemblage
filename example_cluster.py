@@ -101,7 +101,6 @@ test_cluster_c = AssmeblageCluster(name="sample"). \
                     build_system="all"). \
                 builder(
                     platform="linux", compiler="gcc", build_opt=1,
-                    docker_image="assemblage-gcc:base",
                     custom_build_method=SampleBuild(),
                     aws_profile= aws_profile). \
                 use_new_mysql_local()

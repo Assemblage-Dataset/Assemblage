@@ -339,7 +339,7 @@ class Builder(BasicWorker):
                 folders.append(os.path.join(self.bin_dir, dest_binfolder))
         else:
             logging.info("Clone FAILURE %s: %s", url, clone_msg)
-        build_method.clean(folders, platform=self.platform)
+        build_method.clean(folders)
         logging.debug("Worker %s finished %s at %s", self.uuid[:5], url,
                       datetime.datetime.now().strftime("%H:%M:%S"))
 
