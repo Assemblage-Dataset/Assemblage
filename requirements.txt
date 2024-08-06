@@ -7,20 +7,11 @@ cycler==0.10.0
 Deprecated==1.2.13
 future==0.18.2
 glob2==0.7
-greenlet==1.1.2
-grpcio==1.41.1
-grpcio-tools==1.41.1
-idna==3.3
-kiwisolver==1.3.2
-matplotlib==3.4.3
-numpy==1.21.3
-pandas==1.3.4
 pefile==2021.9.3
 pika==1.2.0
 Pillow==8.4.0
 plotext==3.1.3
 prettytable==2.2.1
-prompt-toolkit==3.0.21
 protobuf==3.19.0
 pycparser==2.20
 pyelftools==0.27
@@ -50,4 +41,5 @@ google-api-python-client
 google-auth-httplib2
 google-auth-oauthlib
 GitPython==3.1.27
-PyYaml==5.4.1
+PyYaml
+grpcio

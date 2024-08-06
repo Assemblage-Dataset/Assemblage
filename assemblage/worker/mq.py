@@ -61,7 +61,7 @@ class MessageClient:
         '''
         send message into the queue with name `kind`
         '''
-        logging.info("Sending %s", msg)
+        logging.info("MQ queued length %s", len(msg))
         try:
             self.channel.basic_publish(exchange=exchange,
                                    routing_key=kind,

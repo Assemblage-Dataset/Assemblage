@@ -11,18 +11,7 @@ services:
     deploy:
       restart_policy:
         condition: on-failure
-    image: gclang
-    volumes:
-    - shared-data:/binaries
-  builder_1:
-    command: python3 /assemblage/example_cluster.py --type builder --id 1
-    depends_on:
-    - rabbitmq
-    - coordinator
-    deploy:
-      restart_policy:
-        condition: on-failure
-    image: gclang
+    image: gcc
     volumes:
     - shared-data:/binaries
   coordinator:
@@ -35,17 +24,6 @@ services:
     image: assemblage-gcc:default
     ports:
     - 50052:50052
-    volumes:
-    - shared-data:/binaries
-  postprocessor_0:
-    command: python3 /assemblage/example_cluster.py --type postprocessor --id 0
-    depends_on:
-    - rabbitmq
-    - coordinator
-    deploy:
-      restart_policy:
-        condition: on-failure
-    image: function_boundary
     volumes:
     - shared-data:/binaries
   rabbitmq:
