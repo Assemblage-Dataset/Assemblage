@@ -55,7 +55,7 @@ class VcpkgBuild(BuildStartegy):
     def is_valid_binary(self, binary_path) -> bool:
         return binary_path.lower().endswith("exe") or binary_path.lower().endswith("dll") or binary_path.lower().endswith("pdb")  
 
-    def clone_data(self, repo) -> tuple[bytes, int, str]:
+    def clone_data(self, repo) -> Tuple[bytes, int, str]:
         """ vcpkg don't need clone, pass the final result dir as clone dir """
         # vcpkg packge name is also stored in 'url' because of scraper code
         dest_path = f"Builds/{repo['url']}"

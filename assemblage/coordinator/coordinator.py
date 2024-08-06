@@ -21,7 +21,7 @@ from assemblage.protobufs.assemblage_pb2_grpc import add_AssemblageServiceServic
 
 from assemblage.coordinator.rpc import InfoService
 from assemblage.data.db import DBManager
-
+from collections import Counter
 from assemblage.consts import AWS_AUTO_REBOOT_PREFIX, BIN_DIR, TASK_TIMEOUT_THRESHOLD, WORKER_TIMEOUT_THRESHOLD, BuildStatus, REPO_SIZE_THRESHOLD
 
 formatter = logging.Formatter("%(asctime)s %(levelname)s:%(message)s",
@@ -349,6 +349,7 @@ class Coordinator:
             logging.debug("%s inserted err", recv_msg[-1]['url'])
         db_man.shutdown()
         after_time = time.time()
+        logging.info("Build system counter %s", Counter(x['build_system'] for x in recv_msg))
         logging.info("Saved %s/%s in %ss", successes,
                      len(recv_msg), int(after_time-prev_time))
 

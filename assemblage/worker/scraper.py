@@ -140,64 +140,62 @@ class GithubRepositories(DataSource):
             self.queries = 0
 
     def _process_repo_message(self, repo):
+        time.sleep(5)
+        url = repo["url"]
+        self.query_limit()
+        # Avoid secondary rate limit
+        default_branch = repo["default_branch"]
         try:
-            url = repo["url"]
-            self.query_limit()
-            # Avoid secondary rate limit
-            default_branch = repo["default_branch"]
-            try:
+            page = requests.get(url + f"/git/trees/{default_branch}",
+                                auth=("", self.token), proxies=self.random_proxy(), timeout=10)
+            if "secondary rate limit" in page.text:
+                logging.info(page.text.replace("\n", ""))
+                time.sleep(120)
                 page = requests.get(url + f"/git/trees/{default_branch}",
                                     auth=("", self.token), proxies=self.random_proxy(), timeout=10)
-                if "secondary rate limit" in page.text:
-                    logging.info(page.text.replace("\n", ""))
-                    time.sleep(120)
-                    page = requests.get(url + f"/git/trees/{default_branch}",
-                                        auth=("", self.token), proxies=self.random_proxy(), timeout=10)
-                elif "rate limit" in page.text:
-                    logging.info("Crawler %s rate limit, sleep %ss", self.workerid,
-                                    self.token_checker.rate_reset("", self.token))
-                    time.sleep(
-                        self.token_checker.rate_reset("", self.token))
-                    page = requests.get(url + f"/git/trees/{default_branch}",
-                                        auth=("", self.token), proxies=self.random_proxy(), timeout=10)
-            except Exception as err:
-                logging.info(err)
-                return None, None
-            repo_page = json.loads(page.text)
-            files_list = []
-            files = []
-            if "tree" in repo_page.keys():
-                files_list = repo_page["tree"]
-            else:
-                return None, None
-            for record in files_list:
-                if "path" in record.keys():
-                    files.append(record["path"])
-            build_tool = self.build_sys_callback(files)
-            # logging.info("Crawler got %s, %s in pool", build_tool, len(self.repocache))
-            name = repo["name"]
-            url = repo["url"]
-            language = repo["language"]
-            owner_id = repo["owner"]["id"]
-            description = repo["description"] or ""
-            created_at = github_time_to_mysql_time(repo["created_at"])
-            updated_at = github_time_to_mysql_time(repo["pushed_at"])
-            size = int(repo['size'])
-            return {
-                'name': name,
-                'url': url,
-                'language': language,
-                'owner_id': owner_id,
-                'description': description[:200],
-                'created_at': created_at,
-                'updated_at': updated_at,
-                'size': size,
-                'build_system': build_tool,
-                # 'branch': repo["default_branch"]
-            }, files
+            elif "rate limit" in page.text:
+                logging.info("Crawler %s rate limit, sleep %ss", self.workerid,
+                                self.token_checker.rate_reset("", self.token))
+                time.sleep(
+                    self.token_checker.rate_reset("", self.token))
+                page = requests.get(url + f"/git/trees/{default_branch}",
+                                    auth=("", self.token), proxies=self.random_proxy(), timeout=10)
         except Exception as err:
             logging.info(err)
             return None, None
+        repo_page = json.loads(page.text)
+        files_list = []
+        files = []
+        if "tree" in repo_page.keys():
+            files_list = repo_page["tree"]
+        else:
+            return None, None
+        for record in files_list:
+            if "path" in record.keys():
+                files.append(record["path"])
+        build_tool = self.build_sys_callback(files)
+        # logging.info("Crawler got %s, %s in pool", build_tool, len(self.repocache))
+        name = repo["name"]
+        url = repo["url"]
+        language = repo["language"]
+        owner_id = repo["owner"]["id"]
+        description = repo["description"] or ""
+        created_at = github_time_to_mysql_time(repo["created_at"])
+        updated_at = github_time_to_mysql_time(repo["pushed_at"])
+        size = int(repo['size'])
+        return {
+            'name': name,
+            'url': url,
+            'language': language,
+            'owner_id': owner_id,
+            'description': description[:200],
+            'created_at': created_at,
+            'updated_at': updated_at,
+            'size': size,
+            'build_system': build_tool,
+            'branch': repo["default_branch"]
+        }, files
+
 
     def fetch_data(self):
         crawl_time = self.crawl_time_start
@@ -242,10 +240,9 @@ class GithubRepositories(DataSource):
                                      payload['page'], time_start[:-7], total_count)
                         repos_per_page = rdict["items"]
                         for repo in repos_per_page:
-                            # FIXME: remove this
-                            time.sleep(5)
+                            logging.info("Crawler got %s", repo["name"])
                             dt, fs = self._process_repo_message(repo)
-                            if not dt and not fs:
+                            if dt and fs:
                                 yield dt, fs
                 except Exception as err:
                     logging.info(err)

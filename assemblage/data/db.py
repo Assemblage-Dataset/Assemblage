@@ -18,7 +18,7 @@ from sqlalchemy.sql import Insert
 
 from assemblage.data.object import BuildDO, BuildOpt, RepoDO, Status
 from assemblage.consts import BuildStatus, SUPPORTED_LANGUAGE
-
+from typing import Tuple
 
 @compiles(Insert, "mysql")
 def mysql_upsert(insert, compiler, **kw):
@@ -213,7 +213,7 @@ class DBManager:
             session.execute(update_stmt)
             session.commit()
 
-    def query_repo_info(self, command: str) -> tuple:
+    def query_repo_info(self, command: str) -> Tuple:
         """
         find total cloned repos or total build
         """

@@ -27,7 +27,8 @@ from assemblage.worker.scraper import DataSource, Scraper
 from assemblage.worker.builder import Builder
 from assemblage.worker.profile import AWSProfile
 from assemblage.worker.postprocess import PostAnalysis, PostProcessor
-
+from assemblage.worker.build_method import cmd_with_output
+from sqlalchemy_utils import database_exists
 
 class AssmeblageCluster:
 
@@ -125,7 +126,7 @@ class AssmeblageCluster:
         return self
 
     def builder(self, platform="linux", compiler="gcc", build_opt=0,
-                docker_image="assemblage-gcc:default",
+                docker_image="assemblage-gh:base",
                 blacklist=[
                     "linux", "llvm-mirror", "llvm",
                     "llvm-project", "git", "php-src",
@@ -198,31 +199,32 @@ class AssmeblageCluster:
     def _prepare_gh(self):
         os.system("docker pull stargazermiao/assemblage-gh")
         os.system("docker tag stargazermiao/assemblage-gh assemblage-gh:base")
-        print("Assemblage gh image not found")
         os.system('sh pre_build.sh')
-        input("About to stop rabbitmq!")
         os.system("docker stop rabbitmq && docker rm rabbitmq")
 
     def _build_coordinator_image(self):
         os.system('sh build.sh')
 
     def _boot_mysql(self):
-        os.system("docker pull mysql/mysql-server")
-        os.system("docker container stop mysql&&docker container rm mysql")
-        os.system(f"docker run --name=mysql -p 3306:3306 --network={self.docker_network_name} -e MYSQL_ROOT_PASSWORD=assemblage -d mysql/mysql-server")
-        print("Booting mysql...")
-        print("docker exec -i mysql mysql -u root -passemblage <"
-                  f" {os.getcwd()}/assemblage/data/default_user.sql")
-        time.sleep(15)
-        os.system("docker exec -i mysql mysql -u root -passemblage <"
-                  f" {os.getcwd()}/assemblage/data/default_user.sql")
-        # time.sleep(10)
-        # all default
+        cmds = []
+        cmds.append("docker pull mysql/mysql-server")
+        cmds.append("docker container stop mysql&&docker container rm mysql")
+        cmds.append(f"docker run --name=mysql -p 3306:3306 --network={self.docker_network_name} -e MYSQL_ROOT_PASSWORD=assemblage -d mysql/mysql-server")
+        for cmd in cmds:
+            os.system(cmd)
+        
+        out, err, exitcode=cmd_with_output("docker exec mysql mysql -u root -passemblage")
+        while "2002" in out.decode() or "2002" in err.decode():
+            print("MySQL initing, waiting for 5 seconds")
+            time.sleep(5)
+            out, err, exitcode=cmd_with_output("docker exec mysql mysql -u root -passemblage")
+        os.system(f"docker exec -i mysql mysql -u root -passemblage < {os.getcwd()}/assemblage/data/init.sql")
         mysql_conn_str = f'mysql+pymysql://{self.db_username}:{self.db_password}@{self.db_addr}/{self.db_name}?charset=utf8mb4'
         mysql_conn_str_local = f'mysql+pymysql://{self.db_username}:{self.db_password}@localhost:3306/{self.db_name}?charset=utf8mb4'
-        print(mysql_conn_str_local)
+        assert database_exists(mysql_conn_str_local)
         if self.db_init_flag:
             init_clean_database(mysql_conn_str_local)
+        print("DB inited")
         # wirte mysql configure
         self.coordinator_config["db_path"] = mysql_conn_str
         self.coordinator_config["cluster_name"] = self.name
@@ -263,7 +265,7 @@ class AssmeblageCluster:
         return standard_keys == repokeys
 
     def _init_docker_network(self):
-        os.system(f"docker network create {self.docker_network_name}")
+        cmd_with_output(f"docker network create {self.docker_network_name}")
         return
 
     def _init_db(self):
@@ -307,8 +309,7 @@ class AssmeblageCluster:
     def generate_docker_file(self, name, base_image):
         """ generate dockerfile for a builder """
         base_dir = os.getcwd()
-        bname = name
-        docker_dir = f"{base_dir}/docker/{bname}"
+        docker_dir = f"{base_dir}/docker/{name}"
         if not os.path.exists(docker_dir):
             os.mkdir(docker_dir)
         with open(f"{base_dir}/docker/template") as tf:
@@ -317,13 +318,12 @@ class AssmeblageCluster:
                 df.write(t)
 
     def build_builder_image(self):
-        if self.platform == "linux":
-            for bd in self.builder_configs:
-                os.system(f"docker build -t {bd['compiler']} -f "
-                        f" {os.getcwd()}/docker/{bd['compiler']}/Dockerfile {os.getcwd()}")
-            for pc in self.postprocessor_configs:
-                os.system(f"docker build -t {pc['name']} -f "
-                        f" {os.getcwd()}/docker/{pc['name']}/Dockerfile {os.getcwd()}")
+        for bd in self.builder_configs:
+            os.system(f"docker build -t {bd['compiler']} -f "
+                    f" {os.getcwd()}/docker/{bd['compiler']}/Dockerfile {os.getcwd()}")
+        for pc in self.postprocessor_configs:
+            os.system(f"docker build -t {pc['name']} -f "
+                    f" {os.getcwd()}/docker/{pc['name']}/Dockerfile {os.getcwd()}")
 
     def generate_cluster_compose_file(self):
         script_name = os.path.basename(__main__.__file__)
