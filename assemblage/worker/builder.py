@@ -309,13 +309,15 @@ class Builder(BasicWorker):
             platform = self.library
             if 'commit_hexsha' in task:
                 commit_hexsha = task['commit_hexsha']
+            else:
+                commit_hexsha = ""
             self.send_msg(repo=task,
                             kind='build',
                             url=url,
                             status="3",
                             msg="Received and building",
                             commit_hexsha=commit_hexsha,
-                            build_time=1)    
+                            build_time=1)
             build_msg, build_status = self.build_strategy.run_build(
                 repo=task,
                 target_dir=clone_dir,
@@ -323,7 +325,8 @@ class Builder(BasicWorker):
                 library=self.library,
                 build_mode=build_mode,
                 optimization=compiler_flag,
-                platform=self.platform
+                platform=self.platform,
+                slnfile=None,
             )
             after_build_time = int(time.time())
             logging.info("Build exit %s", build_msg.replace("\n", " "))

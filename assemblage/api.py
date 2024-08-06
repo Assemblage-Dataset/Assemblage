@@ -1,4 +1,3 @@
-
 from assemblage.bootstrap import AssmeblageCluster
 from assemblage.consts import BuildStatus
 from assemblage.worker.scraper import GithubRepositories, DataSource
