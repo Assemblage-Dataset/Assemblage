@@ -429,10 +429,8 @@ class WindowsDefaultStrategy(DefaultBuildStrategy):
         return funcs_infos, lines_infos, source_file
 
 
-
-
     def post_build_hook(self, dest_binfolder, build_mode, library, repoinfo, toolset,
-                        optimization):
+                        optimization, commit_hexsha):
         """ Postprocess the pdb """
         bin_files = self.dia_list_binaries(dest_binfolder)
         outer_list = []

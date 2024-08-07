@@ -150,7 +150,7 @@ class AssmeblageCluster:
         })
         return self
 
-    def scraper(self, data_resources: List[DataSource], node_memory="20480M"):
+    def scraper(self, data_resources: List[DataSource], node_memory="2048M"):
         """ declare a scraper with given data resource """
         self.scraper_configs.append({
             "data_sources": data_resources,
@@ -200,7 +200,6 @@ class AssmeblageCluster:
         os.system("docker pull stargazermiao/assemblage-gh")
         os.system("docker tag stargazermiao/assemblage-gh assemblage-gh:base")
         os.system('sh pre_build.sh')
-        os.system("docker stop rabbitmq && docker rm rabbitmq")
 
     def _build_coordinator_image(self):
         os.system('sh build.sh')
@@ -374,7 +373,7 @@ class AssmeblageCluster:
             services_dict[f"builder_{i}"] = {
                 "image": bd['compiler'],
                 "command": f"python3 /assemblage/{script_name} --type builder --id {i}",
-                "volumes": ["shared-data:/binaries"],
+                "volumes": ["./binaries:/binaries"],
                 "depends_on": ["rabbitmq", "coordinator"],
                 "deploy": {
                     # "resources": {
@@ -411,7 +410,14 @@ class AssmeblageCluster:
                 "default": {"external": {"name": self.docker_network_name}}
             },
             "volumes": {
-                "shared-data": None
+                "shared-data": {
+                    "driver": "local",
+                    "driver_opts": {
+                        "type": "none",
+                        "device": "${PWD}/binaries",
+                        "o" : "bind"
+                    }
+                }
             }
         }
         with open("docker-compose.yml", "w+") as yf:
@@ -535,6 +541,10 @@ class AssmeblageCluster:
                 self._prepare_gh()
             self._build_coordinator_image()
             self.build_builder_image()
+            print("Docker images built, please run `docker compose up` to start cluster")
+            print("There is default folder binaries that mapped to the container for builders which may be useful")
+            if not os.path.exists("binaries"):
+                os.mkdir("binaries")
             return
         elif node_type.strip() == "coordinator":
             self._run_coordinator()

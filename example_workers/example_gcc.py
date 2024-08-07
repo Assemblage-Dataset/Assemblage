@@ -81,9 +81,7 @@ class SampleBuild(BuildStartegy):
 
     def post_build_hook(self, dest_binfolder, build_mode, library, repoinfo, toolset,
                         optimization, commit_hexsha):
-        logging.info(os.listdir(dest_binfolder))
-        logging.info("Maybe move files to some Docker mapped volume")
-        os.system(f"mv {dest_binfolder} /binaries/{repoinfo['name']}")
+        print(os.listdir(dest_binfolder))
 
 test_cluster_c = AssmeblageCluster(name="sample"). \
                 aws(aws_profile). \
@@ -93,12 +91,12 @@ test_cluster_c = AssmeblageCluster(name="sample"). \
                 scraper([github_c_repos]). \
                 build_option(
                     1, platform="linux", language="c++", 
-                    compiler_name="clang",
+                    compiler_name="gcc",
                     build_system="all"). \
                 builder(
-                    platform="linux", compiler="clang", build_opt=1,
+                    platform="linux", compiler="gcc", build_opt=1,
                     custom_build_method=SampleBuild(),
-                    aws_profile= aws_profile)
-                # use_new_mysql_local()
+                    aws_profile= aws_profile). \
+                use_new_mysql_local()
 
 test_cluster_c.boot()
