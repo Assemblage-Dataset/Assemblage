@@ -53,6 +53,7 @@ class DataSource(object):
         self.build_sys_callback = build_sys_callback
         # TODO: remove this hard coded path
         self.record_file = "/binaries/crawled.json"
+        self.workerud = os.urandom(4).hex()
 
     @abstractclassmethod
     def fetch_data(self):
@@ -119,6 +120,7 @@ class GithubRepositories(DataSource):
         self.sort = sort
         self.order = order
         self.queries = 0
+        self.workerid = os.urandom(4).hex()
         if "" not in self.proxies:
             self.proxies.append("")
 

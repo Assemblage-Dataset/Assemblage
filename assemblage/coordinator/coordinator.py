@@ -148,12 +148,12 @@ class Coordinator:
                     build_status=BuildStatus.INIT,
                     limit=1)
                 if len(tasks) == 0:
-                    logging.info("__dispatch_task thread %s Idle", build_opt_id)
-                    time.sleep(2)
+                    logging.info("Dispatch thread on build option %s idle", build_opt_id)
+                    time.sleep(5)
                     continue
                 task = tasks[0]
                 uncloned_repo = db_man.find_repo_by_id(task.repo_id)
-                # if uncloned_repo.size < REPO_SIZE_THRESHOLD:
+                # if uncloned_repo.size < REPO_SIZƒE_THRESHOLD:
                 #     logging.info("Discard task %s size %s", task.repo_id, uncloned_repo.size)
                 #     continue
                 build_opt = db_man.find_build_opt_by_id(task.build_opt_id)
