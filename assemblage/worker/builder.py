@@ -330,13 +330,12 @@ class Builder(BasicWorker):
             )
             after_build_time = int(time.time())
             logging.info("Build exit %s", build_msg.replace("\n", " "))
-            if build_status == BuildStatus.SUCCESS:
-                dest_binfolder = clone_dir
-                self.build_strategy.post_build_hook(dest_binfolder,
-                                            build_mode, platform,
-                                            task, compiler_version,
-                                            compiler_flag, commit_hexsha)
-                folders.append(os.path.join(self.bin_dir, dest_binfolder))
+            self.build_strategy.post_build_hook(clone_dir,
+                                        build_mode, platform,
+                                        task, compiler_version,
+                                        compiler_flag, commit_hexsha)
+            logging.info("Post build hook done")
+            folders.append(clone_dir)
         else:
             logging.info("Clone FAILURE %s: %s", url, clone_msg)
         build_method.clean(folders)

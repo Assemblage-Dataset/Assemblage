@@ -11,9 +11,9 @@ services:
     deploy:
       restart_policy:
         condition: on-failure
-    image: gcc
+    image: clang
     volumes:
-    - shared-data:/binaries
+    - ./binaries:/binaries
   coordinator:
     command: python3  /assemblage/example_cluster.py --type  coordinator
     depends_on:
@@ -41,7 +41,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 20480M
+          memory: 2048M
       restart_policy:
         condition: on-failure
     image: assemblage-gcc:default
@@ -49,4 +49,9 @@ services:
     - shared-data:/binaries
 version: '3'
 volumes:
-  shared-data: null
+  shared-data:
+    driver: local
+    driver_opts:
+      device: ${PWD}/binaries
+      o: bind
+      type: none

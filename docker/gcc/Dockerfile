@@ -5,15 +5,9 @@ RUN apt-get update && apt-get -y upgrade
 
 RUN DEBIAN_FRONTEND="noninteractive" apt-get -y install tzdata
 
-RUN apt-get -y update && apt-get install -y make build-essential libssl-dev zlib1g-dev libbz2-dev \
-        libreadline-dev libsqlite3-dev wget ca-certificates curl llvm libncurses5-dev \
-        xz-utils tk-dev libxml2-dev libxmlsec1-dev libffi-dev liblzma-dev \
-        mecab-ipadic-utf8 git libboost-all-dev cmake flex bison libzmq3-dev \
-        autoconf libtool pkg-config libc++-dev libc++abi-dev bundler automake \
-        g++ unzip
-
 # set up grpc
 # ENV GRPC_RELEASE_TAG v1.12.x
+RUN rm -rf /var/local/git/grpc
 RUN git clone https://github.com/grpc/grpc /var/local/git/grpc --recurse-submodules && \
     cd /var/local/git/grpc && \
     git submodule update --init && \
@@ -26,13 +20,6 @@ RUN git clone https://github.com/grpc/grpc /var/local/git/grpc --recurse-submodu
 
 ENV PYENV_ROOT /root/.pyenv
 ENV PATH $PYENV_ROOT/shims:$PYENV_ROOT/bin:$PATH
-
-RUN set -ex \
-    && curl https://pyenv.run | bash \
-    && pyenv update \
-    && pyenv install $PYTHON_VERSION \
-    && pyenv global $PYTHON_VERSION \
-    && pyenv rehash
 
 RUN apt-get -y update && DEBIAN_FRONTEND="noninteractive" apt-get install -y rebar \
                 libhdf5-dev exuberant-ctags postgresql postgresql-server-dev-all \
