@@ -120,8 +120,7 @@ def dia_get_func_funcinfo(binfile):
                                                           "").replace("]", "")
             length = int(
                 re.findall(r"len \= \w+", line)[0].replace("len = ", ""), 16)
-            line_number = int(
-                re.findall(r"line \d+", line)[0].replace("line ", ""), 16)
+            line_number = int(re.findall(r"line \d+", line)[0].replace("line ", ""))
             lines_dict["line_number"] = line_number
             lines_dict["rva"] = rva
             lines_dict["length"] = length
