@@ -1,126 +1,8 @@
-"""
-Source code parsing code
-
-1. Use universal-ctags
-2. Parse function prototype, top comments, body comments, and function body
-
-Rebecca Saul
-Chang Liu
-"""
-
 import re
-import sys
+
 from subprocess import Popen, PIPE, STDOUT, TimeoutExpired
-
-
-def parse_function(function_name, prefix_lines, start_line, end_line):
-    """
-    This function takes a string of c/cpp source code, a function name, and the start and end offsets of the function body,
-    and returns the function prototype, return type, prototype decorators (e.g. static, __declspec(dllexport), etc.), the
-    top comment block (if any), and the function body.
-    """
-
-    #body = code[start_offset: end_offset]
-    #prefix = code[:start_offset]
-    #prefix_lines = prefix.split('\n')
-
-    if(len(prefix_lines) == 0):
-        return None #body
-
-    start_offset = end_line - start_line
-    
-    START = 1
-    FOUND_FUNCTION_PROTOTYPE = 2
-    FOUND_END_SINGLE_LINE_COMMENT_BLOCK = 3
-    FOUND_END_MULTILINE_COMMENT_BLOCK = 4
-    DONE = 5
-
-    """If we've seen a blank noncomment line before the prototype we assume there are
-    no more prototype decorators up the file. E.g.
-    
-
-            THIS_IS_NOT_A_DECORATTOR
-            
-            static
-            int
-            __stdcall
-            foo(int, a, b){return 42;}
-    """
-
-    seen_blank_noncomment_line_before_prototype = False
-
-    state=START
-    
-    idx = len(prefix_lines) - start_offset
-    top_candidate_line_idx = idx
-    
-    while state != DONE:
-        idx -= 1
-        if idx < 0:
-            if state == START:
-                if function_name.split('::')[-1] != function_name:
-                    return parse_function(function_name.split('::')[-1], prefix_lines, start_line, end_line)
-                else:
-                    state = DONE
-            else:
-                state = DONE
-
-        elif state == START:
-            # Back up from body to find function prototype
-            if function_name + "(" in prefix_lines[idx]:
-                state = FOUND_FUNCTION_PROTOTYPE
-                top_candidate_line_idx = idx
-        
-        elif state == FOUND_FUNCTION_PROTOTYPE:
-
-            curr_line = prefix_lines[idx].strip()
-            if len(curr_line) > 0:
-                if curr_line.startswith('//'):
-                    state = FOUND_END_SINGLE_LINE_COMMENT_BLOCK
-                elif curr_line.endswith('*/'):
-                    state = FOUND_END_MULTILINE_COMMENT_BLOCK
-                elif (curr_line[0] == '#') or (curr_line.split('//')[0].rstrip()[-1] in [';','}','{']):
-                    # Ran into the previous function. We're done.
-                    state = DONE
-                else:
-
-                    # Want to treat consecutive non-blank non-comment lines immediately before the
-                    # prototype as a decorateor
-                    if not seen_blank_noncomment_line_before_prototype:
-                        top_candidate_line_idx = idx
-                    # Skip lines that might be function decorators
-                    pass
-
-            else:
-                # Skip blank lines
-
-                # Record that we've seen a blank line before the prototype
-                seen_blank_noncomment_line_before_prototype = True
-                pass
-
-        elif state == FOUND_END_SINGLE_LINE_COMMENT_BLOCK:
-            curr_line = prefix_lines[idx].strip()
-            if len(curr_line) == 0 or not curr_line.startswith('//'):
-                top_candidate_line_idx = idx+1
-                state = DONE
-            else:
-                # Continue backing up to find the beginning of the comment block
-                pass
-
-        elif state == FOUND_END_MULTILINE_COMMENT_BLOCK:
-            curr_line = prefix_lines[idx].strip()
-            if curr_line.startswith('/*'):
-                top_candidate_line_idx = idx
-                state = DONE
-            else:
-                # Continue backing up to find the beginning of the comment block
-                pass
-
-    if top_candidate_line_idx == len(prefix_lines):
-        return None #body
-    
-    return '\n'.join(prefix_lines[top_candidate_line_idx:]) #+ body
-
+from assemblage.worker.parse_function import parse_function
+import os
 def runcmd_ctags(cmd):
     stdout, stderr = None, None
     with Popen(cmd, shell=True, stdin=PIPE, stdout=PIPE, stderr=STDOUT, close_fds=True) as process:
@@ -130,12 +12,12 @@ def runcmd_ctags(cmd):
             process.kill()
     return stdout, stderr, process.returncode
 
-def get_functions(file):
-    # USE universal-ctags
-    out, err, status = runcmd_ctags("ctags --put-field-prefix -h='.h.H.hh.hpp.hxx.h++.inc.def.' --fields='{line}{end}' -o - "+ f'"{file}"')
-    lines = out.decode('utf-8','ignore').splitlines()
-    # print(out.decode('utf-8','ignore'))
 
+
+def get_functions(file):
+    # ONLY USE universal-ctags
+    out, err, status = runcmd_ctags("ctags --put-field-prefix --fields='{line}{end}' -o - "+ f'"{file}"')
+    lines = out.decode('utf-8','ignore').splitlines()
     functions = []
     for line in lines:
         parts = line.split()
@@ -155,34 +37,35 @@ def get_functions(file):
         except Exception as e:
             print("CTAGS err 32", e)
     functions.sort(key=lambda x: int(x[2]))
-    # Join function by end
+    for f in functions:
+        f[1] = int(f[1])
+        f[2] = int(f[2])
+
     if len(functions) > 1:
         functions[0][1] = 0
         for i in range(1, len(functions)):
             if int(functions[i-1][2])+1 < int(functions[i][1]):
                 functions[i][1] = int(functions[i-1][2])+1
-    filecontent = [""]
+    filecontent = [""]*100000
     try:
         filecontent = open(file, 'r', encoding="utf-8", errors="ignore").readlines()
     except:
         pass
-         
-    for i, line in enumerate(filecontent):
-        for function in functions:
-            if i >= int(function[1])-1 and i <= int(function[2])-1:
-                function[5].append(line)
-                function[8][i] = line
+
+    lines = list(filecontent)
+    n = len(lines)
+    for f in functions:
+        start, end = f[1], f[2]
+        s, e = max(1, start)-1, min(n, end)
+        chunk = lines[s:e]
+        f[5].extend(chunk)
+        if isinstance(f[8], list) and len(f[8]) >= n:
+            f[8][s:e] = chunk
+        else:
+            for idx, line in enumerate(chunk, start=s):
+                f[8][idx] = line
 
     for function in functions:
-        # function[5] = "".join(function[5])
-        # start_offset = function[5].find(function[0])
-        # if len(function[5])>0:
-        #     for i in range(function[5].find(function[0]), len(function[5])):
-        #         if function[5][i] == "{":
-        #             start_offset = i
-        #             break
-        # else:
-        #     start_offset = 0
         lines_to_remove = []
         for source_line_potential in function[5]:
             if "#" in source_line_potential\
@@ -195,6 +78,7 @@ def get_functions(file):
                 break
         for line in lines_to_remove:
             function[5].remove(line)
+        function[3] = "".join(filecontent[int(function[1])-1:int(function[2])])
         function[5] = "".join(function[5])
         function[9] = parse_function(function[0], function[5].splitlines(), int(function[10]), int(function[2]))
         if not function[9]:
@@ -202,7 +86,26 @@ def get_functions(file):
         function[4] = get_top_comments(function[9], function[0])
         function[6] = get_body_comments(function[9], function[0])
         function[7] = extract_function_prototype(function[9], function[0])
-    return functions
+    function_dedup = {}
+    for function in functions:
+        if function[0] in function_dedup:
+            already_existied = function_dedup[function[0]]
+            # 0: name, 1: startline, 2: endline, 3: def, 4: top comments, 5: body, 6: body comment, 
+            # 7: prototype, 8: line to code 9: Mark's code extracted function body 10: start line (unchanged)
+            already_existied[1] = min(int(function[1]),  int(already_existied[1]))
+            already_existied[2] = max(int(function[2]),  int(already_existied[2]))
+            already_existied[3] += function[3]
+            already_existied[4] += function[4]
+            already_existied[5] += function[5]
+            already_existied[6] += function[6]
+            already_existied[7] += function[7]
+            for linenum in function[8]:
+                already_existied[8][linenum] = function[8][linenum]
+            already_existied[9] += function[9]
+            already_existied[10] += function[10]
+        else:
+            function_dedup[function[0]] = function
+    return list(function_dedup.values())
 
 
 def get_top_comments(s, function_name):

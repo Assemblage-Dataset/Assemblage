@@ -32,7 +32,8 @@ from assemblage.consts import BuildStatus, PDBJSONNAME, BINPATH
 from assemblage.windows.parsers.proj import Project
 from assemblage.windows.parsers.sln import Solution
 from assemblage.analyze.analyze import get_build_system
-from assemblage.worker.ctags import get_functions
+from assemblage.worker.ctags_parser import get_functions as ctags_get_functions
+from assemblage.worker.clang_parser import get_functions as clang_get_functions
 from typing import Tuple
 
 logging.basicConfig(level=logging.INFO)
@@ -462,8 +463,16 @@ class WindowsDefaultStrategy(DefaultBuildStrategy):
                 else:
                     source_file_cleaned = functions_val["source_file"]
 
+                # match priority clangfirst
                 if source_file_cleaned not in func_cache.keys():
-                    func_cache[source_file_cleaned] = get_functions(source_file_cleaned)
+                    try:
+                        func_cache[source_file_cleaned] = clang_get_functions(source_file_cleaned)
+                    except Exception as e:
+                        logging.info("Clang parser error %s", e)
+                        func_cache[source_file_cleaned] = []
+                    beforetime = time.time()
+                    func_cache[source_file_cleaned] += ctags_get_functions(source_file_cleaned)
+                
                 funcsourceinfo = func_cache[source_file_cleaned]
                 for func in funcsourceinfo:
                     if "::" in func_name and "::" in func[0]:
