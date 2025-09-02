@@ -33,7 +33,7 @@ tqdm==4.62.3
 typing-extensions==3.10.0.2
 urllib3==1.26.7
 wcwidth==0.2.5
-wrapt==1.13.2
+wrapt>=1.17.3
 pyftpdlib==1.5.6
 sqlalchemy-utils==0.38.2
 boto3==1.23.4
