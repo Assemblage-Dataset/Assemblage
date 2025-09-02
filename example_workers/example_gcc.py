@@ -53,7 +53,7 @@ github_c_repos = GithubRepositories(
 )
 aws_profile = AWSProfile("assemblage-test", "assemblage")
 
-class SampleBuild(BuildStartegy):
+class SampleBuild(BuildStrategy):
 
     def clone_data(self, repo):
         clonedir = os.urandom(8).hex()
