@@ -1,9 +1,8 @@
-
 FROM  assemblage-gh:base
 
 RUN apt-get update && apt-get -y upgrade
 
-RUN DEBIAN_FRONTEND="noninteractive" apt-get -y install tzdata
+RUN DEBIAN_FRONTEND="noninteractive" apt-get -y install tzdata cmake build-essential gcc g++
 
 # set up grpc
 # ENV GRPC_RELEASE_TAG v1.12.x
@@ -14,7 +13,7 @@ RUN git clone https://github.com/grpc/grpc /var/local/git/grpc --recurse-submodu
     mkdir -p cmake/build && \
     cd cmake/build && \
     cmake ../.. && \
-    make -j8 && make install
+    make -j64 && make install
 
 # setup python
 
@@ -40,7 +39,7 @@ RUN curl https://raw.githubusercontent.com/pshved/timeout/master/timeout | \
 
 COPY . /assemblage
 
-RUN pip install -r /assemblage/requirements.txt
+
 RUN cp -r /assemblage/aws /root/.aws
 RUN export AWS_CONFIG_FILE=/root/.aws/config
 RUN export AWS_SHARED_CREDENTIALS_FILE=/root/.aws/credentials
