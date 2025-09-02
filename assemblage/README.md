@@ -85,12 +85,12 @@ The exposed worker APIs locate in [api.py](api.py)
 
 ```
 from assemblage.worker.profile import AWSProfile
-from assemblage.worker.build_method import BuildStartegy, DefaultBuildStrategy
+from assemblage.worker.build_method import BuildStrategy, DefaultBuildStrategy
 ```
 
-where the `BuildStartegy` specifies the behavior of Building process, and each abstract method represents each building stages. If you want to fully customize the building/post building behavior, provide the `clone_data`, `pre_build`, `run_build` and `post_build_hook` function with your code, the function input indicates the build configuration (you can ignore these if you pass in your own build configs)
+where the `BuildStrategy` specifies the behavior of Building process, and each abstract method represents each building stages. If you want to fully customize the building/post building behavior, provide the `clone_data`, `pre_build`, `run_build` and `post_build_hook` function with your code, the function input indicates the build configuration (you can ignore these if you pass in your own build configs)
 
-`class BuildStartegy`: An abstract class that encapsulates the Assemblage's worker behavior
+`class BuildStrategy`: An abstract class that encapsulates the Assemblage's worker behavior
 
     clone_data(self, repo):
         Return clone_msg, clone_status(indicated by BuildStatus), clone_dir (the directory where is cloned to)
