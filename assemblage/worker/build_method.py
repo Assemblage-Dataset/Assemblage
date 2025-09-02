@@ -81,7 +81,7 @@ def clean(folders):
             shutil.rmtree(folder, ignore_errors=False, onerror=None)
             
 
-class BuildStartegy:
+class BuildStrategy:
 
     @abstractclassmethod
     def clone_data(self, repo) -> Tuple[bytes, int, str]:
@@ -124,7 +124,7 @@ class BuildStartegy:
         """ post process hook  """
 
 
-class DefaultBuildStrategy(BuildStartegy):
+class DefaultBuildStrategy(BuildStrategy):
 
     def get_clone_dir(self, repo):
         """
