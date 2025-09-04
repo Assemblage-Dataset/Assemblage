@@ -50,7 +50,7 @@ class VcpkgIORepos(DataSource):
         logging.info("Finished!!")
 
 
-class VcpkgBuild(BuildStartegy):
+class VcpkgBuild(BuildStrategy):
 
     def is_valid_binary(self, binary_path) -> bool:
         return binary_path.lower().endswith("exe") or binary_path.lower().endswith("dll") or binary_path.lower().endswith("pdb")  

@@ -7,12 +7,15 @@ A test cluster template
 """
 
 import glob
-import json
 import logging
 import os
 import time
-
-from assemblage.api import *
+from assemblage.bootstrap import AssemblageCluster
+from assemblage.consts import BuildStatus
+from assemblage.worker.scraper import GithubRepositories, DataSource
+from assemblage.worker.profile import AWSProfile
+from assemblage.worker.postprocess import PostAnalysis
+from assemblage.worker.build_method import BuildStrategy, DefaultBuildStrategy
 from assemblage.worker.build_method import cmd_with_output
 
 time_now = int(time.time())
@@ -53,7 +56,7 @@ github_c_repos = GithubRepositories(
 )
 aws_profile = AWSProfile("assemblage-test", "assemblage")
 
-class SampleBuild(BuildStartegy):
+class SampleBuild(BuildStrategy):
 
     def clone_data(self, repo):
         clonedir = os.urandom(8).hex()
@@ -85,7 +88,7 @@ class SampleBuild(BuildStartegy):
         logging.info("Maybe move files to some Docker mapped volume")
         os.system(f"mv {dest_binfolder} /binaries/{repoinfo['name']}")
 
-test_cluster_c = AssmeblageCluster(name="sample"). \
+test_cluster_c = AssemblageCluster(name="sample"). \
                 aws(aws_profile). \
                 docker_network("assemblage-net", True). \
                 message_broker(). \
