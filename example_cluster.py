@@ -10,7 +10,7 @@ import glob
 import logging
 import os
 import time
-from assemblage.bootstrap import AssmeblageCluster
+from assemblage.bootstrap import AssemblageCluster
 from assemblage.consts import BuildStatus
 from assemblage.worker.scraper import GithubRepositories, DataSource
 from assemblage.worker.profile import AWSProfile
@@ -88,7 +88,7 @@ class SampleBuild(BuildStrategy):
         logging.info("Maybe move files to some Docker mapped volume")
         os.system(f"mv {dest_binfolder} /binaries/{repoinfo['name']}")
 
-test_cluster_c = AssmeblageCluster(name="sample"). \
+test_cluster_c = AssemblageCluster(name="sample"). \
                 aws(aws_profile). \
                 docker_network("assemblage-net", True). \
                 message_broker(). \
