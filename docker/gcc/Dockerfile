@@ -1,6 +1,6 @@
 FROM  assemblage-gh:base
 
-RUN apt-get update && apt-get -y upgrade
+RUN apt-get update && apt-get -y upgrade 
 
 RUN DEBIAN_FRONTEND="noninteractive" apt-get -y install tzdata cmake build-essential gcc g++
 
@@ -17,8 +17,8 @@ RUN git clone https://github.com/grpc/grpc /var/local/git/grpc --recurse-submodu
 
 # setup python
 
-ENV PYENV_ROOT /root/.pyenv
-ENV PATH $PYENV_ROOT/shims:$PYENV_ROOT/bin:$PATH
+# ENV PYENV_ROOT /root/.pyenv
+# ENV PATH $PYENV_ROOT/shims:$PYENV_ROOT/bin:$PATH
 
 RUN apt-get -y update && DEBIAN_FRONTEND="noninteractive" apt-get install -y rebar \
                 libhdf5-dev exuberant-ctags postgresql postgresql-server-dev-all \
@@ -30,7 +30,8 @@ RUN apt-get -y update && DEBIAN_FRONTEND="noninteractive" apt-get install -y reb
                 mono-xbuild \
                 qtbase5-dev qtchooser qt5-qmake qtbase5-dev-tools \
                 swig \
-                tree
+                tree \
+                python3-pip python3.12-venv libjpeg-dev zlib1g-dev
 
 RUN curl -fsSL https://deb.nodesource.com/setup_current.x | bash - && apt-get update && apt-get install -y nodejs
 
@@ -39,6 +40,13 @@ RUN curl https://raw.githubusercontent.com/pshved/timeout/master/timeout | \
 
 COPY . /assemblage
 
+WORKDIR /assemblage
+ENV PIP_USE_PEP517=1
+
+RUN python3 -m venv /venv
+ENV PATH="/venv/bin:$PATH"
+RUN pip install --upgrade pip setuptools wheel
+RUN pip install -r requirements.txt
 
 RUN cp -r /assemblage/aws /root/.aws
 RUN export AWS_CONFIG_FILE=/root/.aws/config
