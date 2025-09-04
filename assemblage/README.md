@@ -16,7 +16,7 @@ docker network create assemblage-net
 ./build.sh
 ```
 
-2. Run and initialize MySQL. All passwords are using default `assemblage` under user `roor`, change these if needed
+2. Run and initialize MySQL. All passwords are using default `assemblage` under user `root`, change these if needed
 
 ```
 docker pull mysql/mysql-server
@@ -26,7 +26,9 @@ docker logs mysql
 # find the tmp password in log
 # may need to wait a minute for the database to initialize
 # and the password is provided
-docker exec -it mysql mysql -uroot -p
+```
+docker exec -it mysql mysql -u root -p
+```
 
 
 # set password to 'assemblage', change this for your own
@@ -57,7 +59,7 @@ As Google changed some of the codes, you need to add the flag `PROTOCOL_BUFFERS_
 
 ```
 pip3 install pyfiglet prompt_toolkit pyfiglet plotext pypager grpcio grpcio-tools
-PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python python3 cli.py --server $(docker inspect --format '{{ $network := index .NetworkSettings.Networks "assemblage-net" }}{{ $network.IPAddress}}'  assemblage_coordinator_1):50052
+PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python python3 cli.py --server $(docker inspect --format '{{ $network := index .NetworkSettings.Networks "assemblage-net" }}{{ $network.IPAddress}}'  assemblage-coordinator-1):50052
 ```
 
 ## Crawler Setup
