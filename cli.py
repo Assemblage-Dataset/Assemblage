@@ -615,7 +615,7 @@ class CommandExecutor:
             opt_list = parsed_json['buildopt']
             bstatus_list = parsed_json['b_status']
             print(f"{len(repo_list)} repos found, {len(bstatus_list)} b_status found")
-            if input("Reconstruct databse will delete ALL data in databse! Are you sure? [y/n]").strip().lower() != 'y':
+            if input("Reconstruct database will delete ALL data in databse! Are you sure? [y/n]").strip().lower() != 'y':
                 return
             if input("Wipe the database? [y/n]").strip().lower() != 'y':
                 return

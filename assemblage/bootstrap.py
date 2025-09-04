@@ -30,7 +30,7 @@ from assemblage.worker.postprocess import PostAnalysis, PostProcessor
 from assemblage.worker.build_method import cmd_with_output
 from sqlalchemy_utils import database_exists
 
-class AssmeblageCluster:
+class AssemblageCluster:
 
     def __init__(self, name, coordinator_addr="coordinator", aws_mode=False) -> None:
         self.init_gh_flag = False
@@ -90,7 +90,7 @@ class AssmeblageCluster:
         return self
 
     def docker_network(self, net_name, init_flag=False):
-        """ declare  docker network for assemblage local cluster, if init flag setted a new one will be created """
+        """ declare  docker network for assemblage local cluster, if init flag is set a new one will be created """
         self.docker_network_name = net_name
         self.init_docker_network_flag = init_flag
         return self
@@ -385,7 +385,7 @@ class AssmeblageCluster:
                     "restart_policy": {"condition": "on-failure"}
                 }
             }
-            self.generate_docker_file(bd["compiler"], bd["docker_image"])
+            # self.generate_docker_file(bd["compiler"], bd["docker_image"])
 
         for i in range(len(self.postprocessor_configs)):
             pc = self.postprocessor_configs[i]
@@ -401,7 +401,7 @@ class AssmeblageCluster:
             }
             if pc["number"] > 1:
                 services_dict[f"postprocessor_{i}"]["replicas"] = pc["number"]
-            self.generate_docker_file(pc["name"], pc["docker_image"])
+            # self.generate_docker_file(pc["name"], pc["docker_image"])
 
         py_config_dict = {
             "version": '3',

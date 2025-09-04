@@ -19,7 +19,7 @@ from assemblage.bootstrap import AssmeblageCluster
 from assemblage.worker.scraper import GithubRepositories
 from assemblage.worker.profile import AWSProfile
 from assemblage.worker.postprocess import PostAnalysis
-from assemblage.worker.build_method import BuildStartegy, DefaultBuildStrategy
+from assemblage.worker.build_method import BuildStrategy, DefaultBuildStrategy
 from assemblage.windows.parsers.proj import Project
 from assemblage.windows.parsers.sln import Solution
 
