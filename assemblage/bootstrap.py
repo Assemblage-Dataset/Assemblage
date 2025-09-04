@@ -385,7 +385,7 @@ class AssmeblageCluster:
                     "restart_policy": {"condition": "on-failure"}
                 }
             }
-            self.generate_docker_file(bd["compiler"], bd["docker_image"])
+            # self.generate_docker_file(bd["compiler"], bd["docker_image"])
 
         for i in range(len(self.postprocessor_configs)):
             pc = self.postprocessor_configs[i]
@@ -401,7 +401,7 @@ class AssmeblageCluster:
             }
             if pc["number"] > 1:
                 services_dict[f"postprocessor_{i}"]["replicas"] = pc["number"]
-            self.generate_docker_file(pc["name"], pc["docker_image"])
+            # self.generate_docker_file(pc["name"], pc["docker_image"])
 
         py_config_dict = {
             "version": '3',
