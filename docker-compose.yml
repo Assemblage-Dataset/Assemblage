@@ -5,6 +5,8 @@ networks:
 services:
   builder_0:
     command: python3 /assemblage/example_cluster.py --type builder --id 0
+    environment: 
+      PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
     depends_on:
     - rabbitmq
     - coordinator
@@ -16,6 +18,8 @@ services:
     - ./binaries:/binaries
   coordinator:
     command: python3  /assemblage/example_cluster.py --type  coordinator
+    environment: 
+      PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
     depends_on:
     - rabbitmq
     deploy:
@@ -38,6 +42,8 @@ services:
     depends_on:
     - rabbitmq
     - coordinator
+    environment: 
+      PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
     deploy:
       resources:
         limits:
