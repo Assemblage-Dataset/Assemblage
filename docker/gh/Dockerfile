@@ -45,7 +45,7 @@ RUN apt-get -y update && DEBIAN_FRONTEND="noninteractive" apt-get install -y reb
                 mono-xbuild \
                 qtbase5-dev qtchooser qt5-qmake qtbase5-dev-tools \
                 swig \
-                tree
+                tree 
 
 RUN curl -fsSL https://deb.nodesource.com/setup_current.x | bash - && apt-get update && apt-get install -y nodejs
 RUN curl https://raw.githubusercontent.com/pshved/timeout/master/timeout | \
