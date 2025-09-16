@@ -14,12 +14,13 @@ import time
 import boto3
 
 from botocore.exceptions import ClientError
-from assemblage.consts import PDBJSONNAME, BINPATH
+from assemblage.consts import PDBJSONNAME, BINPATH, BuildStatus
 from assemblage.bootstrap import AssmeblageCluster
+from ..assemblage.worker.clang_parser import get_functions
 from assemblage.worker.scraper import GithubRepositories
 from assemblage.worker.profile import AWSProfile
 from assemblage.worker.postprocess import PostAnalysis
-from assemblage.worker.build_method import BuildStrategy, DefaultBuildStrategy
+from assemblage.worker.build_method import BuildStrategy, DefaultBuildStrategy, cmd_with_output
 from assemblage.windows.parsers.proj import Project
 from assemblage.windows.parsers.sln import Solution
 
