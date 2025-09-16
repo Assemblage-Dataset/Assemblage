@@ -5,11 +5,22 @@ a vcpkg cluster
 """
 
 import logging
+from typing import Tuple
 import requests
 import os
 import shutil
 import json
-from assemblage.api import *
+
+from ..assemblage.bootstrap import AssemblageCluster
+
+from ..assemblage.worker.build_method import BuildStrategy
+
+from .example_windows import dia_get_func_funcinfo, dia_list_binaries
+
+from ..assemblage.consts import PDBJSONNAME, BuildStatus
+
+from ..assemblage.worker.scraper import DataSource
+from ..assemblage.worker.profile import AWSProfile
 
 aws_profile = AWSProfile("assemblage-vcpkg", "assemblage")
 
@@ -151,7 +162,7 @@ class VcpkgBuild(BuildStrategy):
         return b"1", b"1", b"1"
 
 
-test_cluster_vcpkg = AssmeblageCluster(name="test", coordinator_addr="54.193.86.242"). \
+test_cluster_vcpkg = AssemblageCluster(name="test", coordinator_addr="54.193.86.242"). \
                 build_system_analyzer(vcpkg_build_sys_hook). \
                 aws(aws_profile). \
                 message_broker("54.193.86.242"). \

@@ -15,11 +15,11 @@ import boto3
 
 from botocore.exceptions import ClientError
 from assemblage.consts import PDBJSONNAME, BINPATH
-from assemblage.bootstrap import AssmeblageCluster
+from assemblage.bootstrap import AssemblageCluster, AssmeblageCluster
 from assemblage.worker.scraper import GithubRepositories
 from assemblage.worker.profile import AWSProfile
 from assemblage.worker.postprocess import PostAnalysis
-from assemblage.worker.build_method import BuildStrategy, DefaultBuildStrategy
+from assemblage.worker.build_method import BuildStrategy, DefaultBuildStrategy, cmd_with_output
 from assemblage.windows.parsers.proj import Project
 from assemblage.windows.parsers.sln import Solution
 
@@ -249,7 +249,7 @@ another_crawler = GithubRepositories(
 
     
 
-test_cluster_windows = AssmeblageCluster(name="project_history"). \
+test_cluster_windows = AssemblageCluster(name="project_history"). \
                 build_system_analyzer(get_build_system). \
                 builder(
                     "windows", "msvc", 100, docker_image="",
