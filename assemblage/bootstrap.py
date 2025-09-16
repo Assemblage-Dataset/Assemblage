@@ -30,8 +30,6 @@ from assemblage.worker.postprocess import PostAnalysis, PostProcessor
 from assemblage.worker.build_method import cmd_with_output
 from sqlalchemy_utils import database_exists
 
-from os import getenv
-
 class AssemblageCluster:
 
     def __init__(self, name, coordinator_addr="coordinator", aws_mode=False) -> None:
@@ -39,12 +37,12 @@ class AssemblageCluster:
         self.name = name
         self.docker_network_name = "assemblage-net"
         self.init_docker_network_flag = False
-        self.db_host = f"{getenv('MYSQL_HOST', "assemblage-db")}"
+        self.db_host = f"{os.getenv('MYSQL_HOST', "assemblage-db")}"
         self.db_port = f"{os.getenv('DB_PORT', "3306")}"
-        self.db_name = getenv("MYSQL_DATABASE", "assemblage")
-        self.db_username = getenv("MYSQL_USER", "assemblage")
-        self.db_password = getenv("MYSQL_PASSWORD", "assemblage")
-        self.db_root_password = getenv("MYSQL_ROOT_PASSWORD", "assemblage")
+        self.db_name = os.getenv("MYSQL_DATABASE", "assemblage")
+        self.db_username = os.getenv("MYSQL_USER", "assemblage")
+        self.db_password = os.getenv("MYSQL_PASSWORD", "assemblage")
+        self.db_root_password = os.getenv("MYSQL_ROOT_PASSWORD", "assemblage")
         self.db_conn_str = f'mysql+pymysql://{self.db_username}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}?charset=utf8mb4'
         self.db_init_flag = False
         self.db_boot_flag = False
@@ -189,7 +187,7 @@ class AssemblageCluster:
         cmds = []
         cmds.append("docker pull mysql/mysql-server")
         cmds.append("docker container stop mysql&&docker container rm mysql")
-        cmds.append(f"docker run --name=mysql -p 3306:3306 --network={self.docker_network_name} -e MYSQL_ROOT_PASSWORD={getenv("MYSQL_ROOT_PASSWORD", "assemblage")} -d mysql/mysql-server")
+        cmds.append(f"docker run --name=mysql -p 3306:3306 --network={self.docker_network_name} -e MYSQL_ROOT_PASSWORD={("MYSQL_ROOT_PASSWORD", "assemblage")} -d mysql/mysql-server")
         for cmd in cmds:
             os.system(cmd)
         
