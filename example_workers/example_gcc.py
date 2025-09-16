@@ -12,8 +12,13 @@ import logging
 import os
 import time
 
-from assemblage.api import *
-from assemblage.worker.build_method import cmd_with_output
+from ..assemblage.bootstrap import AssemblageCluster
+
+from ..assemblage.worker.scraper import GithubRepositories
+
+from ..assemblage.consts import BuildStatus
+from assemblage.worker.build_method import BuildStrategy, cmd_with_output
+from ..assemblage.worker.profile import AWSProfile
 
 time_now = int(time.time())
 start = time_now - time_now % 86400
@@ -83,7 +88,7 @@ class SampleBuild(BuildStrategy):
                         optimization, commit_hexsha):
         print(os.listdir(dest_binfolder))
 
-test_cluster_c = AssmeblageCluster(name="sample"). \
+test_cluster_c = AssemblageCluster(name="sample"). \
                 aws(aws_profile). \
                 docker_network("assemblage-net", True). \
                 message_broker(). \
