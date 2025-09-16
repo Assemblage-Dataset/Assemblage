@@ -90,9 +90,7 @@ class SampleBuild(BuildStrategy):
 
 test_cluster_c = AssemblageCluster(name="sample"). \
                 aws(aws_profile). \
-                docker_network("assemblage-net", True). \
                 message_broker(). \
-                mysql(). \
                 scraper([github_c_repos]). \
                 build_option(
                     1, platform="linux", language="c++", 
@@ -102,6 +100,7 @@ test_cluster_c = AssemblageCluster(name="sample"). \
                     platform="linux", compiler="clang", build_opt=1,
                     custom_build_method=SampleBuild(),
                     aws_profile= aws_profile)
+                
                 # use_new_mysql_local()
 
 test_cluster_c.boot()

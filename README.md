@@ -12,3 +12,10 @@ We include __**only**__ the subset of binaries for which permissive licenses can
 For up to date info and download, please visit the [dataset page](https://assemblagedocs.readthedocs.io/en/latest/dataset.html)
 
 <sub>The code in this repository is published under MIT license.</sub>
+
+
+## ENVIRONMENT VARIABLES FOR secrets.env
+MYSQL_ROOT_PASSWORD=example
+MYSQL_DATABASE=mydb
+MYSQL_USER=user
+MYSQL_PASSWORD=password
