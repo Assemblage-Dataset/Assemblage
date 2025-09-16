@@ -4,6 +4,7 @@
 
 # Environments
 .env
+secrets.env
 .venv
 env/
 venv/
@@ -44,6 +45,7 @@ build_msgs.txt
 Pdbs/*
 Builds/*
 Binaries/*
+binaries/*
 *.out
 *.txt
 db-data/

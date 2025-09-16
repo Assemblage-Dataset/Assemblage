@@ -30,6 +30,8 @@ from assemblage.worker.postprocess import PostAnalysis, PostProcessor
 from assemblage.worker.build_method import cmd_with_output
 from sqlalchemy_utils import database_exists
 
+from os import getenv
+
 class AssemblageCluster:
 
     def __init__(self, name, coordinator_addr="coordinator", aws_mode=False) -> None:
@@ -37,24 +39,19 @@ class AssemblageCluster:
         self.name = name
         self.docker_network_name = "assemblage-net"
         self.init_docker_network_flag = False
-        self.db_addr = "mysql:3306"
-        self.db_name = "assemblage"
-        self.db_username = "assemblage"
-        self.db_password = "assemblage"
-        self.db_init_flag = True
+        self.db_host = f"{getenv('MYSQL_HOST', "assemblage-db")}"
+        self.db_port = f"{os.getenv('DB_PORT', "3306")}"
+        self.db_name = getenv("MYSQL_DATABASE", "assemblage")
+        self.db_username = getenv("MYSQL_USER", "assemblage")
+        self.db_password = getenv("MYSQL_PASSWORD", "assemblage")
+        self.db_root_password = getenv("MYSQL_ROOT_PASSWORD", "assemblage")
+        self.db_conn_str = f'mysql+pymysql://{self.db_username}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}?charset=utf8mb4'
+        self.db_init_flag = False
         self.db_boot_flag = False
         self.init_json_path = ""
         self.scraper_configs = []
         self.builder_configs = []
         self.postprocessor_configs = []
-        self.coordinator_config = {
-            "cluster_name": "assemblage",
-            "rabbitmq_host": "rabbitmq",
-            "rabbitmq_port": 5672,
-            "grpc_addr": "[::]:50052",
-            "db_path": "mysql+pymysql://assemblage:assemblage@assemblage.com:?/assemblage?charset=utf8mb4",
-            "aws_mode": 1
-        }
         self.aws_mode = aws_mode
         self.coordinator_addr = coordinator_addr
         self.build_options = []
@@ -98,22 +95,6 @@ class AssemblageCluster:
     def use_new_mysql_local(self):
         """ boot mysql docker container when create cluster """
         self.db_boot_flag = True
-        return self
-
-    def mysql(self, db_addr="mysql:3306", db_name="assemblage",
-              username="assemblage", password="assemblage",
-              init_flag=True):
-        """ 
-        declare the database connection infomation,
-        if need boot mysql after configure please `init_flag` = True
-        """
-        self.db_addr = db_addr
-        self.db_name = db_name
-        self.db_username = username
-        self.db_password = password
-        self.db_init_flag = init_flag
-        mysql_conn_str = f'mysql+pymysql://{self.db_username}:{self.db_password}@{self.db_addr}/{self.db_name}?charset=utf8mb4'
-        self.coordinator_config["db_path"] = mysql_conn_str
         return self
 
     def message_broker(self, mq_addr="rabbitmq", mq_port=5672, mq_image="rabbitmq:3-management",
@@ -208,7 +189,7 @@ class AssemblageCluster:
         cmds = []
         cmds.append("docker pull mysql/mysql-server")
         cmds.append("docker container stop mysql&&docker container rm mysql")
-        cmds.append(f"docker run --name=mysql -p 3306:3306 --network={self.docker_network_name} -e MYSQL_ROOT_PASSWORD=assemblage -d mysql/mysql-server")
+        cmds.append(f"docker run --name=mysql -p 3306:3306 --network={self.docker_network_name} -e MYSQL_ROOT_PASSWORD={getenv("MYSQL_ROOT_PASSWORD", "assemblage")} -d mysql/mysql-server")
         for cmd in cmds:
             os.system(cmd)
         
@@ -218,15 +199,13 @@ class AssemblageCluster:
             time.sleep(5)
             out, err, exitcode=cmd_with_output("docker exec mysql mysql -u root -passemblage")
         os.system(f"docker exec -i mysql mysql -u root -passemblage < {os.getcwd()}/assemblage/data/init.sql")
-        mysql_conn_str = f'mysql+pymysql://{self.db_username}:{self.db_password}@{self.db_addr}/{self.db_name}?charset=utf8mb4'
-        mysql_conn_str_local = f'mysql+pymysql://{self.db_username}:{self.db_password}@localhost:3306/{self.db_name}?charset=utf8mb4'
-        assert database_exists(mysql_conn_str_local)
+        db_conn_str_local = f'mysql+pymysql://{self.db_username}:{self.db_password}@localhost:3306/{self.db_name}?charset=utf8mb4'
+        assert database_exists(db_conn_str_local)
         if self.db_init_flag:
-            init_clean_database(mysql_conn_str_local)
+            init_clean_database(db_conn_str_local)
         print("DB inited")
         # wirte mysql configure
-        self.coordinator_config["db_path"] = mysql_conn_str
-        self.coordinator_config["cluster_name"] = self.name
+   
 
     def _build_image(self):
         os.system("sh build.sh")
@@ -268,9 +247,7 @@ class AssemblageCluster:
         return
 
     def _init_db(self):
-        mysql_conn_str = f'mysql+pymysql://{self.db_username}:{self.db_password}@localhost/{self.db_name}?charset=utf8mb4'
-        print(mysql_conn_str)
-        db_man = DBManager(mysql_conn_str)
+        db_man = DBManager(self.db_conn_str)
         for opt in self.build_options:
             db_man.add_build_option(**opt)
         if not os.path.exists(self.init_json_path):
@@ -494,7 +471,7 @@ class AssemblageCluster:
         cor = Coordinator(self.mq_addr,
                           self.mq_port,
                           "[::]:50052",
-                          self.coordinator_config["db_path"],
+                          self.db_conn_str,
                           self.name,
                           self.aws_mode)
         cor.run()
@@ -520,6 +497,8 @@ class AssemblageCluster:
         """
         Cluster/All nodes boot entrance function
         """
+
+        
         parser = argparse.ArgumentParser(
             description='Assemblage bootstrap script')
         parser.add_argument('--type', metavar='type', type=str, default='bootstrap',
@@ -547,6 +526,7 @@ class AssemblageCluster:
                 os.mkdir("binaries")
             return
         elif node_type.strip() == "coordinator":
+            self._init_db()
             self._run_coordinator()
         elif node_type.strip() == "scraper":
             sc = self.scraper_configs[node_id]
