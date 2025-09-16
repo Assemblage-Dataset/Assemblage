@@ -16,8 +16,6 @@ services:
     command: python3 /assemblage/example_cluster.py --type builder --id 0
     environment: 
       PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
-    env_file:
-      - secrets.env
     depends_on:
       coordinator:
         condition: service_healthy
