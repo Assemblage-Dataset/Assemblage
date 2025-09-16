@@ -5,16 +5,18 @@ Yihao Sun
 """
 
 import datetime
+import inspect
 import random
 import time
 import logging
 
 import sqlalchemy.exc
-from sqlalchemy import select, update, create_engine, func, or_
+from sqlalchemy import select, update, create_engine, func, or_, inspect
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.expression import desc, true
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.sql import Insert
+from assemblage.data.object import Base, init_clean_database
 
 from assemblage.data.object import BuildDO, BuildOpt, RepoDO, Status
 from assemblage.consts import BuildStatus, SUPPORTED_LANGUAGE
@@ -38,6 +40,24 @@ class DBManager:
         self.engine = create_engine(db_addr, echo=False,
                                     pool_pre_ping=True,
                                     connect_args={'connect_timeout': 100})
+        while not self._check_db_exists():
+            init_clean_database(db_addr)
+
+          
+
+    def _check_db_exists(self)->bool:
+        
+        try: 
+            inspector = inspect(self.engine)
+            tables = inspector.get_table_names()  # 
+            logging.info("DB exists. Now Checking tables")
+            
+            for table in Base.metadata.tables.keys():
+                if table not in tables:
+                    return False
+            return True
+        except: 
+            return False
 
     def shutdown(self):
         """ Close DB connection """

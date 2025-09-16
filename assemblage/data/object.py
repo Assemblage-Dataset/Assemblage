@@ -143,7 +143,7 @@ def init_clean_database(db_str):
     Base.metadata.create_all(engine)
 
 
-if __name__ == '__main__':
-    with open("assemblage/configure/coordinator_config.json") as f:
-        coordinator_config = json.load(f)
-    init_clean_database(coordinator_config["db_path"])
+# if __name__ == '__main__':
+#     with open("assemblage/configure/coordinator_config.json") as f:
+#         coordinator_config = json.load(f)
+#     init_clean_database(coordinator_config["db_path"])
