@@ -710,8 +710,7 @@ def init_guide():
     """
     a guide to guide user init data base and boot coordinator
     """
-    start_flag = input("coordinator connection not provided, start a coordinator"
-                       " initialization guide? [y/n]")
+    start_flag = input("coordinator connection not provided, start a coordinator initialization guide? [y/n]")
     if start_flag.strip() != 'y':
         return False
     cluster_name = prompt('Please input cluster name:\n')
@@ -752,29 +751,33 @@ def init_guide():
         os.system(
             "docker exec -i mysql mysql -u root -passemblage < ./assemblage/data/default_user.sql")
         # all default
-        db_addr = "mysql"
-        db_addr = db_addr + ':3306'
-        db_name = "assemblage"
-        user_name = "assemblage"
-        user_pass = "assemblage"
-        mysql_conn_str = f'mysql+pymysql://{user_name}:{user_pass}@{db_addr}/{db_name}?charset=utf8mb4'
-        mysql_conn_str_local = f'mysql+pymysql://{user_name}:{user_pass}@localhost:3306/{db_name}?charset=utf8mb4'
+        db_host = os.getenv('MYSQL_HOST', 'assemblage-db')
+        db_port = os.getenv('MYSQL_PORT','3306')
+        db_name = os.getenv('MYSQL_DATABASE','assemblage')
+        user_name = os.getenv('MYSQL_USER', 'assemblage')
+        user_pass = os.getenv('MYSQL_PASSWORD', 'assemblage')
     else:
-        db_addr = prompt(
-            'Please input MySQL connection address e.g. 172.18.0.5:3306\n')
+        db_host = prompt(
+            'Please input MySQL connection host e.g. 172.18.0.5:3306\n')
+        db_port = prompt(
+            'Please input MySQL connection port 3306\n')
+
         db_name = prompt('Please input MySQL database used for Assemblage\n')
         user_name = prompt('Please input MySQL username e.g. assemblage\n')
         user_pass = prompt('Please input MySQL password\n')
-        if not db_addr:
-            db_addr = "mysql:3306"
+        if not db_host:
+            db_host = "mysql:3306"
+        if not db_port:
+            db_port = "3306"
         if not db_name:
             db_name = "assemblage"
         if not user_name:
             user_name = "root"
         if not user_pass:
             user_pass = "assemblage"
-        mysql_conn_str = f'mysql+pymysql://{user_name}:{user_pass}@{db_addr}/{db_name}?charset=utf8mb4'
-        mysql_conn_str_local = mysql_conn_str
+            
+    mysql_conn_str = f'mysql+pymysql://{user_name}:{user_pass}@{db_host}:{db_port}/{db_name}?charset=utf8mb4'
+    mysql_conn_str_local = mysql_conn_str
     wipe_flag = input("clean and initialize db(all data will be wiped)? [y/n]")
     if wipe_flag.strip().lower() == 'y':
         init_clean_database(mysql_conn_str_local)

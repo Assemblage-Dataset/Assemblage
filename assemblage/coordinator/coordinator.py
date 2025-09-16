@@ -4,6 +4,7 @@ Assemblage Coordinator/Server
 Yihao Sun
 """
 
+import os
 import sys
 import threading
 import time
@@ -415,6 +416,12 @@ class Coordinator:
         """
         Run various threads for interacting with queues and RPC.
         """
+        try:
+            os.remove("/tmp/setup_complete.txt")
+        except OSError:
+            pass
+        
+        
         db_man = DBManager(self.db_addr)
         t_dispatch_list = []
         logging.info("%s dispathing thread starts", len(
@@ -439,6 +446,8 @@ class Coordinator:
         t_reboot_worker = threading.Thread(target=self.__reboot_worker)
         t_daemon = threading.Thread(target=self.__daemon)
         logging.info("Processes ready")
+        with open("/tmp/setup_complete.txt", "w") as f:
+            f.write("done")
         t_clean_worker.start()
         t_clean_task.start()
         for t_dispatch in t_dispatch_list:
