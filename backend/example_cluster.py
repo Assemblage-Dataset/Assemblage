@@ -70,7 +70,7 @@ aws_profile = AWSProfile("assemblage-test", "assemblage")
 class SampleBuild(BuildStrategy):
 
     def clone_data(self, repo):
-        clonedir = os.urandom(8).hex()
+        clonedir = f"/tmp/{os.urandom(8).hex()}"
         out, err, exit_code = cmd_with_output(f'git clone {repo["url"]} {clonedir}', 600, "linux")
         return_code = BuildStatus.SUCCESS if exit_code == 0 else BuildStatus.FAILED
         return out, return_code, clonedir

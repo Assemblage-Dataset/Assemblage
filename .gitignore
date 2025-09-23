@@ -53,3 +53,4 @@ dump_*
 *.txt
 *.out
 local_config/
+!backend/requirements.txt

@@ -38,9 +38,9 @@ RUN curl -fsSL https://deb.nodesource.com/setup_current.x | bash - && apt-get up
 RUN curl https://raw.githubusercontent.com/pshved/timeout/master/timeout | \
     tee /usr/local/bin/timeout && chmod 755 /usr/local/bin/timeout
 
-COPY . /assemblage
+COPY ./backend/ /app
 
-WORKDIR /assemblage
+WORKDIR /app
 ENV PIP_USE_PEP517=1
 
 RUN python3 -m venv /venv
@@ -48,6 +48,6 @@ ENV PATH="/venv/bin:$PATH"
 RUN pip install --upgrade pip setuptools wheel
 RUN pip install -r requirements.txt
 
-RUN cp -r /assemblage/aws /root/.aws
+COPY ./aws /root/.aws
 RUN export AWS_CONFIG_FILE=/root/.aws/config
 RUN export AWS_SHARED_CREDENTIALS_FILE=/root/.aws/credentials
