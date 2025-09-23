@@ -13,19 +13,21 @@ services:
       timeout: 5s
       retries: 5
   builder_0:
+    image: assemblage-clang:default
     command: python3 /assemblage/example_cluster.py --type builder --id 0
     environment: 
       PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
+    env_file:
+      - secrets.env
     depends_on:
       coordinator:
         condition: service_healthy
     deploy:
       restart_policy:
         condition: on-failure
-    image: clang
     volumes:
     - ./binaries:/binaries
-    - .:/assemblage
+    - ./assemblage:/assemblage/assemblage/ # this means that a rebuild is only needed if example cluster changes ( maybe change the structure...)
 
   coordinator:
     image: assemblage-gcc:default
@@ -50,7 +52,7 @@ services:
     - 50052:50052
     volumes:
     - shared-data:/binaries
-    - .:/assemblage
+    - ./assemblage/:/assemblage/assemblage # this means that a rebuild is only needed if example cluster changes ( maybe change the structure...)
 
   rabbitmq:
     image: rabbitmq:3-management
@@ -66,6 +68,7 @@ services:
     # - '56723'
     # - 5672:5672
   scraper_0:
+    image: assemblage-gcc:default
     command: python3  /assemblage/example_cluster.py --type  scraper  --id 0
     depends_on:
       coordinator:
@@ -80,10 +83,9 @@ services:
           memory: 2048M
       restart_policy:
         condition: on-failure
-    image: assemblage-gcc:default
     volumes:
     - shared-data:/binaries
-    - .:/assemblage
+    - ./assemblage:/assemblage/assemblage # this means that a rebuild is only needed if example cluster changes ( maybe change the structure...)
 
 volumes:
   shared-data:
