@@ -25,11 +25,14 @@ from assemblage.data.db import DBManager
 from collections import Counter
 from assemblage.consts import AWS_AUTO_REBOOT_PREFIX, BIN_DIR, TASK_TIMEOUT_THRESHOLD, WORKER_TIMEOUT_THRESHOLD, BuildStatus, REPO_SIZE_THRESHOLD
 
-formatter = logging.Formatter("%(asctime)s %(levelname)s:%(message)s",
-                              "%Y-%m-%d %H:%M:%S")
-SLEEP_INTERVAL = 1200
-logging.basicConfig(format=formatter, level=logging.DEBUG)
 
+SLEEP_INTERVAL = 1200
+logging.basicConfig(
+    format="%(asctime)s %(levelname)s:%(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
 def stop_the_world_excepthook(args):
     """ 
@@ -83,7 +86,7 @@ class Coordinator:
     """
 
     def __init__(self, rabbitmq_host, rabbitmq_port, grpc_addr, db_addr, cluster_name, aws_mode=0, reproduce_mode=0):
-        logging.info("Coordinator Init")
+        logger.info("Coordinator Init")
         self.rabbitmq_host = rabbitmq_host
         self.rabbitmq_port = rabbitmq_port
         self.channel = create_channel(
@@ -101,6 +104,7 @@ class Coordinator:
         self.channel.queue_declare(queue='binary', durable=True)
         self.grpc_addr = grpc_addr
         self.db_addr = db_addr
+        
         self.cluster_name = cluster_name
         self.reproduce_mode = reproduce_mode
         if aws_mode == 1:
@@ -109,6 +113,8 @@ class Coordinator:
             self.aws_flag = False
         # setup rpc service
         self.rpc_service = InfoService(self.db_addr)
+        # 
+        
 
     def __del__(self):
         self.channel.close()
@@ -118,14 +124,14 @@ class Coordinator:
         rpc_server = grpc.server(ThreadPoolExecutor(max_workers=50))
         add_AssemblageServiceServicer_to_server(self.rpc_service, rpc_server)
         rpc_server.add_insecure_port(self.grpc_addr)
-        logging.info("Starting server on %s", self.grpc_addr)
+        logger.info("Starting server on %s", self.grpc_addr)
         rpc_server.start()
         rpc_server.wait_for_termination()
 
     def __dispatch_task(self, build_opt_id, sleep=True):
         """ send a number of task into worker, and the keep repo name if queue """
         try:
-            logging.info("__dispatch_task thread started on %s", build_opt_id)
+            logger.info("__dispatch_task thread started on %s", build_opt_id)
             thread_channel = create_channel(
                 self.rabbitmq_host, self.rabbitmq_port, 500, 350)
             # we use topics to control which worker gets which jobs.
@@ -134,7 +140,7 @@ class Coordinator:
             thread_channel.confirm_delivery()
             db_man = DBManager(self.db_addr)
         except:
-            logging.info("__dispatch_task start fail")
+            logger.info("__dispatch_task start fail")
             exit(1)
         task_count = 0
         sleep_interval = SLEEP_INTERVAL
@@ -149,13 +155,13 @@ class Coordinator:
                     build_status=BuildStatus.INIT,
                     limit=1)
                 if len(tasks) == 0:
-                    logging.info("Dispatch thread on build option %s idle", build_opt_id)
+                    logger.info("Dispatch thread on build option %s idle", build_opt_id)
                     time.sleep(5)
                     continue
                 task = tasks[0]
                 uncloned_repo = db_man.find_repo_by_id(task.repo_id)
                 # if uncloned_repo.size < REPO_SIZƒE_THRESHOLD:
-                #     logging.info("Discard task %s size %s", task.repo_id, uncloned_repo.size)
+                #     logger.info("Discard task %s size %s", task.repo_id, uncloned_repo.size)
                 #     continue
                 build_opt = db_man.find_build_opt_by_id(task.build_opt_id)
                 db_man.update_repo_status(
@@ -184,16 +190,16 @@ class Coordinator:
                 waittime = max(0.1 - (time_after_query - time_before_query), 0)
                 # time.sleep(waittime)
                 if task_count % 10 == 0:
-                    logging.info('Placed %sth task on build option %d, took %ss, next dispatch in %ss', task_count,
+                    logger.info('Placed %sth task on build option %d, took %ss, next dispatch in %ss', task_count,
                                  task.build_opt_id, str(time_after_query - time_before_query)[:5], str(waittime)[:4])
                 task_count += 1
                 if sleep and time.time() > task_pausetime:
-                    logging.info(
+                    logger.info(
                         "Dispatch on %s will pause for 5min", build_opt_id)
                     task_pausetime += sleep_interval
                     time.sleep(300)
             except Exception as e:
-                logging.info("Dispatch Err: %s", str(e))
+                logger.info("Dispatch Err: %s", str(e))
                 self.channel = create_channel(
                     self.rabbitmq_host, self.rabbitmq_port, 500, 350)
                 thread_channel = create_channel(
@@ -205,10 +211,10 @@ class Coordinator:
 
     def __recycle_clone(self):
         try:
-            logging.info("Recycle thread starting")
+            logger.info("Recycle thread starting")
             db_man = DBManager(self.db_addr)
         except:
-            logging.info("Recycle start fail")
+            logger.info("Recycle start fail")
         while True:
             count = 0
             try:
@@ -222,10 +228,10 @@ class Coordinator:
                                 clone_status=BuildStatus.INIT)
                             count += 1
                     if count % 100 == 0 and count != 0:
-                        logging.info("Recycled %s tasks", count)
+                        logger.info("Recycled %s tasks", count)
                 time.sleep(1)
             except Exception as err:
-                logging.info("Recycle thread err %s", err)
+                logger.info("Recycle thread err %s", err)
             time.sleep(1)
 
     def __clean_worker(self):
@@ -242,62 +248,62 @@ class Coordinator:
     def __consume_binary(self):
         while True:
             try:
-                logging.info(
+                logger.info(
                     "Coordinator binary consume thread started")
                 thread_channel = create_channel(
                     self.rabbitmq_host, self.rabbitmq_port, 500, 350)
                 thread_channel.basic_consume(queue='binary',
                                              on_message_callback=self.recv_binary)
                 thread_channel.start_consuming()
-                logging.critical("Consuming binary exited!")
+                logger.critical("Consuming binary exited!")
             except Exception as err:
-                logging.critical("Saving binary failed!")
-                logging.critical(err)
+                logger.critical("Saving binary failed!")
+                logger.critical(err)
 
     def __consume_clone(self):
         while True:
             try:
-                logging.info(
+                logger.info(
                     "Coordinator clone consume thread started")
                 thread_channel = create_channel(
                     self.rabbitmq_host, self.rabbitmq_port, 500, 350)
                 thread_channel.basic_consume(queue='clone',
                                              on_message_callback=self.recv_clone_info)
                 thread_channel.start_consuming()
-                logging.critical("Consuming clone exited")
+                logger.critical("Consuming clone exited")
             except Exception as err:
-                logging.critical("Saving clone failed!")
-                logging.critical(err)
+                logger.critical("Saving clone failed!")
+                logger.critical(err)
 
     def __consume_build(self):
         while True:
             try:
-                logging.info(
+                logger.info(
                     "Coordinator build consume thread started")
                 thread_channel = create_channel(
                     self.rabbitmq_host, self.rabbitmq_port, 500, 350)
                 thread_channel.basic_consume(queue='build',
                                              on_message_callback=self.recv_build_info)
                 thread_channel.start_consuming()
-                logging.critical("Consuming build exited")
+                logger.critical("Consuming build exited")
             except Exception as err:
-                logging.critical("Saving build failed!")
-                logging.critical(err)
+                logger.critical("Saving build failed!")
+                logger.critical(err)
 
     def __consume_scraped_data(self):
         while True:
             try:
-                logging.info(
+                logger.info(
                     "Coordinator crawl consume thread started")
                 thread_channel = create_channel(
                     self.rabbitmq_host, self.rabbitmq_port, 500, 350)
                 thread_channel.basic_consume(queue='scrape',
                                              on_message_callback=self.recv_scrape_info)
                 thread_channel.start_consuming()
-                logging.critical("Consuming scrape exited")
+                logger.critical("Consuming scrape exited")
             except Exception as err:
-                logging.critical("Saving scraped repo failed!")
-                logging.critical(err)
+                logger.critical("Saving scraped repo failed!")
+                logger.critical(err)
 
     def __clean_overtime(self):
         ''' restore all overtime repo every 2 build circle '''
@@ -305,7 +311,7 @@ class Coordinator:
         while True:
             time.sleep(TASK_TIMEOUT_THRESHOLD)
             db_man.reset_timeout_status(TASK_TIMEOUT_THRESHOLD)
-            logging.info(">>>>>>>>>>>>>>>>>>>>>> cleanning overtime"
+            logger.info(">>>>>>>>>>>>>>>>>>>>>> cleanning overtime"
                          " tasks ......")
 
     def __reboot_worker(self):
@@ -327,16 +333,16 @@ class Coordinator:
             if reboot_instance_ids != []:
                 response = ec2_client.reboot_instances(
                     InstanceIds=reboot_instance_ids, DryRun=False)
-                logging.info("Rebooting %s vms msg %s",
+                logger.info("Rebooting %s vms msg %s",
                              len(reboot_instance_ids), response)
             for _ in reboot_instance_ids:
                 for i in range(int(sleep_time/60)):
-                    logging.info("%s min to next reboot", sleep_time/60-i)
+                    logger.info("%s min to next reboot", sleep_time/60-i)
                     time.sleep(60)
 
     def recv_scrape_info(self, ch, method, _props, body):
         ''' store scraped messga to database page by page '''
-        logging.info("Crawled msg received")
+        logger.info("Crawled msg received")
         ch.basic_ack(delivery_tag=method.delivery_tag)
         prev_time = time.time()
         recv_msg = json.loads(body.decode())
@@ -347,18 +353,18 @@ class Coordinator:
             result = db_man.insert_repos(onerepo)
             successes += result
         if result == 0:
-            logging.debug("%s inserted err", recv_msg[-1]['url'])
+            logger.debug("%s inserted err", recv_msg[-1]['url'])
         db_man.shutdown()
         after_time = time.time()
-        logging.info("Build system counter %s", Counter(x['build_system'] for x in recv_msg))
-        logging.info("Saved %s/%s in %ss", successes,
+        logger.info("Build system counter %s", Counter(x['build_system'] for x in recv_msg))
+        logger.info("Saved %s/%s in %ss", successes,
                      len(recv_msg), int(after_time-prev_time))
 
     def recv_binary(self, ch, method, _props, body):
         """ collect binary metadata from worker"""
         db_man = DBManager(self.db_addr)
         recv_msg = json.loads(body.decode())
-        logging.info("Received binary: %s on %s",
+        logger.info("Received binary: %s on %s",
                      recv_msg['file_name'], recv_msg['task_id'])
         db_man.insert_binary(
             file_name=recv_msg['file_name'],
@@ -373,7 +379,7 @@ class Coordinator:
         recv_msg = json.loads(body.decode())
         # task = db_man.find_status_by_id(recv_msg['task_id'])
         if recv_msg['status'] == BuildStatus.OUTDATED_MSG:
-            logging.info("discarding an timeout build msg %s", body.decode())
+            logger.info("discarding an timeout build msg %s", body.decode())
             ch.basic_ack(delivery_tag=method.delivery_tag)
             return
         task = db_man.find_status_by_id(recv_msg['task_id'])
@@ -385,7 +391,7 @@ class Coordinator:
             build_status=recv_msg['status'],
             build_msg=recv_msg['msg'][-500:],
             commit_hexsha=recv_msg['commit_hexsha'])
-        logging.info("BUILD task on buildopt %s updated to %s\n%s",
+        logger.info("BUILD task on buildopt %s updated to %s\n%s",
                      recv_msg['opt_id'], recv_msg['status'], " ".join(recv_msg['msg'].split())[-500:])
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
@@ -395,7 +401,7 @@ class Coordinator:
         recv_msg = json.loads(body.decode())
         # if the status code is timeout discard it
         if recv_msg['status'] == BuildStatus.OUTDATED_MSG:
-            logging.info("discarding an timeout clone msg %s", body.decode())
+            logger.info("discarding an timeout clone msg %s", body.decode())
             ch.basic_ack(delivery_tag=method.delivery_tag)
             return
         db_man.update_repo_status(
@@ -404,7 +410,7 @@ class Coordinator:
             clone_msg=recv_msg['msg'][-200:])
         task = db_man.find_status_by_id(recv_msg['task_id'])
         if task.clone_status != BuildStatus.SUCCESS:
-            logging.info("CLONE task on buildopt %s updated to %s: %s",
+            logger.info("CLONE task on buildopt %s updated to %s: %s",
                          recv_msg['opt_id'], task.clone_status, recv_msg['msg'])
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
@@ -424,10 +430,10 @@ class Coordinator:
         
         db_man = DBManager(self.db_addr)
         t_dispatch_list = []
-        logging.info("%s dispathing thread starts", len(
+        logger.info("%s dispatching thread starts", len(
             [x for x in db_man.all_enabled_build_options()]))
         for build_opt in db_man.all_enabled_build_options():
-            logging.info("boot dispatching thread for %d ...", build_opt.id)
+            logger.info("boot dispatching thread for %d ...", build_opt.id)
             if build_opt.platform == 'linux':
                 t_dispatch_list.append(threading.Thread(
                     target=self.__dispatch_task, args=(build_opt.id, False)))
@@ -445,7 +451,7 @@ class Coordinator:
         t_recycle_worker = threading.Thread(target=self.__recycle_clone)
         t_reboot_worker = threading.Thread(target=self.__reboot_worker)
         t_daemon = threading.Thread(target=self.__daemon)
-        logging.info("Processes ready")
+        logger.info("Processes ready")
         with open("/tmp/setup_complete.txt", "w") as f:
             f.write("done")
         t_clean_worker.start()
@@ -459,7 +465,7 @@ class Coordinator:
         t_consume_binary.start()
         t_scrape.start()
         t_reboot_worker.start()
-        logging.info("Threads joining")
+        logger.info("Threads joining")
         t_clean_task.join()
         t_rpc.join()
         for t_dispatch in t_dispatch_list:

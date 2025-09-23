@@ -36,11 +36,12 @@ def mysql_upsert(insert, compiler, **kw):
 class DBManager:
     """ manager for db query and connection """
 
-    def __init__(self, db_addr):
+    def __init__(self, db_addr, init=False): 
+        # create the DB manager, init called when Coordinator first __init__ to start the db
         self.engine = create_engine(db_addr, echo=False,
                                     pool_pre_ping=True,
                                     connect_args={'connect_timeout': 100})
-        while not self._check_db_exists():
+        if init and not self._check_db_exists():
             init_clean_database(db_addr)
 
           

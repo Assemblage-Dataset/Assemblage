@@ -245,7 +245,7 @@ class AssemblageCluster:
         return
 
     def _init_db(self):
-        db_man = DBManager(self.db_conn_str)
+        db_man = DBManager(self.db_conn_str, init=True)
         for opt in self.build_options:
             db_man.add_build_option(**opt)
         if not os.path.exists(self.init_json_path):

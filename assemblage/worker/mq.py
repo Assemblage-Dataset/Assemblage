@@ -33,6 +33,12 @@ class MessageClient:
         conn = pika.BlockingConnection(conn_params)
         return (conn, conn.channel())
 
+    def ensure_connection(self):
+        if not self.conn or self.conn.is_closed:
+            self.conn, self.channel = self.create_channel(300, 300)
+        elif not self.channel or self.channel.is_closed:
+            self.channel = self.conn.channel()
+            
     def add_topic_exchange(self, exchange_name):
         ''' add a topic exchanger to channel '''
         self.exchange_name = exchange_name
@@ -62,6 +68,9 @@ class MessageClient:
         send message into the queue with name `kind`
         '''
         logging.info("MQ queued length %s", len(msg))
+        # rabbit mq doesnt like it when you go to sleep 
+     
+        self.ensure_connection()
         try:
             self.channel.basic_publish(exchange=exchange,
                                    routing_key=kind,

@@ -18,6 +18,7 @@ import shutil
 import signal
 import json
 import ftplib
+import time
 import yaml
 import random
 import string
@@ -27,6 +28,7 @@ import requests
 
 from botocore.exceptions import ClientError
 from git import Repo
+
 from assemblage.worker.profile import AWSProfile
 from assemblage.consts import BuildStatus, PDBJSONNAME, BINPATH
 from assemblage.windows.parsers.proj import Project
@@ -36,7 +38,7 @@ from assemblage.worker.ctags_parser import get_functions as ctags_get_functions
 from assemblage.worker.clang_parser import get_functions as clang_get_functions
 from typing import Tuple
 
-logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 def cmd_with_output(cmd, timelimit=60, platform='linux', cwd=''):
     """ The cmd execution function """
@@ -137,7 +139,7 @@ class DefaultBuildStrategy(BuildStrategy):
 
     def clone_data(self, repo):
         """ Clone repo """
-        logging.info("Cloning %s", repo["url"])
+        logger.info("Cloning %s", repo["url"])
         clone_dir = self.get_clone_dir(repo)
         zip_url = repo["url"]+"/archive/refs/heads/master.zip"
         if self.platform == "linux":
@@ -156,11 +158,11 @@ class DefaultBuildStrategy(BuildStrategy):
             if exit_code == 0:
                 return b'CLONE SUCCESS', BuildStatus.SUCCESS, clone_dir
             else:
-                logging.error("Clone failed with output: \n %s \n error: \n %s", out, err)
+                logger.error("Clone failed with output: \n %s \n error: \n %s", out, err)
         if self.platform == "windows":
             if "mod_timestamp" not in repo:
                 try:
-                    logging.info("Downloading zip %s", zip_url)
+                    logger.info("Downloading zip %s", zip_url)
                     response = requests.get(zip_url)
                     tmp_file_path = os.path.join(self.tmp_dir, hashlib.md5(repo["url"].encode()).hexdigest(
                             )+''.join(random.choice(string.ascii_lowercase) for _ in range(5))+".zip")
@@ -169,7 +171,7 @@ class DefaultBuildStrategy(BuildStrategy):
                     os.remove(tmp_file_path)
                     return b'CLONE SUCCESS', BuildStatus.SUCCESS, clone_dir
                 except Exception as err:
-                    logging.info(err)
+                    logger.info(err)
             else:
                 out, err, exit_code = cmd_with_output([
                     'gh', 'repo', 'clone', repo['url'], clone_dir, "--", "--depth",
@@ -188,7 +190,7 @@ class DefaultBuildStrategy(BuildStrategy):
                                     break
                             return b'CLONE SUCCESS', BuildStatus.SUCCESS, clone_dir
                         except Exception as err:
-                            logging.info(err)
+                            logger.info(err)
                             return (str(err)).encode(), BuildStatus.FAILED, clone_dir
                 else:
                     return out + err, BuildStatus.FAILED, clone_dir
@@ -223,27 +225,35 @@ class DefaultBuildStrategy(BuildStrategy):
             cmd.append("/property:OutDir=assemblage_outdir_bin/")
             cmd.append(f"'{slnfile}'")
             cmd = " ".join(cmd)
-            logging.info("Windows cmd generated: %s", cmd)
+            logger.info("Windows cmd generated: %s", cmd)
             return cmd_with_output(cmd, 600, platform)
         if platform.lower() == 'linux':
             files = []
             for filename in glob.iglob(target_dir + '**/**', recursive=True):
                 files.append(filename.split("/")[-1])
-            logging.info("%s files in repo", len(files))
+            logger.info("%s files in repo", len(files))
             build_tool = get_build_system(files)
             cmd = ""
+            
+            if os.getenv("SAVE_ASSEMBLY", "true") == "true":
+                cflags = 'CFLAGS="$CFLAGS -save-temps"'
+                logger.info("Saving .s and .o files as well ")
+            else:
+                cflags = 'CLAGS="$CFLAGS"'
+                
+            
             if 'bootstrap' in build_tool:
                 cmd = f'cd {target_dir} && ./bootstrap && ' \
-                    'bash ./configure && timeout -m 5000000 make -j4'
+                    f'bash ./configure && timeout -m 5000000 make {cflags} -j4'
             elif 'configure' in build_tool:
                 cmd = f'cd {target_dir} && bash ./configure && ' \
-                    'timeout -m 5000000 -- make -j4'
+                    f'timeout -m 5000000 -- make {cflags} -j4'
             elif 'cmake' in build_tool:
                 cmd = f'cd {target_dir} && cmake -Bbuild ./ && cd build && ' \
-                    'timeout -m 5000000 -- make -j4'
+                    f'timeout -m 5000000 -- make {cflags} -j4'
             elif 'make' in build_tool:
-                cmd = f'cd {target_dir} && timeout -m 5000000 -- make -j4'
-            logging.info("Linux cmd generated: %s", cmd)
+                cmd = f'cd {target_dir} && timeout -m 5000000 -- make {cflags} -j4'
+            logger.info("Linux cmd generated: %s", cmd)
             return cmd_with_output(cmd, 600, platform)
 
 
@@ -282,13 +292,13 @@ class WindowsDefaultStrategy(DefaultBuildStrategy):
             if f.endswith("vcxproj"):
                 projfiles.append(f)
         if slnfile == "":
-            logging.error("No solution file found")
+            logger.error("No solution file found")
             return "No SLN file found", BuildStatus.SUCCESS, ""
         try:
             sln = Solution(slnfile)
             sln.set_config(Platform, Buildmode)
         except:
-            logging.info("SLN parsing err, but continue with vcxproj files")
+            logger.info("SLN parsing err, but continue with vcxproj files")
         try:
             for projfile in projfiles:
                 projobj = Project(projfile)
@@ -311,21 +321,21 @@ class WindowsDefaultStrategy(DefaultBuildStrategy):
                     optimization_mode = "Full"
                 else:
                     optimization_mode = "Disabled"
-                logging.info("Read config: %s, correct: %s",
+                logger.info("Read config: %s, correct: %s",
                             projobj_saved.get_optimization(), optimization_mode)
                 assert optimization_mode == projobj_saved.get_optimization()
         except FileNotFoundError:
-            logging.error("Build File not exist")
+            logger.error("Build File not exist")
             return "Parsing FileNotFoundError", BuildStatus.FAILED, ""
         except AttributeError as err:
-            logging.error("Build vcxproj file parsing error %s", str(err))
+            logger.error("Build vcxproj file parsing error %s", str(err))
             return "Parsing AttributeError", BuildStatus.FAILED, ""
         except KeyError:
-            logging.error("Build vcxproj file setting error")
+            logger.error("Build vcxproj file setting error")
             return "Parsing file key error", BuildStatus.FAILED, ""
         except AssertionError:
             return "Parsing file verification error", BuildStatus.FAILED, ""
-        logging.info("Parsing success")
+        logger.info("Parsing success")
         return "Parsing success", BuildStatus.SUCCESS, slnfile
 
     def dia_get_func_funcinfo(self, binfile, source_code_prefix):
@@ -352,14 +362,14 @@ class WindowsDefaultStrategy(DefaultBuildStrategy):
         # binfile = binfile.replace("/", "\\")
         binfolder = os.path.dirname(binfile)
         binfile = binfile.split("\\")[-1]
-        logging.info("Processing %s, move to %s", binfile, binfolder)
+        logger.info("Processing %s, move to %s", binfile, binfolder)
         cmd = f"Dia2Dump -lines * {binfile}"
         out, _err, _exit_code = cmd_with_output(cmd, platform='windows', cwd=binfolder)
         file_cache = {}
         try:
             lines_notclean = out.decode().split("\r\n")
         except:
-            logging.info("Dia2dump error")
+            logger.info("Dia2dump error")
             lines_notclean = []
         lines = []
         for line in lines_notclean:
@@ -439,7 +449,7 @@ class WindowsDefaultStrategy(DefaultBuildStrategy):
         if not os.path.isdir(movedir):
             os.makedirs(movedir)
         for _, binfile in enumerate(bin_files):
-            logging.info("Moving %s -> %s", binfile, os.path.join(movedir, os.path.basename(binfile)))
+            logger.info("Moving %s -> %s", binfile, os.path.join(movedir, os.path.basename(binfile)))
             shutil.copy(binfile, os.path.join(movedir, os.path.basename(binfile)))
 
             funcs_infos, lines_infos, source_file = self.dia_get_func_funcinfo(binfile, source_codedir)
@@ -468,7 +478,7 @@ class WindowsDefaultStrategy(DefaultBuildStrategy):
                     try:
                         func_cache[source_file_cleaned] = clang_get_functions(source_file_cleaned)
                     except Exception as e:
-                        logging.info("Clang parser error %s", e)
+                        logger.info("Clang parser error %s", e)
                         func_cache[source_file_cleaned] = []
                     beforetime = time.time()
                     func_cache[source_file_cleaned] += ctags_get_functions(source_file_cleaned)
@@ -509,7 +519,7 @@ class WindowsDefaultStrategy(DefaultBuildStrategy):
             with open(os.path.join(dest_binfolder, PDBJSONNAME), "w") as outfile:
                 json.dump(assemblage_meta, outfile, sort_keys=False, indent=4)
         except FileNotFoundError:
-            logging.info("Pdbjsonfile not found")
+            logger.info("Pdbjsonfile not found")
         if not os.path.isdir(movedir):
             os.makedirs(movedir)
         shutil.move(os.path.join(dest_binfolder, PDBJSONNAME), movedir)
@@ -546,27 +556,33 @@ class WindowsDefaultStrategy(DefaultBuildStrategy):
             cmd.append("/property:OutDir=assemblage_outdir_bin/")
             cmd.append(f"'{slnfile}'")
             cmd = " ".join(cmd)
-            logging.info("Windows cmd generated: %s", cmd)
+            logger.info("Windows cmd generated: %s", cmd)
             return cmd_with_output(cmd, 600, platform)
         if platform.lower() == 'linux':
             files = []
             for filename in glob.iglob(target_dir + '**/**', recursive=True):
                 files.append(filename.split("/")[-1])
-            logging.info("%s files in repo", len(files))
+            logger.info("%s files in repo", len(files))
             build_tool = get_build_system(files)
+            if os.getenv("SAVE_ASSEMBLY", "true") == "true":
+                cflags = 'CFLAGS="$CFLAGS -save-temps"'
+                logger.info("Saving .s and .o files as well ")
+            else:
+                cflags = 'CLAGS="$CFLAGS"'
+                
             cmd = ""
             if 'bootstrap' in build_tool:
                 cmd = f'cd {target_dir} && ./bootstrap && ' \
-                    'bash ./configure && timeout -m 5000000 make -j4'
+                    f'bash ./configure && timeout -m 5000000 make {cflags} -j4'
             elif 'configure' in build_tool:
                 cmd = f'cd {target_dir} && bash ./configure && ' \
-                    'timeout -m 5000000 -- make -j4'
+                    f'timeout -m 5000000 -- make {cflags} c-j4'
             elif 'cmake' in build_tool:
                 cmd = f'cd {target_dir} && cmake -Bbuild ./ && cd build && ' \
-                    'timeout -m 5000000 -- make -j4'
+                    f'timeout -m 5000000 -- make {cflags} -j4'
             elif 'make' in build_tool:
-                cmd = f'cd {target_dir} && timeout -m 5000000 -- make -j4'
-            logging.info("Linux cmd generated: %s", cmd)
+                cmd = f'cd {target_dir} && timeout -m 5000000 -- make {cflags}-j4'
+            logger.info("Linux cmd generated: %s", cmd)
             return cmd_with_output(cmd, 600, platform)
 
 
@@ -580,7 +596,7 @@ class vcpkgStrategy(DefaultBuildStrategy):
         if os.path.exists(dest_path):
             shutil.rmtree(dest_path, ignore_errors=False, onerror=None)
         os.makedirs(os.path.join(dest_path, "triplets"))
-        logging.info("Clone called")
+        logger.info("Clone called")
         return b'No need for clone', 0, dest_path
 
     def pre_build(repo, target_dir, build_mode, library, optimization,
@@ -591,7 +607,7 @@ class vcpkgStrategy(DefaultBuildStrategy):
     def run_build(repo, target_dir, build_mode, library, optimization,
                         slnfile, platform, compiler_version, version=None):
         """"""
-        logging.info(f" >>> Building {repo} ...")
+        logger.info(f" >>> Building {repo} ...")
         triplet_cpu_arch = "x64"
         triplet_path = os.path.relpath(os.path.join(target_dir, "triplets", f"{triplet_cpu_arch}-{optimization.lower()}-windows.cmake"))
         triplet_flags = {"VCPKG_TARGET_ARCHITECTURE": triplet_cpu_arch, "VCPKG_CRT_LINKAGE":"dynamic", "VCPKG_LIBRARY_LINKAGE":"dynamic"}
@@ -620,7 +636,7 @@ class vcpkgStrategy(DefaultBuildStrategy):
             os.system(cmd)
             # Don't use subprocess, will cause weird error during running
         else:
-            logging.info("Alredy built")
+            logger.info("Alredy built")
         post_processing_pdb(
             bindir, build_mode, library=library, repoinfo={"url":repo, "updated_at": version}, toolset=compiler_version,
                     optimization=optimization, source_codedir=target_dir, commit=version, movedir=f"Binaries/{repo}-{triplet_cpu_arch}-{optimization}-{version.replace(':','')}({compiler_version})")

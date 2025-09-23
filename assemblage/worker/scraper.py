@@ -36,6 +36,7 @@ from assemblage.analyze.analyze import get_build_system
 SEARCH_RATE_LIMIT = 30
 RATE_LIMIT = 5000
 
+logger = logging.getLogger(__name__)
 
 def github_time_to_mysql_time(gtime: str):
     ''' change the format of time we havevest from github to mysql date string '''
@@ -137,7 +138,7 @@ class GithubRepositories(DataSource):
             self.query_pile = int(time.time())//3600
             self.queries = 0
         if self.queries > RATE_LIMIT:
-            logging.info("Worker %s idle soon", self.workerid)
+            logger.info("Worker %s idle soon", self.workerid)
             time.sleep(3600-int(time.time()) % 3600)
             self.queries = 0
 
@@ -151,19 +152,28 @@ class GithubRepositories(DataSource):
             page = requests.get(url + f"/git/trees/{default_branch}",
                                 auth=("", self.token), proxies=self.random_proxy(), timeout=10)
             if "secondary rate limit" in page.text:
-                logging.info(page.text.replace("\n", ""))
+                logger.info(page.text.replace("\n", ""))
                 time.sleep(120)
                 page = requests.get(url + f"/git/trees/{default_branch}",
                                     auth=("", self.token), proxies=self.random_proxy(), timeout=10)
             elif "rate limit" in page.text:
-                logging.info("Crawler %s rate limit, sleep %ss", self.workerid,
-                                self.token_checker.rate_reset("", self.token))
-                time.sleep(
-                    self.token_checker.rate_reset("", self.token))
+                sleep_remaining =   self.token_checker.rate_reset("", self.token)
+                
+                interval = 60 # interval of logging updates
+                logger.info("Crawler %s rate limit, sleep %ss", self.workerid,
+                                sleep_remaining)
+                # to give updates on remaining sleep ...
+                while sleep_remaining > 0: 
+                    sleep_chunk = min(interval, sleep_remaining)
+                    logger.info("Crawler %s sleeping... %ds remaining", self.workerid, sleep_remaining)
+                    time.sleep(sleep_chunk)
+                    sleep_remaining -= sleep_chunk
+                
+                    
                 page = requests.get(url + f"/git/trees/{default_branch}",
                                     auth=("", self.token), proxies=self.random_proxy(), timeout=10)
         except Exception as err:
-            logging.info(err)
+            logger.info(err)
             return None, None
         repo_page = json.loads(page.text)
         files_list = []
@@ -176,7 +186,7 @@ class GithubRepositories(DataSource):
             if "path" in record.keys():
                 files.append(record["path"])
         build_tool = self.build_sys_callback(files)
-        # logging.info("Crawler got %s, %s in pool", build_tool, len(self.repocache))
+        # logger.info("Crawler got %s, %s in pool", build_tool, len(self.repocache))
         name = repo["name"]
         url = repo["url"]
         language = repo["language"]
@@ -202,7 +212,7 @@ class GithubRepositories(DataSource):
     def fetch_data(self):
         crawl_time = self.crawl_time_start
         while crawl_time > 1262322000:
-            logging.info("Crawler checking %s", datetime.utcfromtimestamp(crawl_time).isoformat())
+            logger.info("Crawler checking %s", datetime.utcfromtimestamp(crawl_time).isoformat())
             crawl_time = self.check_cache(self.crawl_time_interval)
             time_start = datetime.utcfromtimestamp(crawl_time).isoformat()
             time_end = datetime.utcfromtimestamp(
@@ -222,10 +232,10 @@ class GithubRepositories(DataSource):
                                      payload,
                                      auth=("", self.token), proxies=self.random_proxy(), timeout=10)
                     after = int(time.time())
-                    logging.info("Crawler request respond in %ss",  after-before)
+                    logger.info("Crawler request respond in %ss",  after-before)
                     rdict = json.loads(r.text)
                     while "message" in rdict.keys() and "rate limit" in rdict["message"]:
-                        logging.info("Crawler got %s", rdict["message"].replace("/n", ""))
+                        logger.info("Crawler got %s", rdict["message"].replace("/n", ""))
                         time.sleep(60)
                         if "secondary" in rdict["message"]:
                             time.sleep(60)
@@ -234,23 +244,23 @@ class GithubRepositories(DataSource):
                                          payload,
                                          auth=("", self.token), proxies=self.random_proxy(), timeout=10)
                         after = int(time.time())
-                        logging.info("Crawler request respond in %ss with rate limit", after-before)
+                        logger.info("Crawler request respond in %ss with rate limit", after-before)
                         rdict = json.loads(r.text)
                     if 'items' in rdict.keys():
                         total_count = min(rdict["total_count"], total_count)
-                        logging.info("Crawler query: %s page:%s, GitHub respond %s repos",
+                        logger.info("Crawler query: %s page:%s, GitHub respond %s repos",
                                      payload['page'], time_start[:-7], total_count)
                         repos_per_page = rdict["items"]
                         for repo in repos_per_page:
-                            logging.info("Crawler got %s", repo["name"])
+                            logger.info("Crawler got %s", repo["name"])
                             dt, fs = self._process_repo_message(repo)
                             if dt and fs:
                                 yield dt, fs
                 except Exception as err:
-                    logging.info(err)
+                    logger.info(err)
             crawl_time -= self.crawl_time_interval
             crawl_time = int(crawl_time)
-        logging.info("sacrping finished!")
+        logger.info("scraping finished!")
 
 
 class Scraper(BasicWorker):
@@ -260,7 +270,7 @@ class Scraper(BasicWorker):
 
     def __init__(self, rabbitmq_port, rabbitmq_host, workerid, data_source: DataSource):
         # TODO: refactor here make scraper connect to gRPC control port
-        logging.info("Booting crawler %s", workerid)
+        logger.info("Booting crawler %s", workerid)
         super().__init__(rabbitmq_host, rabbitmq_port, None, "scraper",
                          -1)
         self.data_source = data_source
@@ -290,10 +300,10 @@ class Scraper(BasicWorker):
                         'scrape', json.dumps(self.repocache))
                     self.repocache = []
                     self.sent += self.bundle_number
-                    logging.info("Crawler %s sent %s repos, total: %s",
+                    logger.info("Crawler %s sent %s repos, total: %s",
                                 self.workerid, self.bundle_number, self.sent)
                 except Exception as err:
-                    logging.info("Sending repos errored: %s", str(err))
+                    logger.info("Sending repos errored: %s", str(err))
                     self.mq_client = MessageClient(
                         self.rabbitmq_host, self.rabbitmq_port, 'scraper')
                     self.mq_client.add_output_queues([{
@@ -303,5 +313,5 @@ class Scraper(BasicWorker):
                         }
                     }])
 
-        logging.info("Crawler %s End Task", self.workerid)
+        logger.info("Crawler %s End Task", self.workerid)
         os.remove(self.record_file)

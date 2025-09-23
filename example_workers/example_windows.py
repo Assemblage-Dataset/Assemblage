@@ -15,7 +15,7 @@ import boto3
 
 from botocore.exceptions import ClientError
 from assemblage.consts import PDBJSONNAME, BINPATH, BuildStatus
-from assemblage.bootstrap import AssmeblageCluster
+from assemblage.bootstrap import AssemblageCluster
 from ..assemblage.worker.clang_parser import get_functions
 from assemblage.worker.scraper import GithubRepositories
 from assemblage.worker.profile import AWSProfile
@@ -483,7 +483,7 @@ class WindowsDefaultStrategy(DefaultBuildStrategy):
             logging.info("Pdbjsonfile not found")
     
 
-test_cluster_windows = AssmeblageCluster(name="test"). \
+test_cluster_windows = AssemblageCluster(name="test"). \
                 build_system_analyzer(get_build_system). \
                 aws(aws_profile). \
                 message_broker(mq_addr="rabbitmq", mq_port=5672). \
