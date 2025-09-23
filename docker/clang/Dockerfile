@@ -12,15 +12,15 @@ RUN apt-get -y update && apt-get install -y make build-essential libssl-dev zlib
         autoconf libtool pkg-config libc++-dev libc++abi-dev bundler automake \
         g++ unzip python3-pip python3.12-venv libjpeg-dev zlib1g-dev clang
 
-COPY . /assemblage
+COPY ./backend /app
 
-WORKDIR /assemblage
+WORKDIR /app
 ENV PIP_USE_PEP517=1
 
 RUN python3 -m venv /venv
 ENV PATH="/venv/bin:$PATH"
 RUN pip install --upgrade pip setuptools wheel
 RUN pip install -r requirements.txt
-RUN cp -r aws /root/.aws
+COPY ./aws /root/.aws
 RUN export AWS_CONFIG_FILE=/root/.aws/config
 RUN export AWS_SHARED_CREDENTIALS_FILE=/root/.aws/credentials

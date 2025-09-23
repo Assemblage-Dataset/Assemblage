@@ -46,7 +46,7 @@ class Builder(BasicWorker):
                  build_mode="Debug",
                  library="",
                  compiler_flag="",
-                 tmp_dir="",
+                 tmp_dir="/tmp/",
                  compiler="",
                  rand_build=False,
                  random_pick=0,

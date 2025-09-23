@@ -1,8 +1,8 @@
 *
-!assemblage
+!backend
 !docker
 !requirements.txt
 !start*
 !ccwrapper
 !aws
-!*.py
+!frontend
