@@ -22,6 +22,17 @@ time_now = int(time.time())
 start = time_now - time_now % 86400
 querylap = 14400
 
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+)
+
+
+logger = logging.getLogger(__name__)
+
+
 def get_build_system(files):
     """Analyze build tool from file list"""
     # build_systems = {"make": ["makefile"],
@@ -73,19 +84,27 @@ class SampleBuild(BuildStrategy):
         files = []
         for filename in glob.iglob(target_dir + '**/**', recursive=True):
             files.append(filename.split("/")[-1])
-        logging.info("%s files in repo", len(files))
+        logger.info("%s files in repo", len(files))
         build_tool = get_build_system(files)
-        cmd = f'cd {target_dir} && make -j16'
-        logging.info("Linux cmd generated: %s", cmd)
-        logging.info("Files found %s", os.listdir(target_dir))
+        if os.getenv("SAVE_ASSEMBLY", "true") == "true":
+            cflags = 'CFLAGS="$CFLAGS -save-temps"'
+            logger.info("Saving .s and .o files as well ")
+        else:
+            cflags = 'CLAGS="$CFLAGS"'
+        
+    
+        
+        cmd = f'cd {target_dir} && make {cflags} -j16'
+        logger.info("Linux cmd generated: %s", cmd)
+        logger.info("Files found %s", os.listdir(target_dir))
         out, err, exit_code = cmd_with_output(cmd, 600, platform)
         return_code = BuildStatus.SUCCESS if exit_code == 0 else BuildStatus.FAILED
         return out.decode() + err.decode(), return_code
 
     def post_build_hook(self, dest_binfolder, build_mode, library, repoinfo, toolset,
                         optimization, commit_hexsha):
-        logging.info(os.listdir(dest_binfolder))
-        logging.info("Maybe move files to some Docker mapped volume")
+        logger.info(os.listdir(dest_binfolder))
+        logger.info("Maybe move files to some Docker mapped volume")
         os.system(f"mv {dest_binfolder} /binaries/{repoinfo['name']}")
 
 test_cluster_c = AssemblageCluster(name="sample"). \
