@@ -87,6 +87,7 @@ services:
 
   web-backend:
     image: assemblage-web-backend:latest
+    command: uvicorn scripts.web_server:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app
     build:
       context: .
       dockerfile: docker/web/backend/Dockerfile
