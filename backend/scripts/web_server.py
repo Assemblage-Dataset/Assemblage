@@ -1,15 +1,24 @@
 from typing import Union
 
-from fastapi import FastAPI
+from fastapi import FastAPI, APIRouter
 
+from assemblage.api.routers import admin, control
 app = FastAPI()
+api_router = APIRouter(prefix="/api")
+
+api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
 
 
-@app.get("/")
+def print_routes():
+    print("Registered routes:")
+    for route in app.routes:
+        print(f"Path: {route.path} | Name: {route.name} | Methods: {route.methods}")
+
+
+print_routes()
+@api_router.get("")
 def read_root():
     return {"Hello1": "World"}
 
 
-@app.get("/items/{item_id}")
-def read_item(item_id: int, q: Union[str, None] = None):
-    return {"item_id": item_id, "q": q}
+app.include_router(api_router)
