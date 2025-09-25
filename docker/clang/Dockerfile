@@ -16,8 +16,8 @@ COPY ./backend /app
 
 WORKDIR /app
 ENV PIP_USE_PEP517=1
-
 RUN python3 -m venv /venv
+ENV PYTHONPATH=/app
 ENV PATH="/venv/bin:$PATH"
 RUN pip install --upgrade pip setuptools wheel
 RUN pip install -r requirements.txt
