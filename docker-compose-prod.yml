@@ -67,7 +67,7 @@ services:
 
   scraper_0:
     image: assemblage-gcc:default
-    command: python3 /app/scripts/workers/example_cluster.py --type scraper --id 0
+    command: python3 /app/scripts/workers/example_cluster.py  --type  scraper  --id 0
     depends_on:
       coordinator:
         condition: service_healthy
@@ -89,7 +89,7 @@ services:
     image: assemblage-web-backend:latest
     build:
       context: .
-      dockerfile: docker/web/backend/Dockerfile
+      dockerfile: docker/web_server_backend/Dockerfile
     depends_on:
       database:
         condition: service_healthy
@@ -99,20 +99,9 @@ services:
         - secrets.env
     volumes:
         - ./backend:/app 
-
-  web-frontend: 
-    image: assemblage-web-frontend:latest
-    depends_on:
-      - web-backend
-    build: 
-      context: .
-      dockerfile: docker/web/frontend/Dockerfile.dev
-    volumes: 
-        - ./frontend:/app
-        - /app/node_modules
-    ports:
-      - "80:3000"
-
+    ports: 
+        - "80:80"
+      
 volumes:
   shared-data:
     driver: local
