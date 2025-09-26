@@ -2,9 +2,11 @@
 constant
 
 """
+from enum import Enum
 import os
+from sre_constants import SUCCESS
 
-class BuildStatus:
+class BuildStatus(Enum):
     """
     Clone and build status codes
     See schema for defaults
@@ -18,6 +20,14 @@ class BuildStatus:
     BLACKLIST = 5
     OUTDATED_MSG = 6    # a message overtime, not build overtime
     EXCLUDE = 7
+    COMMAND_FAILED = 10
+
+
+class PriorityStatus(Enum):
+    NOT_STARTED = 0
+    PROCESSING = 1
+    FAILED = 2
+    SUCCESS = 3
     COMMAND_FAILED = 10
 
 

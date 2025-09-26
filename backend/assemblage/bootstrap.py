@@ -183,28 +183,6 @@ class AssemblageCluster:
     def _build_coordinator_image(self):
         os.system('sh build.sh')
 
-    def _boot_mysql(self):
-        cmds = []
-        cmds.append("docker pull mysql/mysql-server")
-        cmds.append("docker container stop mysql&&docker container rm mysql")
-        cmds.append(f"docker run --name=mysql -p 3306:3306 --network={self.docker_network_name} -e MYSQL_ROOT_PASSWORD={("MYSQL_ROOT_PASSWORD", "assemblage")} -d mysql/mysql-server")
-        for cmd in cmds:
-            os.system(cmd)
-        
-        out, err, exitcode=cmd_with_output("docker exec mysql mysql -u root -passemblage")
-        while "2002" in out.decode() or "2002" in err.decode():
-            print("MySQL initing, waiting for 5 seconds")
-            time.sleep(5)
-            out, err, exitcode=cmd_with_output("docker exec mysql mysql -u root -passemblage")
-        os.system(f"docker exec -i mysql mysql -u root -passemblage < {os.getcwd()}/assemblage/data/init.sql")
-        db_conn_str_local = f'mysql+pymysql://{self.db_username}:{self.db_password}@localhost:3306/{self.db_name}?charset=utf8mb4'
-        assert database_exists(db_conn_str_local)
-        if self.db_init_flag:
-            init_clean_database(db_conn_str_local)
-        print("DB inited")
-        # wirte mysql configure
-   
-
     def _build_image(self):
         os.system("sh build.sh")
 
@@ -511,9 +489,6 @@ class AssemblageCluster:
             # os.system("sh start.sh")
             if self.init_docker_network_flag:
                 self._init_docker_network()
-            if self.db_boot_flag:
-                self._boot_mysql()
-                self._init_db()
             if self.init_gh_flag:
                 self._prepare_gh()
             self._build_coordinator_image()
