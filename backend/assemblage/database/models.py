@@ -7,12 +7,12 @@ import json
 from typing import List, Optional
 
 from sqlalchemy.orm import Session
-from sqlalchemy import Integer, String, Text, DateTime, Boolean, create_engine
+from sqlalchemy import  String, Text, DateTime, Boolean, create_engine
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.sql.schema import ForeignKey
 from sqlalchemy_utils import create_database, database_exists
-from sqlmodel import Field, Session, SQLModel, create_engine, select, Relationship, Column
-from assemblage.consts import PriorityStatus
+from sqlmodel import Integer, Enum, Field, Session, SQLModel, create_engine, select, Relationship, Column
+from assemblage.consts import BuildStatus, PriorityStatus
 from pydantic import HttpUrl
 
 Base = declarative_base()
@@ -24,11 +24,13 @@ class Status(SQLModel, table=True):
 
     id: int = Field(Integer, primary_key=True)
     # priority high: 2, mid: 1, low 0
-    priority: PriorityStatus = Field(default=0, index=True)
+    priority: PriorityStatus = Field(sa_column=Column(
+        Integer, default=PriorityStatus.NOT_STARTED, index=True))
     # 0 : not started 1 : processing 2 : failed 3 : success 10 : command failed
     clone_status: int = 0
     clone_msg: str = Field(max_length=255, default="")
-    build_status: int = 0
+    build_status: BuildStatus = Field(sa_column=Column(
+        Integer, default=BuildStatus.INIT, index=True))
     build_msg: str = ""
     build_opt_id: int | None = Field(
         default=None, foreign_key="buildopt.id")  # cascade
@@ -40,7 +42,8 @@ class Status(SQLModel, table=True):
     mod_timestamp: int = -1
     build_time: int = -1
     commit_hexsha: str = Field(max_length=255, default="")
-    binaries: List["BuildDO"] = Relationship(back_populates="status",sa_relationship_kwargs={"cascade": "all, delete"})
+    binaries: List["BuildDO"] = Relationship(
+        back_populates="status", sa_relationship_kwargs={"cascade": "all, delete"})
     project: "RepoDO" = Relationship(back_populates="statuses")
 
 
@@ -62,7 +65,8 @@ class BuildOpt(SQLModel, table=True):
         return f'BuildOpt(platform={self.platform}, ,platform={self.platform}, ' \
                f'language={self.language}, compiler flag={self.compiler_flag}), ' \
                f'compiler name={self.compiler_name})'
-
+    class Config:
+        use_enum_values = True
 
 class BuildDO(SQLModel, table=True):
     """ Build object to collect build information - How binaries are built"""
@@ -72,14 +76,15 @@ class BuildDO(SQLModel, table=True):
     description: str = ""
     build_date: datetime.datetime = Field(
         default_factory=datetime.datetime.now(datetime.timezone.utc))
-    disasmed: bool = False
+    disassembled: bool = False
 
     status_id: int = Field(Integer, foreign_key="b_status.id")  # cascade
     status: Status | None = Relationship(back_populates="binaries")
 
     def __repr__(self):
         return f'Repo(File name={self.file_name})'
-
+    class Config:
+        use_enum_values = True
 
 class RepoDO(SQLModel, table=True):
     """
@@ -102,12 +107,15 @@ class RepoDO(SQLModel, table=True):
     forked_commit_id: int = 0
     branch: str = Field(max_length=16, default="master")
     # priority high: 2, mid: 1, low 0
-    priority: PriorityStatus = Field(default=0, index=True)
+    priority: PriorityStatus = Field(sa_column=Column(
+        Integer, default=PriorityStatus.NOT_STARTED, index=True))
     size: int = 0
     # replace this with Enum too?
     build_system: str = Field(max_length=255, default="", index=True)
-    statuses: List[Status] = Relationship(back_populates="project",sa_relationship_kwargs={"cascade": "all, delete"})
-
+    statuses: List[Status] = Relationship(
+        back_populates="project", sa_relationship_kwargs={"cascade": "all, delete"})
 
     def __repr__(self):
         return f'Repo(id={self._id} ,name={self.name}, url={self.url})'
+    class Config:
+        use_enum_values = True

@@ -27,6 +27,9 @@ services:
     # - 5672:5672
   coordinator:
     image: assemblage-gcc:default
+    build:
+      context: .
+      dockerfile: docker/gcc/Dockerfile
     command: python3 /app/scripts/workers/example_cluster.py --type  coordinator
     environment:
       PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
@@ -47,26 +50,11 @@ services:
     volumes:
       - shared-data:/binaries
       - ./backend:/app 
-
-  builder_0:
-    image: assemblage-clang:default
-    command: python3 /app/scripts/workers/example_cluster.py --type builder --id 0
-    environment:
-      PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
-    env_file:
-      - secrets.env
-    depends_on:
-      coordinator:
-        condition: service_healthy
-    deploy:
-      restart_policy:
-        condition: on-failure
-    volumes:
-      - ./binaries:/binaries
-      - ./backend:/app 
-
   scraper_0:
     image: assemblage-gcc:default
+    build:
+      context: .
+      dockerfile: docker/gcc/Dockerfile
     command: python3 /app/scripts/workers/example_cluster.py --type scraper --id 0
     depends_on:
       coordinator:
@@ -84,7 +72,28 @@ services:
     volumes:
       - shared-data:/binaries
       - ./backend:/app 
+  builder_0:
+    image: assemblage-clang:default
+    build:
+      context: .
+      dockerfile: docker/clang/Dockerfile
+    command: python3 /app/scripts/workers/example_cluster.py --type builder --id 0
+    environment:
+      PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
+    env_file:
+      - secrets.env
+    depends_on:
+      coordinator: 
+        condition: service_healthy
+    deploy:
+      restart_policy:
+        condition: on-failure
+    volumes:
+      - shared-data:/binaries
+      - ./backend:/app 
 
+
+# web server
   web-backend:
     image: assemblage-web-backend:latest
     command: uvicorn scripts.web_server:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app
@@ -112,7 +121,7 @@ services:
       dockerfile: docker/web/frontend/Dockerfile.dev
     volumes: 
         - ./frontend:/app
-        - /app/node_modules
+        - /app/node_modules # prevents then from being overwritten by not existing locally!
     ports:
       - "80:3000"
 

@@ -34,7 +34,7 @@ from assemblage.data.db import DBManager
 from assemblage.protobufs.assemblage_pb2 import DumpRequest, RepoRequest, WorkerRequest, BuildRequest, \
     ProgressRequest, Repo, BuildOpt, enableBuildOptRequest, getBuildOptRequest, SetOptRequest
 from assemblage.protobufs.assemblage_pb2_grpc import AssemblageServiceStub
-from assemblage.data.object import init_clean_database
+from assemblage.database import init_clean_database
 from assemblage.worker.build_method import cmd_with_output
 
 

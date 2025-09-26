@@ -38,6 +38,7 @@ RATE_LIMIT = 5000
 
 logger = logging.getLogger(__name__)
 
+
 def github_time_to_mysql_time(gtime: str):
     ''' change the format of time we havevest from github to mysql date string '''
     try:
@@ -47,6 +48,7 @@ def github_time_to_mysql_time(gtime: str):
         return datetime.strptime(
             "2000-01-01T01:01:01Z",
             '%Y-%m-%dT%H:%M:%SZ').strftime('%Y-%m-%d %H:%M:%S')
+
 
 class DataSource(object):
 
@@ -102,12 +104,13 @@ class GithubTimeOrder(Enum):
     CREATED = "created"
     PUSHED = "pushed"
 
+
 class GithubRepositories(DataSource):
     """ a data generator for Windows c repositories """
 
     def __init__(self, git_token, qualifier, crawl_time_start, crawl_time_interval,
-                proxies, sort=GithubTimeOrder.CREATED, order="",
-                build_sys_callback=get_build_system) -> None:
+                 proxies, sort=GithubTimeOrder.CREATED, order="",
+                 build_sys_callback=get_build_system) -> None:
         super().__init__(build_sys_callback)
         self.token = git_token
         # self.lang = lang
@@ -117,13 +120,24 @@ class GithubRepositories(DataSource):
         self.crawl_time_start = crawl_time_start
         self.proxies = proxies
         self.query_pile = int(time.time())//3600
-        self.token_checker = TokenChecker()
         self.sort = sort
         self.order = order
         self.queries = 0
         self.workerid = os.urandom(4).hex()
         if "" not in self.proxies:
             self.proxies.append("")
+
+        if not self.token:
+            logger.warning('''No Token is set, scraper will be severely rate-limited\n.
+                                  Please configure PAT and add it to secrets.env as GH_TOKEN and then restart
+                           ''')
+            self.auth_headers = {}
+        else:
+            self.auth_headers = {
+                "Authorization": f"Bearer {self.token}",
+            }
+        self.token_checker = TokenChecker(self.auth_headers)
+
 
     def random_proxy(self):
         proxy = random.choice(self.proxies)
@@ -150,28 +164,28 @@ class GithubRepositories(DataSource):
         default_branch = repo["default_branch"]
         try:
             page = requests.get(url + f"/git/trees/{default_branch}",
-                                auth=("", self.token), proxies=self.random_proxy(), timeout=10)
+                                headers=self.auth_headers, proxies=self.random_proxy(), timeout=10)
             if "secondary rate limit" in page.text:
                 logger.info(page.text.replace("\n", ""))
                 time.sleep(120)
                 page = requests.get(url + f"/git/trees/{default_branch}",
-                                    auth=("", self.token), proxies=self.random_proxy(), timeout=10)
+                                    headers=self.auth_headers, proxies=self.random_proxy(), timeout=10)
             elif "rate limit" in page.text:
-                sleep_remaining =   self.token_checker.rate_reset("", self.token)
-                
-                interval = 60 # interval of logging updates
+                sleep_remaining = self.token_checker.rate_reset("", self.token)
+
+                interval = 60  # interval of logging updates
                 logger.info("Crawler %s rate limit, sleep %ss", self.workerid,
-                                sleep_remaining)
+                            sleep_remaining)
                 # to give updates on remaining sleep ...
-                while sleep_remaining > 0: 
+                while sleep_remaining > 0:
                     sleep_chunk = min(interval, sleep_remaining)
-                    logger.info("Crawler %s sleeping... %ds remaining", self.workerid, sleep_remaining)
+                    logger.info("Crawler %s sleeping... %ds remaining",
+                                self.workerid, sleep_remaining)
                     time.sleep(sleep_chunk)
                     sleep_remaining -= sleep_chunk
-                
-                    
+
                 page = requests.get(url + f"/git/trees/{default_branch}",
-                                    auth=("", self.token), proxies=self.random_proxy(), timeout=10)
+                                    headers=self.auth_headers, proxies=self.random_proxy(), timeout=10)
         except Exception as err:
             logger.info(err)
             return None, None
@@ -208,11 +222,11 @@ class GithubRepositories(DataSource):
             'branch': repo["default_branch"]
         }, files
 
-
     def fetch_data(self):
         crawl_time = self.crawl_time_start
         while crawl_time > 1262322000:
-            logger.info("Crawler checking %s", datetime.utcfromtimestamp(crawl_time).isoformat())
+            logger.info("Crawler checking %s",
+                        datetime.utcfromtimestamp(crawl_time).isoformat())
             crawl_time = self.check_cache(self.crawl_time_interval)
             time_start = datetime.utcfromtimestamp(crawl_time).isoformat()
             time_end = datetime.utcfromtimestamp(
@@ -230,26 +244,29 @@ class GithubRepositories(DataSource):
                     before = int(time.time())
                     r = requests.get("https://api.github.com/search/repositories",
                                      payload,
-                                     auth=("", self.token), proxies=self.random_proxy(), timeout=10)
+                                     headers=self.auth_headers, proxies=self.random_proxy(), timeout=10)
                     after = int(time.time())
-                    logger.info("Crawler request respond in %ss",  after-before)
+                    logger.info(
+                        "Crawler request respond in %ss",  after-before)
                     rdict = json.loads(r.text)
                     while "message" in rdict.keys() and "rate limit" in rdict["message"]:
-                        logger.info("Crawler got %s", rdict["message"].replace("/n", ""))
+                        logger.info("Crawler got %s",
+                                    rdict["message"].replace("/n", ""))
                         time.sleep(60)
                         if "secondary" in rdict["message"]:
                             time.sleep(60)
                         before = int(time.time())
                         r = requests.get("https://api.github.com/search/repositories",
                                          payload,
-                                         auth=("", self.token), proxies=self.random_proxy(), timeout=10)
+                                         headers=self.auth_headers, proxies=self.random_proxy(), timeout=10)
                         after = int(time.time())
-                        logger.info("Crawler request respond in %ss with rate limit", after-before)
+                        logger.info(
+                            "Crawler request respond in %ss with rate limit", after-before)
                         rdict = json.loads(r.text)
                     if 'items' in rdict.keys():
                         total_count = min(rdict["total_count"], total_count)
                         logger.info("Crawler query: %s page:%s, GitHub respond %s repos",
-                                     payload['page'], time_start[:-7], total_count)
+                                    payload['page'], time_start[:-7], total_count)
                         repos_per_page = rdict["items"]
                         for repo in repos_per_page:
                             logger.info("Crawler got %s", repo["name"])
@@ -288,7 +305,6 @@ class Scraper(BasicWorker):
         self.workerid = workerid
         self.bundle_number = 10
         self.sent = 0
-        
 
     def run(self):
         self.repocache = []

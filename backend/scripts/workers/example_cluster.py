@@ -53,9 +53,10 @@ def get_build_system(files):
     return "all"
 
 
+
 # define scraper data source
 github_c_repos = GithubRepositories(
-    git_token="",
+    git_token= os.getenv("GH_TOKEN"),
     qualifier={
         "language:c++",
         # "stars:>1"

@@ -82,7 +82,8 @@ def create_channel(host, port, heartbeat, timeout):
 
 class Coordinator:
     """
-    coordinator node, dispatch work to woker node and also collect data
+    coordinator node, dispatch work to worker node and also collect data
+    TODO: also configure creating separate RabbitMQ users for each service
     """
 
     def __init__(self, rabbitmq_host, rabbitmq_port, grpc_addr, db_addr, cluster_name, aws_mode=0, reproduce_mode=0):
@@ -176,7 +177,7 @@ class Coordinator:
                              'task_id': task.id, 'opt_id': build_opt.id,
                              #  'commit_hexsha': task.commit_hexsha,
                              'output_dir': out_dir,
-                             'repo_id': uncloned_repo._id,
+                             'repo_id': uncloned_repo.id,
                              'updated_at': uncloned_repo.updated_at.strftime("%m/%d/%Y, %H:%M:%S"),
                              'build_system': uncloned_repo.build_system,
                              #  also add timestamp when this messsage sent

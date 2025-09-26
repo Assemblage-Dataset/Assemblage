@@ -194,7 +194,7 @@ class InfoService(AssemblageService):
         Enable build opt in DB
         """
         # pylint: disable=arguments-differ
-        enable_attempt = self.db_man.enable_build_option(_id=request._id,
+        enable_attempt = self.db_man.enable_build_option(id=request.id,
                                                          is_enabled=request.enable)
         response = enableBuildOptResponse(success=enable_attempt)
         return response

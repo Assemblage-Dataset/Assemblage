@@ -4,7 +4,7 @@ convert a grpc message into a python database object
 Yihao Sun
 '''
 
-from assemblage.data.object import BuildDO, RepoDO
+from assemblage.database.models import BuildDO, RepoDO
 from assemblage.protobufs.assemblage_pb2 import BStatus, Repo, Worker, BuildOpt
 
 
@@ -12,7 +12,7 @@ def pack_repo_msg(repodo):
     """ convert a RepoDO object into grpc message """
     size = 0 if "size" not in repodo else repodo["size"]
     return Repo(
-        id=repodo._id,
+        id=repodo.id,
         url=repodo.url,
         name=repodo.name,
         description=repodo.description,
@@ -67,7 +67,7 @@ def unpack_bianry_msg(bin_info):
 def pack_buildOpt_msg(option):
     """ convert BuildOpt object into RPC message """
     return BuildOpt(
-        id=option._id,
+        id=option.id,
         platform=option.platform,
         language=option.language,
         compiler_name=option.compiler_name,
@@ -84,7 +84,7 @@ def pack_bstatus_msg(b_status):
 
     build_time = int(b_status.build_time) if int(
         b_status.build_time) > 0 else 0
-    id = int(b_status._id) if int(b_status._id) > 0 else 0
+    id = int(b_status.id) if int(b_status.id) > 0 else 0
     mod_timestamp = int(b_status.mod_timestamp) if int(
         b_status.mod_timestamp) > 0 else 0
 
