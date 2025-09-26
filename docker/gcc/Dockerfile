@@ -53,3 +53,8 @@ RUN pip install -r requirements.txt
 COPY ./aws /root/.aws
 RUN export AWS_CONFIG_FILE=/root/.aws/config
 RUN export AWS_SHARED_CREDENTIALS_FILE=/root/.aws/credentials
+
+ENV CC 'gcc'
+ENV CXX 'g++'
+
+RUN echo '1:gcc' >> /conf

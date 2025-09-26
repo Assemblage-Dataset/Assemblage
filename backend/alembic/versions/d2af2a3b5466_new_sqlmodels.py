@@ -76,7 +76,7 @@ def upgrade() -> None:
     sa.Column('file_name', sqlmodel.sql.sqltypes.AutoString(length=255), nullable=False),
     sa.Column('description', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('build_date', sa.DateTime(), nullable=False),
-    sa.Column('disasmed', sa.Boolean(), nullable=False),
+    sa.Column('disassembled', sa.Boolean(), nullable=False),
     sa.Column('status_id', sa.Integer(), nullable=False),
     sa.ForeignKeyConstraint(['status_id'], ['b_status.id'], ),
     sa.PrimaryKeyConstraint('id')

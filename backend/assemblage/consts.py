@@ -6,7 +6,7 @@ from enum import Enum
 import os
 from sre_constants import SUCCESS
 
-class BuildStatus(Enum):
+class BuildStatus(int,Enum):
     """
     Clone and build status codes
     See schema for defaults
@@ -21,14 +21,18 @@ class BuildStatus(Enum):
     OUTDATED_MSG = 6    # a message overtime, not build overtime
     EXCLUDE = 7
     COMMAND_FAILED = 10
+    def __json__(self):
+        return self.value  # or self.name if you prefer
 
 
-class PriorityStatus(Enum):
+class PriorityStatus(int, Enum):
     NOT_STARTED = 0
     PROCESSING = 1
     FAILED = 2
     SUCCESS = 3
     COMMAND_FAILED = 10
+    def __json__(self):
+        return self.value  # or self.name if you prefer
 
 
 PING_INTERVAL = 10

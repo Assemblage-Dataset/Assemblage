@@ -20,7 +20,6 @@ import yaml
 
 from assemblage.analyze.analyze import get_build_system
 from assemblage.coordinator.coordinator import Coordinator
-from assemblage.data.object import init_clean_database
 from assemblage.data.db import DBManager
 from assemblage.protobufs.assemblage_pb2_grpc import AssemblageServiceStub
 from assemblage.worker.scraper import DataSource, Scraper
@@ -28,7 +27,6 @@ from assemblage.worker.builder import Builder
 from assemblage.worker.profile import AWSProfile
 from assemblage.worker.postprocess import PostAnalysis, PostProcessor
 from assemblage.worker.build_method import cmd_with_output
-from sqlalchemy_utils import database_exists
 
 class AssemblageCluster:
 
@@ -158,7 +156,7 @@ class AssemblageCluster:
         """ declare a build option """
         self.build_options.append(
             {
-                "_id": opt_id,
+                "id": opt_id,
                 "platform": platform,
                 "language": language,
                 "compiler_name": compiler_name,
@@ -399,7 +397,7 @@ class AssemblageCluster:
         with grpc.insecure_channel(self.grpc_addr) as channel:
             opt = None
             for o in self.build_options:
-                if builder_config['build_opt'] == o['_id']:
+                if builder_config['build_opt'] == o['id']:
                     opt = o
             if opt is None:
                 logging.error("Buildopt %d not exists", builder_config['build_opt'])
