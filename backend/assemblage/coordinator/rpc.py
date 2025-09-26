@@ -63,7 +63,7 @@ class InfoService(AssemblageService):
                 worker_ping = _w
         if not worker_ping:
             rep.ping = 0
-            rep.msg = "worker id not registed or cleaned"
+            rep.msg = "worker id not registered or cleaned"
         else:
             worker_ping['timestamp'] = time.time()
             rep.ping = 1

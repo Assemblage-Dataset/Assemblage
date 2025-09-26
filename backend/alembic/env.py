@@ -29,8 +29,9 @@ config.set_main_option("sqlalchemy.url", DATABASE_URL)
 
 # add your model's MetaData object here
 # for 'autogenerate' support
-from assemblage.data.object import *
-target_metadata = Base.metadata
+from assemblage.database.models import *
+from sqlmodel import SQLModel                       
+target_metadata = SQLModel.metadata
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
