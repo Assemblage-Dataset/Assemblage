@@ -335,7 +335,7 @@ class Builder(BasicWorker):
                                         build_mode, platform,
                                         task, compiler_version,
                                         compiler_flag, commit_hexsha)
-            logger.info("Post build hook done")
+            logger.info(f"Post build hook done, build_status: {build_status}")
             folders.append(clone_dir)
         else:
             logger.info("Clone FAILURE %s: %s", url, clone_msg)

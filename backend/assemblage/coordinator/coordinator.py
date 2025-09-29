@@ -34,6 +34,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
 def stop_the_world_excepthook(args):
     """ 
     this is a thread execption handler if an thread trigger this, no matter normal 
@@ -200,7 +201,7 @@ class Coordinator:
                     task_pausetime += sleep_interval
                     time.sleep(300)
             except Exception as e:
-                logger.info("Dispatch Err: %s", str(e))
+                logger.info("Dispatch Err:", err=str(e))
                 self.channel = create_channel(
                     self.rabbitmq_host, self.rabbitmq_port, 500, 350)
                 thread_channel = create_channel(

@@ -4,6 +4,7 @@ from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 
 from alembic import context
+import alembic_postgresql_enum
 
 import os
 
@@ -15,14 +16,14 @@ config = context.config
 # This line sets up loggers basically.
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
-db_host = os.getenv('MYSQL_HOST', 'assemblage-db')
-db_port = os.getenv('MYSQL_PORT','3306')
-db_name = os.getenv('MYSQL_DATABASE','assemblage')
-user_name = os.getenv('MYSQL_USER', 'assemblage')
-user_pass = os.getenv('MYSQL_PASSWORD', 'assemblage')
+db_host = os.getenv('DB_HOST', 'assemblage-db')
+db_port = os.getenv('DB_PORT','5432')
+db_name: str = os.getenv('POSTGRES_DATABASE','assemblage')
+db_user: str = "assemblage"
+db_pass: str = os.getenv('POSTGRES_PASSWORD', 'assemblage')
 
 
-DATABASE_URL = f"mysql+pymysql://{user_name}:{user_pass}@{db_host}:{db_port}/{db_name}"
+DATABASE_URL = f"postgresql+psycopg2://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
 
 config.set_main_option("sqlalchemy.url", DATABASE_URL)
 

@@ -19,7 +19,11 @@ from assemblage.data.db import DBManager
 from assemblage.coordinator.convert import pack_bstatus_msg, unpack_repo_msg, pack_repo_msg, pack_worker_msg, \
     pack_buildOpt_msg
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    format="%(asctime)s %(levelname)s:%(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    level=logging.INFO
+)
 
 
 class InfoService(AssemblageService):

@@ -56,7 +56,7 @@ def get_build_system(files):
 
 # define scraper data source
 github_c_repos = GithubRepositories(
-    git_token= os.getenv("GH_TOKEN"),
+    git_token= os.getenv("GITHUB_TOKEN"),
     qualifier={
         "language:c++",
         # "stars:>1"
@@ -77,7 +77,6 @@ class SampleBuild(BuildStrategy):
         return out, return_code, clonedir
 
 
-
     def run_build(self, repo, target_dir, compiler_version,
                     library, build_mode,
                     optimization, platform, slnfile):
@@ -87,26 +86,34 @@ class SampleBuild(BuildStrategy):
             files.append(filename.split("/")[-1])
         logger.info("%s files in repo", len(files))
         build_tool = get_build_system(files)
+        
+        
+         # this should catch both c and c++ now
         if os.getenv("SAVE_ASSEMBLY", "true") == "true":
-            cflags = 'CFLAGS="$CFLAGS -save-temps"'
-            logger.info("Saving .s and .o files as well ")
+            extra_flags = 'CFLAGS="$CFLAGS -save-temps=obj" CXXFLAGS="$CXXFLAGS -save-temps=obj"'
+            logger.info(f"Saving .s and .o files as well: {extra_flags}")
         else:
-            cflags = 'CLAGS="$CFLAGS"'
+            extra_flags = 'CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS"'
         
-    
-        
-        cmd = f'cd {target_dir} && make {cflags} -j16'
+        # TODO: update this to maybe not pick make if no make file, just attempt g++ / or something??
+        cmd = f'cd {target_dir} && make {extra_flags} -j16'
         logger.info("Linux cmd generated: %s", cmd)
-        logger.info("Files found %s", os.listdir(target_dir))
+        logger.info("Files found %s", os.listdir(target_dir)) 
         out, err, exit_code = cmd_with_output(cmd, 600, platform)
         return_code = BuildStatus.SUCCESS if exit_code == 0 else BuildStatus.FAILED
+        
+        
+        if return_code == BuildStatus.SUCCESS:
+            logger.warning(f"BUILD STATUS FOR {repo} succeeded!!!")
         return out.decode() + err.decode(), return_code
 
     def post_build_hook(self, dest_binfolder, build_mode, library, repoinfo, toolset,
                         optimization, commit_hexsha):
         logger.info(os.listdir(dest_binfolder))
-        logger.info("Maybe move files to some Docker mapped volume")
+        # this is where the build actually comes
+        logger.info("Maybe move files to some Docker mapped volume") # change this 
         os.system(f"mv {dest_binfolder} /binaries/{repoinfo['name']}")
+        
 
 test_cluster_c = AssemblageCluster(name="sample"). \
                 aws(aws_profile). \

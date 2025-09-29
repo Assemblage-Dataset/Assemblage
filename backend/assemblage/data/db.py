@@ -21,15 +21,8 @@ from assemblage.database.models import BuildDO, BuildOpt, RepoDO, Status
 from assemblage.consts import BuildStatus, SUPPORTED_LANGUAGE
 from typing import Tuple
 
-@compiles(Insert, "mysql")
-def mysql_upsert(insert, compiler, **kw):
-    '''
-    a monkey patch to make all mysql insert upsert so we don't fail on
-    duplicated repo insertion, this is too broad, actually affect every
-    insert query, but in our current, all insertion need to become upsert
-    so maybe it is okay for now.
-    '''
-    return compiler.visit_insert(insert.prefix_with("IGNORE"), **kw)
+
+logger = logging.getLogger(__name__)
 
 
 class DBManager:
@@ -326,9 +319,9 @@ class DBManager:
                 for opt in all_opt:
                     if repos_msg['build_system'] in opt[0].build_system:
                         _s = Status()
-                        _s.clone_status = BuildStatus.INIT.value
+                        _s.clone_status = BuildStatus.INIT
                         _s.clone_msg = ''
-                        _s.build_status = BuildStatus.INIT.value
+                        _s.build_status = BuildStatus.INIT
                         _s.build_msg = ''
                         _s.build_opt_id = opt[0].id
                         _s.mod_timestamp = int(time.time())
@@ -342,6 +335,7 @@ class DBManager:
         add a binary record into database, 1 buildopt may have multiple binaries.
         and binaries may already deleted on disk
         """
+        logger.info("Adding binary to database", binary=file_name)
         new_bin = BuildDO(
             file_name=file_name, description=description,
             status_id=status_id)
@@ -362,17 +356,22 @@ class DBManager:
         insert build option into BuildOpt table for repo contain certain build system&language
         """
         with Session(self.engine) as session:
-            opt = BuildOpt()
-            opt.id = id
-            opt.platform = platform
-            opt.language = language
-            opt.compiler_name = compiler_name
-            opt.compiler_flag = compiler_flag
-            opt.build_system = build_system
-            opt.build_command = build_command
-            opt.library = library
-            opt.enable = enable
-            session.add(opt)
+            stmt = select(BuildOpt).where(BuildOpt.compiler_name == compiler_name)  # Adjust field as needed
+            opt = session.execute(stmt).scalar_one_or_none()
+            
+            if not opt: 
+                opt  = BuildOpt()
+                opt.id = id
+                opt.platform = platform
+                opt.language = language
+                opt.compiler_name = compiler_name
+                opt.compiler_flag = compiler_flag
+                opt.build_system = build_system
+                opt.build_command = build_command
+                opt.library = library
+                opt.enable = enable
+                session.add(opt)
+                
             query_repo = select(RepoDO)
             repos = session.execute(query_repo)
             status_ = []

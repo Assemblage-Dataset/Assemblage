@@ -17,27 +17,24 @@ from pydantic import HttpUrl
 
 Base = declarative_base()
 
-
 class Status(SQLModel, table=True):
     """ the build/clone status of repo with a specific build option """
     __tablename__ = 'b_status'
 
     id: int = Field(Integer, primary_key=True)
     # priority high: 2, mid: 1, low 0
-    priority: PriorityStatus = Field(sa_column=Column(
-        Integer, default=PriorityStatus.NOT_STARTED, index=True))
+    priority: PriorityStatus = Field(default=PriorityStatus.NOT_STARTED, index=True)
     # 0 : not started 1 : processing 2 : failed 3 : success 10 : command failed
-    clone_status: int = 0
+    clone_status: BuildStatus = Field( default=BuildStatus.INIT, index=True)
     clone_msg: str = Field(max_length=255, default="")
-    build_status: BuildStatus = Field(sa_column=Column(
-        Integer, default=BuildStatus.INIT, index=True))
+    build_status: BuildStatus = Field( default=BuildStatus.INIT, index=True)
     build_msg: str = ""
     build_opt_id: int | None = Field(
         default=None, foreign_key="buildopt.id")  # cascade
     # build_opt_id: int = Column(Integer, ForeignKey(
     #     'buildopt._id', ondelete="CASCADE"))
     # repo_id: int = Column(Integer, ForeignKey("projects._id", ondelete="CASCADE"))
-    repo_id: int = Field(Integer, foreign_key="projects.id")  # cascade
+    repo_id: int = Field( foreign_key="projects.id")  # cascade
 
     mod_timestamp: int = -1
     build_time: int = -1
@@ -50,7 +47,7 @@ class Status(SQLModel, table=True):
 class BuildOpt(SQLModel, table=True):
     """ build option for how to build a repo """
     __tablename__ = 'buildopt'
-    id: int = Field(Integer, primary_key=True)
+    id: int = Field( primary_key=True)
     # git = Column(String(length=255), default="")
     platform: str = Field(max_length=255, default="")
     language: str = Field(max_length=255, default="")
@@ -71,14 +68,14 @@ class BuildOpt(SQLModel, table=True):
 class BuildDO(SQLModel, table=True):
     """ Build object to collect build information - How binaries are built"""
     __tablename__ = 'binaries'
-    id: int = Field(Integer, primary_key=True)
+    id: int = Field( primary_key=True)
     file_name: str = Field(max_length=255, default="")
     description: str = ""
     build_date: datetime.datetime = Field(
         default_factory=datetime.datetime.now(datetime.timezone.utc))
     disassembled: bool = False
 
-    status_id: int = Field(Integer, foreign_key="b_status.id")  # cascade
+    status_id: int = Field( foreign_key="b_status.id")  # cascade
     status: Status | None = Relationship(back_populates="binaries")
 
     def __repr__(self):
@@ -91,7 +88,7 @@ class RepoDO(SQLModel, table=True):
     ORM model for repo
     """
     __tablename__ = 'projects'
-    id: int = Field(Integer, primary_key=True)
+    id: int = Field( primary_key=True)
     # Column(String(length=255), default="", unique=True)
     url: str = Field(max_length=255, default="", unique=True)
     owner_id: int = 0
@@ -105,10 +102,9 @@ class RepoDO(SQLModel, table=True):
     updated_at: datetime.datetime = Field(
         default=datetime.datetime(1970, 1, 1, 0, 0, 1))
     forked_commit_id: int = 0
-    branch: str = Field(max_length=16, default="master")
-    # priority high: 2, mid: 1, low 0
-    priority: PriorityStatus = Field(sa_column=Column(
-        Integer, default=PriorityStatus.NOT_STARTED, index=True))
+    branch: str = Field(max_length=16, default="main")
+    # priority high: 2, mid: 1, low 0. # easier to handle ints rather than enums in db however ( i think)
+    priority: PriorityStatus = Field(default=PriorityStatus.NOT_STARTED, index=True)
     size: int = 0
     # replace this with Enum too?
     build_system: str = Field(max_length=255, default="", index=True)

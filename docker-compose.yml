@@ -2,13 +2,15 @@ services:
 
   database:
     container_name: assemblage-db
-    image: mysql:8.0.32
+    image: postgres:18.0-alpine3.22
     env_file:
       - secrets.env
+    environment:
+      - POSTGRES_USER=assemblage # do not change!
     volumes:
-      - db-data:/var/lib/mysql
+      - db-data:/var/lib/postgresql/data
     healthcheck:
-      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost" ]
+      test: ["CMD", "pg_isready", "-U", "assemblage"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -22,9 +24,6 @@ services:
       timeout: 10s
       retries: 5
       start_period: 10s
-    # ports:
-    # - '56723'
-    # - 5672:5672
   coordinator:
     image: assemblage-gcc:default
     build:

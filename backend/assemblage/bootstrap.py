@@ -28,6 +28,8 @@ from assemblage.worker.profile import AWSProfile
 from assemblage.worker.postprocess import PostAnalysis, PostProcessor
 from assemblage.worker.build_method import cmd_with_output
 
+
+logger = logging.getLogger(__name__)
 class AssemblageCluster:
 
     def __init__(self, name, coordinator_addr="coordinator", aws_mode=False) -> None:
@@ -35,13 +37,12 @@ class AssemblageCluster:
         self.name = name
         self.docker_network_name = "assemblage-net"
         self.init_docker_network_flag = False
-        self.db_host = f"{os.getenv('MYSQL_HOST', "assemblage-db")}"
-        self.db_port = f"{os.getenv('DB_PORT', "3306")}"
-        self.db_name = os.getenv("MYSQL_DATABASE", "assemblage")
-        self.db_username = os.getenv("MYSQL_USER", "assemblage")
-        self.db_password = os.getenv("MYSQL_PASSWORD", "assemblage")
-        self.db_root_password = os.getenv("MYSQL_ROOT_PASSWORD", "assemblage")
-        self.db_conn_str = f'mysql+pymysql://{self.db_username}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}?charset=utf8mb4'
+        self.db_host = f"{os.getenv('DB_HOST', "assemblage-db")}"
+        self.db_port = f"{os.getenv('DB_PORT', "5432")}"
+        self.db_name = os.getenv("POSTGRES_DATABASE", "assemblage")
+        self.db_username = "assemblage"
+        self.db_password = os.getenv("POSTGRES_PASS", "assemblage")
+        self.db_conn_str = f"postgresql+psycopg2://{self.db_username}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
         self.db_init_flag = False
         self.db_boot_flag = False
         self.init_json_path = ""
@@ -223,6 +224,7 @@ class AssemblageCluster:
     def _init_db(self):
         db_man = DBManager(self.db_conn_str, init=True)
         for opt in self.build_options:
+            logger.info(f"Build opt: {opt}")
             db_man.add_build_option(**opt)
         if not os.path.exists(self.init_json_path):
             return False
