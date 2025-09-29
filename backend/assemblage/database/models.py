@@ -21,7 +21,7 @@ class Status(SQLModel, table=True):
     """ the build/clone status of repo with a specific build option """
     __tablename__ = 'b_status'
 
-    id: int = Field(Integer, primary_key=True)
+    id: int = Field( primary_key=True)
     # priority high: 2, mid: 1, low 0
     priority: PriorityStatus = Field(default=PriorityStatus.NOT_STARTED, index=True)
     # 0 : not started 1 : processing 2 : failed 3 : success 10 : command failed
