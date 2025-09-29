@@ -1,5 +1,5 @@
 
-FROM  assemblage-gh:base
+FROM  ubuntu:noble-20250910
 
 RUN apt-get update && apt-get -y upgrade
 
