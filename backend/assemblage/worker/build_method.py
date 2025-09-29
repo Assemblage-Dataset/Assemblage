@@ -228,6 +228,7 @@ class DefaultBuildStrategy(BuildStrategy):
             logger.info("Windows cmd generated: %s", cmd)
             return cmd_with_output(cmd, 600, platform)
         if platform.lower() == 'linux':
+            # this currently isnt being reached
             files = []
             for filename in glob.iglob(target_dir + '**/**', recursive=True):
                 files.append(filename.split("/")[-1])

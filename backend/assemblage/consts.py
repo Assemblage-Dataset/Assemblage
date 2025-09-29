@@ -2,38 +2,33 @@
 constant
 
 """
-from enum import Enum
+from enum import Enum, IntEnum
 import os
 from sre_constants import SUCCESS
 
-class BuildStatus(int,Enum):
+class BuildStatus(Enum):
     """
-    Clone and build status codes
+    Clone and build status codes 
     See schema for defaults
     """
     #pylint: disable=too-few-public-methods
-    INIT = 0
-    PROCESSING = 1
-    FAILED = 2
-    SUCCESS = 3
-    TIMEOUT = 4
-    BLACKLIST = 5
-    OUTDATED_MSG = 6    # a message overtime, not build overtime
-    EXCLUDE = 7
-    COMMAND_FAILED = 10
-    def __json__(self):
-        return self.value  # or self.name if you prefer
+    INIT = "init"
+    PROCESSING = "processing"
+    FAILED = "failed"
+    SUCCESS = "success"
+    TIMEOUT = "timeout"
+    BLACKLIST = "blacklist"
+    OUTDATED_MSG = "outdated_msg"    # a message overtime, not build overtime
+    EXCLUDE = "exclude"
+    COMMAND_FAILED = "command_failed"
 
 
-class PriorityStatus(int, Enum):
-    NOT_STARTED = 0
-    PROCESSING = 1
-    FAILED = 2
-    SUCCESS = 3
-    COMMAND_FAILED = 10
-    def __json__(self):
-        return self.value  # or self.name if you prefer
-
+class PriorityStatus(Enum):
+    NOT_STARTED = "not_started"
+    PROCESSING = "processing"
+    FAILED = "failed"
+    SUCCESS = "success"
+    COMMAND_FAILED = "command_failed"
 
 PING_INTERVAL = 10
 SUPPORTED_BUILD = ["make", "cmake", "autoconf", "bootstrap", "sln"]

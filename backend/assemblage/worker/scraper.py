@@ -129,7 +129,7 @@ class GithubRepositories(DataSource):
 
         if not self.token:
             logger.warning('''No Token is set, scraper will be severely rate-limited\n.
-                                  Please configure PAT and add it to secrets.env as GH_TOKEN and then restart
+                                  Please configure PAT and add it to secrets.env as GITHUB_TOKEN and then restart
                            ''')
             self.auth_headers = {}
         else:

@@ -77,12 +77,14 @@ class SampleBuild(BuildStrategy):
             files.append(filename.split("/")[-1])
         logging.info("%s files in repo", len(files))
         build_tool = get_build_system(files)
+         # this should catch both c and c++ now
         if os.getenv("SAVE_ASSEMBLY", "true") == "true":
-            cflags = 'CFLAGS="$CFLAGS -save-temps"'
+            extra_flags = 'CFLAGS="$CFLAGS -save-temps=obj" CXXFLAGS="$CXXFLAGS -save-temps=obj"'
         else:
-            cflags = 'CLAGS="$CFLAGS"'
+            extra_flags = 'CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS"'
         
-        cmd = f'cd {target_dir} && make {cflags} -j16'
+        
+        cmd = f'cd {target_dir} && make {extra_flags} -j16'
         logging.info("Linux cmd generated: %s", cmd)
         logging.info("Files found %s", os.listdir(target_dir))
         out, err, exit_code = cmd_with_output(cmd, 600, platform)
