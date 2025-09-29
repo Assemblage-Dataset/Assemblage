@@ -6,7 +6,7 @@ from enum import Enum, IntEnum
 import os
 from sre_constants import SUCCESS
 
-class BuildStatus(Enum):
+class BuildStatus(str, Enum):
     """
     Clone and build status codes 
     See schema for defaults
@@ -23,7 +23,7 @@ class BuildStatus(Enum):
     COMMAND_FAILED = "command_failed"
 
 
-class PriorityStatus(Enum):
+class PriorityStatus(str, Enum):
     NOT_STARTED = "not_started"
     PROCESSING = "processing"
     FAILED = "failed"

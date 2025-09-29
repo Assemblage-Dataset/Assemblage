@@ -378,6 +378,7 @@ class DBManager:
             for repo in repos:
                 # logging.info("Adding buildopt %s, repo is %s", build_system, repo[0].build_system)
                 if build_system in repo[0].build_system:
+                    logger.info(f"HERE::: {repo[0]}")
                     new_status = Status(
                         repo_id=repo[0].id,
                         build_opt_id=opt.id
