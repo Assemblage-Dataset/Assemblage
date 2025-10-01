@@ -18,6 +18,7 @@ import shutil
 import signal
 import json
 import ftplib
+from tempfile import tempdir
 import time
 import yaml
 import random
@@ -30,15 +31,18 @@ from botocore.exceptions import ClientError
 from git import Repo
 
 from assemblage.worker.profile import AWSProfile
-from assemblage.consts import BuildStatus, PDBJSONNAME, BINPATH
+from assemblage.consts import BuildStatus, PDBJSONNAME, BINPATH, CloneStatus
 from assemblage.windows.parsers.proj import Project
 from assemblage.windows.parsers.sln import Solution
 from assemblage.analyze.analyze import get_build_system
 from assemblage.worker.ctags_parser import get_functions as ctags_get_functions
 from assemblage.worker.clang_parser import get_functions as clang_get_functions
 from typing import Tuple
-
+from assemblage.config import Settings
 logger = logging.getLogger(__name__)
+
+
+settings = Settings()
 
 def cmd_with_output(cmd, timelimit=60, platform='linux', cwd=''):
     """ The cmd execution function """
@@ -127,73 +131,23 @@ class BuildStrategy:
 
 
 class DefaultBuildStrategy(BuildStrategy):
+    
+    def __init__(self, tmp_dir = "/tmp", num_p_job=16):
+        self.tmp_dir = tmp_dir
+        self.num_p_job = num_p_job
 
-    def get_clone_dir(self, repo):
-        """
-        Form a target directory with repo information
-        """
-        hashedurl = str(hash(repo['url'])).replace("-", "")
-        hashedurl = hashedurl + \
-            ''.join(random.choice(string.ascii_lowercase) for _ in range(10))
-        return f"{self.tmp_dir}/{hashedurl}"
 
     def clone_data(self, repo):
         """ Clone repo """
-        logger.info("Cloning %s", repo["url"])
-        clone_dir = self.get_clone_dir(repo)
-        zip_url = repo["url"]+"/archive/refs/heads/master.zip"
-        if self.platform == "linux":
-            tmp_filename = os.urandom(16).hex()
-            out, err, exit_code0 = cmd_with_output(
-                f"wget -O {tmp_filename} {zip_url}", 60, self.platform)
-            out, err, exit_code1 = cmd_with_output(
-                f"unzip {tmp_filename} -d {clone_dir}", 60, self.platform)
-            cloned_folder = ""
-            try:
-                cloned_folder = os.listdir(clone_dir)[0]
-            except:
-                "Cloned folder not exist", BuildStatus.FAILED
-            out, err, exit_code = cmd_with_output(
-                f"cd {clone_dir}/{cloned_folder}&&mv * ../", 60, self.platform)
-            if exit_code == 0:
-                return b'CLONE SUCCESS', BuildStatus.SUCCESS, clone_dir
-            else:
-                logger.error("Clone failed with output: \n %s \n error: \n %s", out, err)
-        if self.platform == "windows":
-            if "mod_timestamp" not in repo:
-                try:
-                    logger.info("Downloading zip %s", zip_url)
-                    response = requests.get(zip_url)
-                    tmp_file_path = os.path.join(self.tmp_dir, hashlib.md5(repo["url"].encode()).hexdigest(
-                            )+''.join(random.choice(string.ascii_lowercase) for _ in range(5))+".zip")
-                    open(tmp_file_path, "wb").write(response.content)
-                    shutil.unpack_archive(tmp_file_path, clone_dir)
-                    os.remove(tmp_file_path)
-                    return b'CLONE SUCCESS', BuildStatus.SUCCESS, clone_dir
-                except Exception as err:
-                    logger.info(err)
-            else:
-                out, err, exit_code = cmd_with_output([
-                    'gh', 'repo', 'clone', repo['url'], clone_dir, "--", "--depth",
-                    "1", "--recursive"
-                ], 60, self.platform)
-
-                if exit_code == 10:
-                    return err, BuildStatus.TIMEOUT, clone_dir
-
-                elif exit_code == 0:
-                        try:
-                            repo = Repo(clone_dir)
-                            for commit in list(repo.iter_commits()):
-                                if commit.committed_date<repo["mod_timestamp"]:
-                                    repo.git.checkout(commit.id)
-                                    break
-                            return b'CLONE SUCCESS', BuildStatus.SUCCESS, clone_dir
-                        except Exception as err:
-                            logger.info(err)
-                            return (str(err)).encode(), BuildStatus.FAILED, clone_dir
-                else:
-                    return out + err, BuildStatus.FAILED, clone_dir
+        clonedir = f"/tmp/{os.urandom(8).hex()}"
+        out, err, exit_code = cmd_with_output(f'git clone --recursive {repo["url"]} {clonedir}', 600, "linux")
+        
+      
+        return_code = CloneStatus.SUCCESS if exit_code == 0 else CloneStatus.FAILED # maybe try add more verboese errors?
+        if return_code == CloneStatus.FAILED:
+            logger.warning(f"Error in cloning data err={err}")
+      
+        return out, return_code, clonedir
 
     def run_build(self,
                 repo,
@@ -203,7 +157,7 @@ class DefaultBuildStrategy(BuildStrategy):
                 optimization,
                 slnfile=None,
                 platform='linux',
-                compiler_version='v142'):
+                compiler_version='v142') :
         """ Generate cmd to execute """
         if platform.lower() == 'windows':
             cmd = ["powershell", "-Command", "msbuild"]
@@ -226,7 +180,7 @@ class DefaultBuildStrategy(BuildStrategy):
             cmd.append(f"'{slnfile}'")
             cmd = " ".join(cmd)
             logger.info("Windows cmd generated: %s", cmd)
-            return cmd_with_output(cmd, 600, platform)
+                    
         if platform.lower() == 'linux':
             # this currently isnt being reached
             files = []
@@ -236,26 +190,38 @@ class DefaultBuildStrategy(BuildStrategy):
             build_tool = get_build_system(files)
             cmd = ""
             
-            if os.getenv("SAVE_ASSEMBLY", "true") == "true":
-                cflags = 'CFLAGS="$CFLAGS -save-temps"'
-                logger.info("Saving .s and .o files as well ")
+            if settings.SAVE_ASSEMBLY:
+                extra_flags = 'CFLAGS="$CFLAGS -save-temps=obj" CXXFLAGS="$CXXFLAGS -save-temps=obj"'
+                logger.info(f"Saving .s and .o files as well: {extra_flags}")
             else:
-                cflags = 'CLAGS="$CFLAGS"'
+                extra_flags = 'CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS"'
+        
                 
             
             if 'bootstrap' in build_tool:
                 cmd = f'cd {target_dir} && ./bootstrap && ' \
-                    f'bash ./configure && timeout -m 5000000 make {cflags} -j4'
+                    f'bash ./configure && timeout -m 5000000 make {extra_flags} -j{self.num_p_job}'
             elif 'configure' in build_tool:
                 cmd = f'cd {target_dir} && bash ./configure && ' \
-                    f'timeout -m 5000000 -- make {cflags} -j4'
+                    f'timeout -m 5000000 -- make {extra_flags} -j{self.num_p_job}'
             elif 'cmake' in build_tool:
                 cmd = f'cd {target_dir} && cmake -Bbuild ./ && cd build && ' \
-                    f'timeout -m 5000000 -- make {cflags} -j4'
+                    f'timeout -m 5000000 -- make {extra_flags} -j{self.num_p_job}'
             elif 'make' in build_tool:
-                cmd = f'cd {target_dir} && timeout -m 5000000 -- make {cflags} -j4'
+                cmd = f'cd {target_dir} && timeout -m 5000000 -- make {extra_flags} -j{self.num_p_job}'
             logger.info("Linux cmd generated: %s", cmd)
-            return cmd_with_output(cmd, 600, platform)
+            
+            if cmd == "":
+                logger.warning("No build command created for linux")
+                return "No Build Command Made", BuildStatus.FAILED
+            
+            
+        
+        out, err, exit_code = cmd_with_output(cmd, 600, platform)
+        return_code = BuildStatus.SUCCESS if exit_code == 0 else BuildStatus.FAILED
+        if return_code == BuildStatus.SUCCESS:
+            logger.warning(f"BUILD STATUS FOR {repo} succeeded!!!")
+        return out.decode() + err.decode(), return_code
 
 
 
@@ -535,7 +501,8 @@ class WindowsDefaultStrategy(DefaultBuildStrategy):
             optimization,
             slnfile=None,
             platform='linux',
-            compiler_version='v142'):
+            compiler_version='v142', 
+            num_p_job=16):
         """ Generate cmd to execute """
         if platform.lower() == 'windows':
             cmd = ["powershell", "-Command", "msbuild"]
@@ -565,7 +532,7 @@ class WindowsDefaultStrategy(DefaultBuildStrategy):
                 files.append(filename.split("/")[-1])
             logger.info("%s files in repo", len(files))
             build_tool = get_build_system(files)
-            if os.getenv("SAVE_ASSEMBLY", "true") == "true":
+            if settings.SAVE_ASSEMBLY:
                 cflags = 'CFLAGS="$CFLAGS -save-temps"'
                 logger.info("Saving .s and .o files as well ")
             else:
@@ -574,17 +541,21 @@ class WindowsDefaultStrategy(DefaultBuildStrategy):
             cmd = ""
             if 'bootstrap' in build_tool:
                 cmd = f'cd {target_dir} && ./bootstrap && ' \
-                    f'bash ./configure && timeout -m 5000000 make {cflags} -j4'
+                    f'bash ./configure && timeout -m 5000000 make {cflags} -j{self.num_p_job}'
             elif 'configure' in build_tool:
                 cmd = f'cd {target_dir} && bash ./configure && ' \
-                    f'timeout -m 5000000 -- make {cflags} c-j4'
+                    f'timeout -m 5000000 -- make {cflags} -j{self.num_p_job}'
             elif 'cmake' in build_tool:
                 cmd = f'cd {target_dir} && cmake -Bbuild ./ && cd build && ' \
-                    f'timeout -m 5000000 -- make {cflags} -j4'
+                    f'timeout -m 5000000 -- make {cflags} -j{self.num_p_job}'
             elif 'make' in build_tool:
-                cmd = f'cd {target_dir} && timeout -m 5000000 -- make {cflags}-j4'
+                cmd = f'cd {target_dir} && timeout -m 5000000 -- make {cflags} -j{self.num_p_job}'
             logger.info("Linux cmd generated: %s", cmd)
-            return cmd_with_output(cmd, 600, platform)
+            out, err, exit_code = cmd_with_output(cmd, 600, platform)
+            return_code = BuildStatus.SUCCESS if exit_code == 0 else BuildStatus.FAILED
+            if return_code == BuildStatus.SUCCESS:
+                logger.warning(f"BUILD STATUS FOR {repo} succeeded!!!")
+            return out.decode() + err.decode(), return_code
 
 
 class vcpkgStrategy(DefaultBuildStrategy):

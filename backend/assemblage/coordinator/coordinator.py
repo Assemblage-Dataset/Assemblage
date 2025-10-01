@@ -23,7 +23,7 @@ from assemblage.protobufs.assemblage_pb2_grpc import add_AssemblageServiceServic
 from assemblage.coordinator.rpc import InfoService
 from assemblage.data.db import DBManager
 from collections import Counter
-from assemblage.consts import AWS_AUTO_REBOOT_PREFIX, BIN_DIR, TASK_TIMEOUT_THRESHOLD, WORKER_TIMEOUT_THRESHOLD, BuildStatus, REPO_SIZE_THRESHOLD
+from assemblage.consts import AWS_AUTO_REBOOT_PREFIX, BIN_DIR, TASK_TIMEOUT_THRESHOLD, WORKER_TIMEOUT_THRESHOLD, BuildStatus, REPO_SIZE_THRESHOLD, CloneStatus
 
 
 SLEEP_INTERVAL = 1200
@@ -153,7 +153,7 @@ class Coordinator:
                 time_before_query = time.time()
                 tasks = db_man.find_status_by_status_code(
                     build_opt_id=build_opt_id,
-                    clone_status=BuildStatus.INIT,
+                    clone_status=CloneStatus.NOT_STARTED,
                     build_status=BuildStatus.INIT,
                     limit=1)
                 if len(tasks) == 0:
@@ -167,7 +167,7 @@ class Coordinator:
                 #     continue
                 build_opt = db_man.find_build_opt_by_id(task.build_opt_id)
                 db_man.update_repo_status(
-                    status_id=task.id, clone_status=BuildStatus.PROCESSING)
+                    status_id=task.id, clone_status=CloneStatus.PROCESSING)
                 time_after_query = time.time()
                 repo_url = patch_url(uncloned_repo.url)
                 out_dir = f'{BIN_DIR}/{task.id}'
@@ -343,7 +343,7 @@ class Coordinator:
                     time.sleep(60)
 
     def recv_scrape_info(self, ch, method, _props, body):
-        ''' store scraped messga to database page by page '''
+        ''' store scraped message to database page by page '''
         logger.info("Crawled msg received")
         ch.basic_ack(delivery_tag=method.delivery_tag)
         prev_time = time.time()
@@ -380,7 +380,7 @@ class Coordinator:
         db_man = DBManager(self.db_addr)
         recv_msg = json.loads(body.decode())
         # task = db_man.find_status_by_id(recv_msg['task_id'])
-        if recv_msg['status'] == BuildStatus.OUTDATED_MSG:
+        if BuildStatus(recv_msg['status']) == BuildStatus.OUTDATED_MSG:
             logger.info("discarding an timeout build msg %s", body.decode())
             ch.basic_ack(delivery_tag=method.delivery_tag)
             return
@@ -390,10 +390,10 @@ class Coordinator:
         db_man.update_repo_status(
             status_id=recv_msg['task_id'],
             build_time=recv_msg['build_time'],
-            build_status=recv_msg['status'],
+            build_status=BuildStatus(recv_msg['status']),
             build_msg=recv_msg['msg'][-500:],
             commit_hexsha=recv_msg['commit_hexsha'])
-        logger.info("BUILD task on buildopt %s updated to %s\n%s",
+        logger.info("BUILD task on buildopt %s updated to %s: %s",
                      recv_msg['opt_id'], recv_msg['status'], " ".join(recv_msg['msg'].split())[-500:])
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
@@ -408,7 +408,7 @@ class Coordinator:
             return
         db_man.update_repo_status(
             status_id=recv_msg['task_id'],
-            clone_status=recv_msg['status'],
+            clone_status=BuildStatus(recv_msg['status']),
             clone_msg=recv_msg['msg'][-200:])
         task = db_man.find_status_by_id(recv_msg['task_id'])
         if task.clone_status != BuildStatus.SUCCESS:

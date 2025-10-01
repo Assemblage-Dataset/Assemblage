@@ -21,14 +21,31 @@ class BuildStatus(str, Enum):
     OUTDATED_MSG = "outdated_msg"    # a message overtime, not build overtime
     EXCLUDE = "exclude"
     COMMAND_FAILED = "command_failed"
+    def __str__(self):
+        return self.name
 
 
-class PriorityStatus(str, Enum):
+#    # priority high: 2, mid: 1, low 0
+#     priority = Column(Integer, default=0, nullable=False, index=True)
+#     # 0 : not started 1 : processing 2 : failed 3 : success 10 : command failed
+
+class CloneStatus(str, Enum):
     NOT_STARTED = "not_started"
     PROCESSING = "processing"
     FAILED = "failed"
     SUCCESS = "success"
+    TIMEOUT = 'timeout'
     COMMAND_FAILED = "command_failed"
+    def __str__(self):
+        return self.name
+
+class PriorityStatus(str, Enum):
+    LOW = "low"
+    MID = "medium"
+    HIGH = "high"
+    def __str__(self):
+        return self.name
+
 
 PING_INTERVAL = 10
 SUPPORTED_BUILD = ["make", "cmake", "autoconf", "bootstrap", "sln"]
@@ -53,9 +70,9 @@ SCRAPE_CHECKPOINT = f"{BIN_DIR}/scrape-checkpoint"
 
 # Windows related constants
 LOG_FILE = "assemblage.log"
-BINPATH = "/Binaries"
+BINPATH = "/binaries"
 if os.name=="nt":
-    BINPATH = "Binaries"
+    BINPATH = "binaries"
 
 PDBPATH = "Pdbs"
 BUILDPATH = "Builds"

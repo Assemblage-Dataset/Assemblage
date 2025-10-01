@@ -170,13 +170,23 @@ class Builder(BasicWorker):
 
     def scan_binaries(self, clone_dir, repo, original_files):
         """ Store the binaries in the specified output directory. """
+        logger.info("scanning binary function invoked!")
         if self.platform == 'linux':
             bin_found = {
                 f for f in find_elf_bin(clone_dir)
-                if (os.path.exists(f) and self.build_strategy.is_valid_binary(f))
+                if (os.path.exists(f))
             }
-            logger.info(bin_found)
-            dest = f"{BINPATH}/{time.time()}"
+            
+            
+            if not bin_found:
+                logger.warning("no binaries found, build may have not been a success")
+                return None
+            else: 
+                logger.info(f"binaries found: {bin_found}")
+
+            save_base = os.path.basename(clone_dir)
+
+            dest = f"{BINPATH}/successes/{save_base}"
             try:
                 os.mkdir(dest)
             except FileNotFoundError:
@@ -251,7 +261,9 @@ class Builder(BasicWorker):
                 'build_time': kwarg['build_time'],
                 'commit_hexsha': kwarg['commit_hexsha']
             }
+            
         elif kind == 'binary':
+            logger.info("sending binary from worker to queue")
             ret = {
                 'task_id': kwarg['task_id'],
                 'file_name': kwarg['file_name']
@@ -315,10 +327,12 @@ class Builder(BasicWorker):
             self.send_msg(repo=task,
                             kind='build',
                             url=url,
-                            status="3",
+                            status=BuildStatus.PROCESSING,
                             msg="Received and building",
                             commit_hexsha=commit_hexsha,
-                            build_time=1)
+                            build_time=0)
+            before_build_time = int(time.time())
+
             build_msg, build_status = self.build_strategy.run_build(
                 repo=task,
                 target_dir=clone_dir,
@@ -329,6 +343,7 @@ class Builder(BasicWorker):
                 platform=self.platform,
                 slnfile=None,
             )
+            
             after_build_time = int(time.time())
             logger.info("Build exit %s", build_msg.replace("\n", " "))
             self.build_strategy.post_build_hook(clone_dir,
@@ -336,6 +351,21 @@ class Builder(BasicWorker):
                                         task, compiler_version,
                                         compiler_flag, commit_hexsha)
             logger.info(f"Post build hook done, build_status: {build_status}")
+            
+            
+            
+            
+            if build_status == BuildStatus.SUCCESS:
+                    dest_binfolder = self.scan_binaries(
+                        clone_dir, task, original_files=original_files)
+                    logger.info(f"Binaries saved to {dest_binfolder}")
+            self.send_msg(repo=task,
+                            kind='build',
+                            url=url,
+                            status=build_status,
+                            msg="Build Process Finished",
+                            commit_hexsha=commit_hexsha,
+                            build_time=(after_build_time - before_build_time))
             folders.append(clone_dir)
         else:
             logger.info("Clone FAILURE %s: %s", url, clone_msg)

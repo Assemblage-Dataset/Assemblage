@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     db_pass: str = os.getenv("POSTGRES_PASSWORD", "assemblage")
     DATABASE_URL: str = f"postgresql+psycopg2://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
     mode: str = os.getenv(key="MODE", default="development")
+    SAVE_ASSEMBLY: bool = (os.getenv("SAVE_ASSEMBLY", "true").lower() == "true")
+    
     loggingConfig: dict[str, Any] = {
         'version': 1,
         'formatters': {'default': {
