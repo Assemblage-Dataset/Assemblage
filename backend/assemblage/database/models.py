@@ -12,7 +12,7 @@ from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.sql.schema import ForeignKey
 from sqlalchemy_utils import create_database, database_exists
 from sqlmodel import Integer, Enum, Field, Session, SQLModel, create_engine, select, Relationship, Column
-from assemblage.consts import BuildStatus, PriorityStatus
+from assemblage.consts import BuildStatus, CloneStatus, PriorityStatus
 from pydantic import HttpUrl
 
 Base = declarative_base()
@@ -23,9 +23,9 @@ class Status(SQLModel, table=True):
 
     id: int = Field( primary_key=True)
     # priority high: 2, mid: 1, low 0
-    priority: PriorityStatus = Field(default=PriorityStatus.NOT_STARTED, index=True)
+    priority: PriorityStatus = Field(default=PriorityStatus.LOW, index=True, nullable=False)
     # 0 : not started 1 : processing 2 : failed 3 : success 10 : command failed
-    clone_status: BuildStatus = Field( default=BuildStatus.INIT, index=True)
+    clone_status: CloneStatus = Field( default=CloneStatus.NOT_STARTED, index=True)
     clone_msg: str = Field(max_length=255, default="")
     build_status: BuildStatus = Field( default=BuildStatus.INIT, index=True)
     build_msg: str = ""
@@ -72,7 +72,7 @@ class BuildDO(SQLModel, table=True):
     file_name: str = Field(max_length=255, default="")
     description: str = ""
     build_date: datetime.datetime = Field(
-        default_factory=datetime.datetime.now(datetime.timezone.utc))
+        default=datetime.datetime.now(datetime.timezone.utc))
     disassembled: bool = False
 
     status_id: int = Field( foreign_key="b_status.id")  # cascade
@@ -103,8 +103,8 @@ class RepoDO(SQLModel, table=True):
         default=datetime.datetime(1970, 1, 1, 0, 0, 1))
     forked_commit_id: int = 0
     branch: str = Field(max_length=16, default="main")
-    # priority high: 2, mid: 1, low 0. # easier to handle ints rather than enums in db however ( i think)
-    priority: PriorityStatus = Field(default=PriorityStatus.NOT_STARTED, index=True)
+    # priority high: 2, mid: 1, low 0. 
+    priority: PriorityStatus = Field(default=PriorityStatus.LOW, index=True)
     size: int = 0
     # replace this with Enum too?
     build_system: str = Field(max_length=255, default="", index=True)

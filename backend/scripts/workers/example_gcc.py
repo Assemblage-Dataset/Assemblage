@@ -19,6 +19,9 @@ from ..assemblage.worker.scraper import GithubRepositories
 from ..assemblage.consts import BuildStatus
 from assemblage.worker.build_method import BuildStrategy, cmd_with_output
 from ..assemblage.worker.profile import AWSProfile
+from assemblage.config import Settings
+settings = Settings()
+
 
 time_now = int(time.time())
 start = time_now - time_now % 86400
@@ -78,8 +81,9 @@ class SampleBuild(BuildStrategy):
         logging.info("%s files in repo", len(files))
         build_tool = get_build_system(files)
          # this should catch both c and c++ now
-        if os.getenv("SAVE_ASSEMBLY", "true") == "true":
-            extra_flags = 'CFLAGS="$CFLAGS -save-temps=obj" CXXFLAGS="$CXXFLAGS -save-temps=obj"'
+        if settings.SAVE_ASSEMBLY:
+
+             extra_flags = 'CFLAGS="$CFLAGS -save-temps=obj" CXXFLAGS="$CXXFLAGS -save-temps=obj"'
         else:
             extra_flags = 'CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS"'
         

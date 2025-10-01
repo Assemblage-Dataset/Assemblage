@@ -25,11 +25,14 @@ import zipfile
 import grpc
 import requests
 
-from assemblage.consts import BINPATH, PDBPATH, TASK_TIMEOUT_THRESHOLD, BuildStatus, MAX_MQ_SIZE
+from assemblage.consts import BINPATH, PDBPATH, TASK_TIMEOUT_THRESHOLD, BuildStatus, MAX_MQ_SIZE, CloneStatus
 from assemblage.worker.base_worker import BasicWorker
 from assemblage.worker import build_method
 from assemblage.worker.find_bin import find_elf_bin
 from assemblage.protobufs.assemblage_pb2 import getBuildOptRequest
+
+
+logger = logging.getLogger(__name__)
 
 
 class Builder(BasicWorker):
@@ -54,7 +57,9 @@ class Builder(BasicWorker):
                  random_pick=0,
                  blacklist=None,
                  proxy_clone_servers=None,
-                 proxy_token=""):
+                 proxy_token="",
+                 aws_profile=None
+                 ):
         super().__init__(rabbitmq_host, rabbitmq_port, rpc_stub, worker_type,
                          opt_id)
         logging.info(
@@ -262,10 +267,10 @@ class Builder(BasicWorker):
             "1", "--recursive"
         ], 60, self.platform)
         if exit_code == 0:
-            return b'CLONE SUCCESS', BuildStatus.SUCCESS
+            return b'CLONE SUCCESS', CloneStatus.SUCCESS
         if exit_code == 10:
-            return err, BuildStatus.TIMEOUT
-        return out + err, BuildStatus.FAILED
+            return err, CloneStatus.TIMEOUT
+        return out + err, CloneStatus.FAILED
 
     def clone_from_proxy(self, repo, clone_dir):
         """ clone from proxy server """
@@ -279,7 +284,7 @@ class Builder(BasicWorker):
                                     "repo_url": repo["url"], "auth": self.clone_proxy_token}, timeout=60)
         except Exception as err:
             logging.info(err)
-            return (str(err)).encode(), BuildStatus.FAILED
+            return (str(err)).encode(), CloneStatus.FAILED
         os.makedirs(clone_dir)
         tmp_file_path = os.path.join(self.tmp_dir, hashlib.md5(
             repo["url"].encode()).hexdigest()+".zip")
@@ -292,9 +297,9 @@ class Builder(BasicWorker):
             logging.info("Sending delete request")
             response = requests.get(f"http://{proxy_chosen}/proxy/delete", {
                                     "zip_url": hashlib.md5(repo["url"].encode()).hexdigest()+".zip"}, timeout=10)
-            return b'CLONE SUCCESS', BuildStatus.SUCCESS
+            return b'CLONE SUCCESS', CloneStatus.SUCCESS
         else:
-            return bytes(response.text, "utf-8"), BuildStatus.FAILED
+            return bytes(response.text, "utf-8"), CloneStatus.FAILED
 
     def job_handler(self, ch, method, _props, body):
         """
@@ -401,6 +406,7 @@ class Builder(BasicWorker):
                     optimization=compiler_flag,
                     platform=self.platform)
                 after_build_time = int(time.time())
+                logger.info(f"build status: {build_status}")
                 if build_status == BuildStatus.SUCCESS:
                     dest_binfolder = self.scan_binaries(
                         clone_dir, repo, original_files=original_files)

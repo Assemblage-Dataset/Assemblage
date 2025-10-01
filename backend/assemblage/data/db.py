@@ -5,7 +5,6 @@ Yihao Sun
 """
 
 import datetime
-import inspect
 import random
 import time
 import logging
@@ -14,11 +13,10 @@ import sqlalchemy.exc
 from sqlalchemy import select, update, create_engine, func, or_, inspect
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.expression import desc, true
-from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.sql import Insert
 
 from assemblage.database.models import BuildDO, BuildOpt, RepoDO, Status
-from assemblage.consts import BuildStatus, SUPPORTED_LANGUAGE
+from assemblage.consts import BuildStatus, SUPPORTED_LANGUAGE, CloneStatus
 from typing import Tuple
 
 
@@ -28,30 +26,28 @@ logger = logging.getLogger(__name__)
 class DBManager:
     """ manager for db query and connection """
 
-    def __init__(self, db_addr, init=False): 
+    def __init__(self, db_addr): 
         # create the DB manager, init called when Coordinator first __init__ to start the db
         self.engine = create_engine(db_addr, echo=False,
                                     pool_pre_ping=True,
                                     connect_args={'connect_timeout': 100})
         # if init and not self._check_db_exists():
         #     init_clean_database(db_addr)
+ 
+      
+    def tables_exist(self)->bool:
+        '''
+        only of use on first start up when the database has not been initialised
 
-          
-
-    # def _check_db_exists(self)->bool:
-        
-    #     try: 
-    #         inspector = inspect(self.engine)
-    #         tables = inspector.get_table_names()  # 
-    #         logging.info("DB exists. Now Checking tables")
+        Returns:
+            bool: returns true if any tables exist
+        '''
+        with self.engine.connect() as conn:
+            logger.info("Checking tables")
+            inspector = inspect(conn)
+            tables = inspector.get_table_names()
+            return len(tables) > 0
             
-    #         for table in Base.metadata.tables.keys():
-    #             if table not in tables:
-    #                 return False
-    #         return True
-    #     except: 
-            # return False
-
     def shutdown(self):
         """ Close DB connection """
         self.engine.dispose()
@@ -156,9 +152,9 @@ class DBManager:
         """ reset all timeout status record back to uncloned """
         with Session(self.engine) as session:
             query = update(Status).values(
-                clone_status=BuildStatus.INIT,
+                clone_status=CloneStatus.NOT_STARTED,
                 build_status=BuildStatus.INIT).where(
-                Status.clone_status == BuildStatus.PROCESSING,
+                Status.clone_status == CloneStatus.PROCESSING,
             )
             session.execute(query)
             session.commit()
@@ -237,7 +233,7 @@ class DBManager:
         if command == 'cloned':
             with Session(self.engine) as session:
                 total_cloned = session.query(func.count(Status.id)).where(
-                    Status.clone_status == BuildStatus.SUCCESS).all()[0][0]
+                    Status.clone_status == CloneStatus.SUCCESS).all()[0][0]
                 print(f">>>>>>>>>>>>TOTAL CLONED: {total_cloned}")
             return total_repos, total_cloned
         elif command == 'built':
@@ -281,7 +277,7 @@ class DBManager:
     def insert_b_status(self, b_status_msg):
         with Session(self.engine) as session:
             _s = Status()
-            _s.clone_status = BuildStatus.INIT
+            _s.clone_status = CloneStatus.NOT_STARTED
             _s.clone_msg = ''
             _s.build_status = BuildStatus.INIT
             _s.build_msg = ''
@@ -319,7 +315,7 @@ class DBManager:
                 for opt in all_opt:
                     if repos_msg['build_system'] in opt[0].build_system:
                         _s = Status()
-                        _s.clone_status = BuildStatus.INIT
+                        _s.clone_status = CloneStatus.NOT_STARTED
                         _s.clone_msg = ''
                         _s.build_status = BuildStatus.INIT
                         _s.build_msg = ''
@@ -335,7 +331,7 @@ class DBManager:
         add a binary record into database, 1 buildopt may have multiple binaries.
         and binaries may already deleted on disk
         """
-        logger.info("Adding binary to database", binary=file_name)
+        logger.info(f"Adding binary to database Binary={file_name}")
         new_bin = BuildDO(
             file_name=file_name, description=description,
             status_id=status_id)
@@ -378,7 +374,6 @@ class DBManager:
             for repo in repos:
                 # logging.info("Adding buildopt %s, repo is %s", build_system, repo[0].build_system)
                 if build_system in repo[0].build_system:
-                    logger.info(f"HERE::: {repo[0]}")
                     new_status = Status(
                         repo_id=repo[0].id,
                         build_opt_id=opt.id
@@ -421,12 +416,12 @@ class DBManager:
             for time_str, interval in interval_map.items():
                 data_result[f'{time_str}_clone'] = int(session.query(func.count(Status.id)).
                                                        where(
-                    Status.clone_status == BuildStatus.SUCCESS,
+                    Status.clone_status == CloneStatus.SUCCESS,
                     Status.mod_timestamp > int(time.time()) - interval
                 ).all()[0][0])
                 data_result[f'{time_str}_fail_clone'] = int(session.query(func.count(Status.id)).
                                                             where(
-                    Status.clone_status == BuildStatus.FAILED,
+                    Status.clone_status == CloneStatus.SUCCESS,
                     Status.mod_timestamp > int(time.time()) - interval
                 ).all()[0][0])
                 data_result[f'{time_str}_build'] = int(session.query(func.count(Status.id)).
@@ -460,12 +455,12 @@ class DBManager:
     def dump_repos(self, status, start_timestamp: int, end_timestamp: int):
         """ dump the successful binary in an given time period (time in int) """
         with Session(self.engine) as session:
-            succesful_repos = session.query(RepoDO).join(Status).where(
+            successful_repos = session.query(RepoDO).join(Status).where(
                 Status.mod_timestamp > start_timestamp,
                 Status.mod_timestamp < end_timestamp,
                 Status.build_status == status
             ).all()
-            return succesful_repos
+            return successful_repos
 
     def dump_b_status(self, status, start_timestamp: int, end_timestamp: int):
         """ dump all build status has <status> """

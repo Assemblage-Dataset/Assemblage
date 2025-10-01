@@ -222,7 +222,27 @@ class AssemblageCluster:
         return
 
     def _init_db(self):
-        db_man = DBManager(self.db_conn_str, init=True)
+        db_man = DBManager(self.db_conn_str)
+        
+        while True:
+            try: 
+                logger.info("Checking if tables exist")
+                if db_man.tables_exist(): 
+                    break
+                else: 
+                    logger.warning('''No tables in database.
+                                        Please use docker exec -it assemblage-coordinator-1;
+                                        alembic upgrade head.
+                                        To create the database to the latest revision. 
+                                        Please note you may have to run docker compose up -d again to start the other containers''')
+                    time.sleep(10)
+            except: 
+                logger.error("error checking if tables exist")
+                
+            
+        
+        
+        
         for opt in self.build_options:
             logger.info(f"Build opt: {opt}")
             db_man.add_build_option(**opt)
