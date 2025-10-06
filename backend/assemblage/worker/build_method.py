@@ -128,6 +128,7 @@ class BuildStrategy:
                         dest_binfolder, build_mode, library, repoinfo, toolset,
                         optimization, commit_hexsha):
         """ post process hook  """
+        logger.info("post build hooke")
 
 
 class DefaultBuildStrategy(BuildStrategy):
@@ -186,13 +187,15 @@ class DefaultBuildStrategy(BuildStrategy):
             files = []
             for filename in glob.iglob(target_dir + '**/**', recursive=True):
                 files.append(filename.split("/")[-1])
-            logger.info("%s files in repo", len(files))
+            logger.info("%s files in repo: %s", len(files), repo)
+            logger.info(f"Files found in {target_dir} {os.listdir(target_dir)}") 
+
+            
             build_tool = get_build_system(files)
             cmd = ""
             
             if settings.SAVE_ASSEMBLY:
                 extra_flags = 'CFLAGS="$CFLAGS -save-temps=obj" CXXFLAGS="$CXXFLAGS -save-temps=obj"'
-                logger.info(f"Saving .s and .o files as well: {extra_flags}")
             else:
                 extra_flags = 'CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS"'
         
@@ -200,27 +203,29 @@ class DefaultBuildStrategy(BuildStrategy):
             
             if 'bootstrap' in build_tool:
                 cmd = f'cd {target_dir} && ./bootstrap && ' \
-                    f'bash ./configure && timeout -m 5000000 make {extra_flags} -j{self.num_p_job}'
+                    f'bash ./configure && timeout 10m make {extra_flags} -j{self.num_p_job}'
             elif 'configure' in build_tool:
                 cmd = f'cd {target_dir} && bash ./configure && ' \
-                    f'timeout -m 5000000 -- make {extra_flags} -j{self.num_p_job}'
+                    f'timeout 10m make {extra_flags} -j{self.num_p_job}'
             elif 'cmake' in build_tool:
                 cmd = f'cd {target_dir} && cmake -Bbuild ./ && cd build && ' \
-                    f'timeout -m 5000000 -- make {extra_flags} -j{self.num_p_job}'
+                    f'timeout 10m  make {extra_flags} -j{self.num_p_job}'
             elif 'make' in build_tool:
-                cmd = f'cd {target_dir} && timeout -m 5000000 -- make {extra_flags} -j{self.num_p_job}'
+                cmd = f'cd {target_dir} && timeout 10m make {extra_flags} -j{self.num_p_job}'
             logger.info("Linux cmd generated: %s", cmd)
             
             if cmd == "":
                 logger.warning("No build command created for linux")
                 return "No Build Command Made", BuildStatus.FAILED
             
+            cmd += "&& ls -a"
             
         
         out, err, exit_code = cmd_with_output(cmd, 600, platform)
         return_code = BuildStatus.SUCCESS if exit_code == 0 else BuildStatus.FAILED
-        if return_code == BuildStatus.SUCCESS:
-            logger.warning(f"BUILD STATUS FOR {repo} succeeded!!!")
+
+        if return_code is BuildStatus.SUCCESS:
+            logger.info(f"Output decode on success: {out.decode()}")
         return out.decode() + err.decode(), return_code
 
 
@@ -546,7 +551,7 @@ class WindowsDefaultStrategy(DefaultBuildStrategy):
                 cmd = f'cd {target_dir} && bash ./configure && ' \
                     f'timeout -m 5000000 -- make {cflags} -j{self.num_p_job}'
             elif 'cmake' in build_tool:
-                cmd = f'cd {target_dir} && cmake -Bbuild ./ && cd build && ' \
+                cmd = f'cd {target_dir} && cmake -B build ./ && cd build && ' \
                     f'timeout -m 5000000 -- make {cflags} -j{self.num_p_job}'
             elif 'make' in build_tool:
                 cmd = f'cd {target_dir} && timeout -m 5000000 -- make {cflags} -j{self.num_p_job}'
