@@ -199,7 +199,6 @@ class Builder(BasicWorker):
                               task_id=repo['task_id'],
                               repo=repo,
                               file_name=f"{dest}/{base}")
-                logger.info('Moving ELF file `%s` %s', fpath, f"{dest}/{base}")
             return dest
         elif self.platform == 'windows':
             dest = os.path.join(self.bin_dir, os.urandom(16).hex())
