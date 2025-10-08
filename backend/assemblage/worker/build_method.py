@@ -223,9 +223,6 @@ class DefaultBuildStrategy(BuildStrategy):
         
         out, err, exit_code = cmd_with_output(cmd, 600, platform)
         return_code = BuildStatus.SUCCESS if exit_code == 0 else BuildStatus.FAILED
-
-        if return_code is BuildStatus.SUCCESS:
-            logger.info(f"Output decode on success: {out.decode()}")
         return out.decode() + err.decode(), return_code
 
 
@@ -422,6 +419,7 @@ class WindowsDefaultStrategy(DefaultBuildStrategy):
             os.makedirs(movedir)
         for _, binfile in enumerate(bin_files):
             logger.info("Moving %s -> %s", binfile, os.path.join(movedir, os.path.basename(binfile)))
+            
             shutil.copy(binfile, os.path.join(movedir, os.path.basename(binfile)))
 
             funcs_infos, lines_infos, source_file = self.dia_get_func_funcinfo(binfile, source_codedir)

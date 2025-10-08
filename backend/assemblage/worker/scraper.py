@@ -241,7 +241,7 @@ class GithubRepositories(DataSource):
             while payload['page'] * self.page_size < total_count:
                 try:
                     payload['page'] += 1
-                    before = int(time.time())
+                    before = int(time.time()) 
                     r = requests.get("https://api.github.com/search/repositories",
                                      payload,
                                      headers=self.auth_headers, proxies=self.random_proxy(), timeout=10)
