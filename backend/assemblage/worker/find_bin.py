@@ -37,7 +37,7 @@ def find_elf_bin(path: str) -> set:
                             file_paths.add(location)
                     except ELFError:
                         continue
-                    
+    
             except OSError:
                 continue
 
