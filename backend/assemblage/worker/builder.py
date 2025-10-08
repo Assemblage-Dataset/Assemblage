@@ -182,7 +182,7 @@ class Builder(BasicWorker):
                 logger.warning("no binaries found, build may have not been a success")
                 return None
             else: 
-                logger.info(f"binaries found: {bin_found}")
+                logger.info(f"{len(bin_found)} binaries found")
 
             save_base = os.path.basename(clone_dir)
 
@@ -194,7 +194,7 @@ class Builder(BasicWorker):
             for fpath in bin_found:
                 base = os.path.basename(fpath)
                 # put some time stamp to avoid duplicate
-                shutil.move(fpath, f"{dest}/{base}")
+                shutil.move(fpath, f"{dest}/{base}", copy_function=shutil.copy2)
                 self.send_msg(kind='binary',
                               task_id=repo['task_id'],
                               repo=repo,
@@ -345,7 +345,7 @@ class Builder(BasicWorker):
             )
             
             after_build_time = int(time.time())
-            logger.info("Build exit %s", build_msg.replace("\n", " "))
+            # logger.info("Build exit %s", build_msg.replace("\n", " "))
             self.build_strategy.post_build_hook(clone_dir,
                                         build_mode, platform,
                                         task, compiler_version,
