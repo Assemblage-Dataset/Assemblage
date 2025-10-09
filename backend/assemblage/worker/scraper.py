@@ -84,22 +84,30 @@ class DataSource(object):
         """ take a repo and files in repo, check if its valid or need to be discarded"""
         return True
 
+    # TODO: should this be moved into GitHubRepositories, or is this code shared across all data sources?
+    def update_time_record(self, interval):
+        """ Updates SCRAPER_TIMESTAMP_RECORDFILE_PATH with how far back the scraper has looked on its data source (i.e. GitHub)"""
+        # TODO: replace with database query
 
-    def check_cache(self, interval):
-        """ update time cache """
         while os.path.exists(self.record_file+'.lock'):
             time.sleep(0.25)
+            logger.debug("Scraper waiting for lock to be released (if there is only one scraper, this will never happen)")
         f = open(self.record_file+'.lock', 'w')
         f.close()
+
+        # try to open crawled.json: if this fails, create a new one and set its time to now
         try:
             with open(self.record_file, "r") as record_file:
                 crawled = json.load(record_file)
+                oldtime = int(crawled["latest_crawled"])
         except:
-            crawled = [int(time.time())]
-        oldtime = int(crawled[0])
-        newtime = int(crawled[0] - interval)
+            logger.info("Scraper record file not found or incorrect format, resetting it to defaults...")
+            oldtime = int(time.time())
+        
+        # Update the timestamp to search earlier (default is querylap, which is 4 hours)
+        newtime = oldtime - interval 
         with open(self.record_file, "w") as record_file:
-            json.dump([newtime], record_file, indent=4)
+            json.dump({"latest_crawled":newtime}, record_file, indent=4)
         try:
             os.remove(self.record_file+'.lock')
         except:
