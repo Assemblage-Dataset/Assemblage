@@ -249,58 +249,94 @@ class GithubRepositories(DataSource):
         }, files
 
     def fetch_data(self):
-        crawl_time = self.crawl_time_start
-        while crawl_time > 1262322000:
-            logger.info("Crawler checking %s",
-                        datetime.utcfromtimestamp(crawl_time).isoformat())
-            crawl_time = self.check_cache(self.crawl_time_interval)
-            time_start = datetime.utcfromtimestamp(crawl_time).isoformat()
-            time_end = datetime.utcfromtimestamp(
-                crawl_time + self.crawl_time_interval).isoformat()
-            qualifier_str = ""
-            for qf in self.qualifier:
-                qualifier_str += f"{qf} "
-            query_s = f'{self.sort.value}:{time_start}+08:00..{time_end}+08:00 {qualifier_str}'
-            total_count = 999
+        '''Requests search result pages from GitHub's Search API, then extracts the repository information from each result on each search page.'''
+        if self.crawl_time_start < OLDEST_PERMITTED_DATA_TIMESTAMP: # if the crawltime is older than permitted
+            logger.error("Warning: start crawl time %s is earlier than the oldest permitted timestamp %s.")
+            crawl_time = self.crawl_time_start
+        else:
+            crawl_time = self.crawl_time_start # exact value is unnecessary: we just need it to let us run the while loop once
+        # TODO: get the crawl_time from the database instead of taking it from self.
+        # Also need to consider whether we want to have the options to stagger crawlers by giving each a different crawl time?
+        # And how much we want to synchronize each crawler's crawl_time with the database
+        while crawl_time > OLDEST_PERMITTED_DATA_TIMESTAMP: # continue until oldest files have been read
+            crawl_time = self.update_time_record(self.crawl_time_interval) # Update the cache so it's now QUERYLAP ms earlier 
+
+            # Build the query to GitHub's servers, according to the last visited data as stored in SCRAPER_TIMESTAMP_RECORDFILE_PATH
+            query_time_start = datetime.utcfromtimestamp(crawl_time).isoformat()
+            query_time_end = datetime.utcfromtimestamp(crawl_time + self.crawl_time_interval).isoformat()
+            qualifier_str = " ".join(self.qualifier)
+            query_s = f'{self.sort.value}:{query_time_start}+08:00..{query_time_end}+08:00 {qualifier_str}'
+
+            logger.debug("Crawler query is ' %s ' (GitHub)", query_s)
+            total_query_results_count = 999 # needs to be big enough to run the while loop once
             payload = {'q': query_s,
-                       'per_page': self.page_size, 'page': -1}
-            while payload['page'] * self.page_size < total_count:
+                       'per_page': SCRAPER_PAGE_SIZE, 'page': -1}
+            # The payload contains the query plus some metadata. Metadata is needed because a separate request will be made 
+            # for each page of GitHub search results (page1, page2, etc.), and we keep this payload persistent so we can
+            # get a new page but maintain the rest of the query. 
+            while payload['page'] * SCRAPER_PAGE_SIZE < total_query_results_count:
                 try:
                     payload['page'] += 1
-                    before = int(time.time())
-                    r = requests.get("https://api.github.com/search/repositories",
+                    
+                    request_start_ts = float(time.time())
+                    r = requests.get(GITHUB_REPO_URL,
                                      payload,
-                                     headers=self.auth_headers, proxies=self.random_proxy(), timeout=10)
-                    after = int(time.time())
-                    logger.info(
-                        "Crawler request respond in %ss",  after-before)
+                                     headers=self.auth_headers, proxies=self.random_proxy(), timeout=SCRAPER_REQUEST_TIMEOUT_S)
+                    request_response_time = round(float(time.time()) - request_start_ts, 3)
+                    logger.info("Crawler request respond in %ss", request_response_time)
                     rdict = json.loads(r.text)
+
+                    # Catch possible request errors
+                    try:
+                        if "X-RateLimit-Limit" in r.headers and int(r.headers["X-RateLimit-Limit"]) < SCRAPER_RATE_LIMIT:
+                            logger.warning("Rate limit is unexpectedly low (%s). This may indicate that your credentials are not as expected.", str(r.headers["X-RateLimit-Limit"]))
+                    except:
+                            logger.warning("Could not determine rate limit.")
+
+                    if "message" in rdict.keys() and "Bad credentials" in rdict["message"]:
+                        logger.warning("Bad credentials: the authentication token provided is not valid")
+                        time.sleep(RATE_LIMIT_WAIT)
+
                     while "message" in rdict.keys() and "rate limit" in rdict["message"]:
-                        logger.info("Crawler got %s",
-                                    rdict["message"].replace("/n", ""))
-                        time.sleep(60)
+                        # Rate limit detected. Sleep, then retry query until success. 
+
                         if "secondary" in rdict["message"]:
-                            time.sleep(60)
-                        before = int(time.time())
-                        r = requests.get("https://api.github.com/search/repositories",
-                                         payload,
-                                         headers=self.auth_headers, proxies=self.random_proxy(), timeout=10)
-                        after = int(time.time())
-                        logger.info(
-                            "Crawler request respond in %ss with rate limit", after-before)
+                            logger.info("Secondary rate limit hit by crawler %s. Sleeping for %ss", self.parent_workerid, SECONDARY_RATE_LIMIT_WAIT)
+                            time.sleep(SECONDARY_RATE_LIMIT_WAIT)
+                        else:
+                            logger.info("Rate limit hit by crawler %s. Sleeping for %ss", self.parent_workerid, RATE_LIMIT_WAIT)
+                            time.sleep(RATE_LIMIT_WAIT)
+
+                        # Retry query
+                        request_start_ts = float(time.time())
+                        r = requests.get(GITHUB_REPO_URL,
+                                        payload,
+                                        headers=self.auth_headers, proxies=self.random_proxy(), timeout=SCRAPER_REQUEST_TIMEOUT_S)
+                        request_response_time = round(float(time.time()) - request_start_ts, 3)
+                        logger.info("Crawler request respond in %ss, delayed due to rate limit", request_response_time)
+
                         rdict = json.loads(r.text)
+
+                    # Break down the search query
                     if 'items' in rdict.keys():
-                        total_count = min(rdict["total_count"], total_count)
-                        logger.info("Crawler query: %s page:%s, GitHub respond %s repos",
-                                    payload['page'], time_start[:-7], total_count)
-                        repos_per_page = rdict["items"]
-                        for repo in repos_per_page:
-                            logger.info("Crawler got %s", repo["name"])
+                        total_query_results_count = min(rdict["total_count"], total_query_results_count) # update total query results count in case it has changed
+                        logger.info("Successful search result obtained by crawler %s. GitHub responded with %s repos", 
+                                    self.parent_workerid, total_query_results_count)
+                        # logger.info("Crawler query: %s ... ; page: %s; GitHub responded with %s repos",
+                        #             query_time_start[:-7], payload['page'], total_query_results_count) # not sure about the query_time_start[:-7] line
+                        repos_on_page = rdict["items"]
+                        for repo in repos_on_page:
                             dt, fs = self._process_repo_message(repo)
+                            # dt is metadata, fs is all files in repo
                             if dt and fs:
+                                logger.info("Crawler %s got %s", self.parent_workerid, repo["name"])
+                                # logger.info("Obtained metadata: %s", str(dt))
+                                # logger.info("Obtained files %s", str(fs))
                                 yield dt, fs
                 except Exception as err:
                     logger.info(err)
+            
+            # Once all pages are exhausted, move the crawl time earlier
             crawl_time -= self.crawl_time_interval
             crawl_time = int(crawl_time)
         logger.info("scraping finished!")
