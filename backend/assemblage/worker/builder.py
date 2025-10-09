@@ -64,6 +64,7 @@ class Builder(BasicWorker):
         self.library = library
         self.opt_id = opt_id
         self.build_mode = build_mode
+
         if blacklist:
             self.blacklist = blacklist
         else:
@@ -89,7 +90,7 @@ class Builder(BasicWorker):
         self.clone_proxy_token = proxy_token
         # self.build_callback = build_method.default_build_command_generator
         self.build_strategy = DefaultBuildStrategy()
-        self.on_init()
+        # self.on_init()
 
     def setup_job_queue_info(self):
         logger.info("setting up mq channel for %d", self.opt_id)
@@ -184,9 +185,7 @@ class Builder(BasicWorker):
             else: 
                 logger.info(f"{len(bin_found)} binaries found")
 
-            save_base = os.path.basename(clone_dir)
-
-            dest = f"{BINPATH}/successes/{save_base}"
+            dest = f"{BINPATH}/successes/{"/".join(clone_dir.rstrip("/").split("/")[-2:])}"
             try:
                 os.mkdir(dest)
             except FileNotFoundError:
@@ -342,6 +341,7 @@ class Builder(BasicWorker):
                 platform=self.platform,
                 slnfile=None,
             )
+        
             
             after_build_time = int(time.time())
             # logger.info("Build exit %s", build_msg.replace("\n", " "))
@@ -360,15 +360,15 @@ class Builder(BasicWorker):
                     logger.info(f"Binaries saved to {dest_binfolder}")
             self.send_msg(repo=task,
                             kind='build',
-                            url=url,
+                            url=url, # can we send id + commit
                             status=build_status,
                             msg="Build Process Finished",
                             commit_hexsha=commit_hexsha,
                             build_time=(after_build_time - before_build_time))
-            folders.append(clone_dir)
+            folders.append(clone_dir) # might not be neccesary anymore 
         else:
             logger.info("Clone FAILURE %s: %s", url, clone_msg)
-        build_method.clean(folders)
+        # build_method.clean(folders)
         logger.debug("Worker %s finished %s at %s", self.uuid[:5], url,
                       datetime.datetime.now().strftime("%H:%M:%S"))
 

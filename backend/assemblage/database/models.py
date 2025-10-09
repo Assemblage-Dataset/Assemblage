@@ -86,12 +86,13 @@ class BuildDO(SQLModel, table=True):
 class RepoDO(SQLModel, table=True):
     """
     ORM model for repo
+    TODO: add output dir for clone location of code too( though tco)
     """
     __tablename__ = 'projects'
     id: int = Field( primary_key=True)
     # Column(String(length=255), default="", unique=True)
     url: str = Field(max_length=255, default="", unique=True)
-    owner_id: int = 0
+    owner_id: int = 0 
     name: str = Field(max_length=255, default="")
     description: str = ""
     language: str = Field(max_length=255, default="")

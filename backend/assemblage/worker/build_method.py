@@ -20,6 +20,7 @@ import json
 import ftplib
 from tempfile import tempdir
 import time
+from urllib.parse import urlparse
 import yaml
 import random
 import string
@@ -28,7 +29,7 @@ import boto3
 import requests
 
 from botocore.exceptions import ClientError
-from git import Repo
+from git import Repo, exc
 
 from assemblage.worker.profile import AWSProfile
 from assemblage.consts import BuildStatus, PDBJSONNAME, BINPATH, CloneStatus
@@ -44,16 +45,17 @@ logger = logging.getLogger(__name__)
 
 settings = Settings()
 
+
 def cmd_with_output(cmd, timelimit=60, platform='linux', cwd=''):
     """ The cmd execution function """
     if isinstance(cmd, list):
         cmd = " ".join(cmd)
     if not cwd:
         with subprocess.Popen(cmd,
-                            stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE,
-                            close_fds=True,
-                            shell=True) as process:
+                              stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE,
+                              close_fds=True,
+                              shell=True) as process:
             try:
                 out, err = process.communicate(timeout=timelimit)
                 exit_code = process.wait()
@@ -65,11 +67,11 @@ def cmd_with_output(cmd, timelimit=60, platform='linux', cwd=''):
                 return b"subprocess.TimeoutExpired", b"subprocess.TimeoutExpired", 1
     else:
         with subprocess.Popen(cmd,
-                            stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE,
-                            close_fds=True,
-                            shell=True,
-                            cwd=cwd) as process:
+                              stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE,
+                              close_fds=True,
+                              shell=True,
+                              cwd=cwd) as process:
             try:
                 out, err = process.communicate(timeout=timelimit)
                 exit_code = process.wait()
@@ -80,12 +82,13 @@ def cmd_with_output(cmd, timelimit=60, platform='linux', cwd=''):
                     os.killpg(os.getpgid(process.pid), signal.SIGTERM)
                 return b"subprocess.TimeoutExpired", b"subprocess.TimeoutExpired", 1
 
+
 def clean(folders):
     """ Clean the folders, may not be empty """
     for folder in folders:
         if os.path.exists(folder):
             shutil.rmtree(folder, ignore_errors=False, onerror=None)
-            
+
 
 class BuildStrategy:
 
@@ -100,65 +103,128 @@ class BuildStrategy:
         check BuildStatus for status code
         """
 
-    @abstractclassmethod    
+    @abstractclassmethod
     def run_build(self, repo, target_dir, build_mode, library, optimization, slnfile,
                   platform, compiler_version) -> Tuple[bytes, bytes, int]:
         """ callback function to build command, return...."""
 
-    
     @abstractclassmethod
     def pre_build(self, Platform,
-                    Buildmode,
-                    Target_dir,
-                    Optimization,
-                    _tmp_dir,
-                    VC_Version,
-                    Favorsizeorspeed="",
-                    Inlinefunctionexpansion="",
-                    Intrinsicfunctions="") -> Tuple[bytes, int, str]:
+                  Buildmode,
+                  Target_dir,
+                  Optimization,
+                  _tmp_dir,
+                  VC_Version,
+                  Favorsizeorspeed="",
+                  Inlinefunctionexpansion="",
+                  Intrinsicfunctions="") -> Tuple[bytes, int, str]:
         """
         pre processing hook
         return:
         (message, status_code, filename)
         """
 
-
     @abstractclassmethod
     def post_build_hook(self,
                         dest_binfolder, build_mode, library, repoinfo, toolset,
                         optimization, commit_hexsha):
         """ post process hook  """
-        logger.info("post build hooke")
+        logger.info("post build hook- nohting is happening here")
 
 
 class DefaultBuildStrategy(BuildStrategy):
-    
-    def __init__(self, tmp_dir = "/tmp", num_p_job=16):
+
+    def __init__(self, tmp_dir="/tmp", num_p_job=16):
         self.tmp_dir = tmp_dir
         self.num_p_job = num_p_job
+        # this is not great, i dont like it but for now itll have to do
+        try: 
+            output_dir_perms = os.stat("/binaries")
+            self.output_dir_uid = output_dir_perms.st_uid
+            
+            self.output_dir_gid = output_dir_perms.st_gid
+        except:  # again messy but should be fixable once the extry point is better as cooridnator wont initlise this class
+            self.output_dir_uid = 0
+            self.output_dir_gid = 0
 
+
+    def parse_github_name(self, url):
+        if url.endswith(".git"):
+            url = url[:-4]
+
+        # Handle git@github.com style
+        if url.startswith("git@"):
+            # git@github.com:user/repo
+            path = url.split(":", 1)[1]  # get 'user/repo'
+        else:
+            # https://github.com/user/repo
+            path = urlparse(url).path  # '/user/repo'
+
+        parts = path.strip("/").split("/")
+        if len(parts) >= 2:
+            return parts[0], parts[1]
+        return None, None
 
     def clone_data(self, repo):
         """ Clone repo """
-        clonedir = f"/tmp/{os.urandom(8).hex()}"
-        out, err, exit_code = cmd_with_output(f'git clone --recursive {repo["url"]} {clonedir}', 600, "linux")
-        
-      
-        return_code = CloneStatus.SUCCESS if exit_code == 0 else CloneStatus.FAILED # maybe try add more verboese errors?
+
+        user_name, project_name = self.parse_github_name(repo["url"])
+        # no longer random + will now group projects from the same user together...
+
+        if not user_name:
+            user_name = os.urandom(8).hex()
+        if not project_name:
+            project_name = os.urandom(8).hex()
+
+        parent_dir = f"/binaries/projects/{user_name}"
+        os.makedirs(f"{parent_dir}", exist_ok=True)
+
+        clone_dir = f'{parent_dir}/{project_name}'
+        out, err, exit_code = cmd_with_output(
+            f'git clone --recursive {repo["url"]} {clone_dir}/', 600, "linux")
+
+        logger.info(f"cloned to : git clone --recursive {repo["url"]} {clone_dir}/")
+
+        # # see above for how i feel about this
+        for root, dirs, files in os.walk(clone_dir):
+            for d in dirs:
+                try: 
+                    os.chown(os.path.join(root, d), self.output_dir_uid, self.output_dir_gid)
+                except:
+                    pass
+            for f in files:
+                try: 
+                    os.chown(os.path.join(root, f), self.output_dir_uid, self.output_dir_gid)
+                except:
+                    pass# this is from a weird edge case where there was a symbolic link pushed to git
+        os.chown(clone_dir, self.output_dir_uid, self.output_dir_gid)
+        os.chown(parent_dir, self.output_dir_uid, self.output_dir_gid)
+
+        # # maybe try add more verboese errors?
+        return_code = CloneStatus.SUCCESS if exit_code == 0 else CloneStatus.FAILED
         if return_code == CloneStatus.FAILED:
+            try:
+                os.removedirs(f"{parent_dir}")
+            except:
+                pass
+            try:
+                os.removedirs(f"{clone_dir}")
+            except:
+                pass
             logger.warning(f"Error in cloning data err={err}")
       
-        return out, return_code, clonedir
+
+        return out, return_code, clone_dir
 
     def run_build(self,
-                repo,
-                target_dir,
-                build_mode,
-                library,
-                optimization,
-                slnfile=None,
-                platform='linux',
-                compiler_version='v142') :
+                  repo,
+                  target_dir,
+                  build_mode,
+                  library,
+                  optimization,
+                  slnfile=None,
+                  platform='linux',
+                  compiler_version='v142'):
         """ Generate cmd to execute """
         if platform.lower() == 'windows':
             cmd = ["powershell", "-Command", "msbuild"]
@@ -181,26 +247,24 @@ class DefaultBuildStrategy(BuildStrategy):
             cmd.append(f"'{slnfile}'")
             cmd = " ".join(cmd)
             logger.info("Windows cmd generated: %s", cmd)
-                    
+
         if platform.lower() == 'linux':
             # this currently isnt being reached
             files = []
             for filename in glob.iglob(target_dir + '**/**', recursive=True):
                 files.append(filename.split("/")[-1])
             logger.info("%s files in repo: %s", len(files), repo)
-            logger.info(f"Files found in {target_dir} {os.listdir(target_dir)}") 
+            logger.info(
+                f"Files found in {target_dir} {os.listdir(target_dir)}")
 
-            
             build_tool = get_build_system(files)
             cmd = ""
-            
+
             if settings.SAVE_ASSEMBLY:
                 extra_flags = 'CFLAGS="$CFLAGS -save-temps=obj" CXXFLAGS="$CXXFLAGS -save-temps=obj"'
             else:
                 extra_flags = 'CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS"'
-        
-                
-            
+
             if 'bootstrap' in build_tool:
                 cmd = f'cd {target_dir} && ./bootstrap && ' \
                     f'bash ./configure && timeout 10m make {extra_flags} -j{self.num_p_job}'
@@ -213,21 +277,16 @@ class DefaultBuildStrategy(BuildStrategy):
             elif 'make' in build_tool:
                 cmd = f'cd {target_dir} && timeout 10m make {extra_flags} -j{self.num_p_job}'
             logger.info("Linux cmd generated: %s", cmd)
-            
+
             if cmd == "":
                 logger.warning("No build command created for linux")
                 return "No Build Command Made", BuildStatus.FAILED
-            
+
             cmd += "&& ls -a"
-            
-        
+
         out, err, exit_code = cmd_with_output(cmd, 600, platform)
         return_code = BuildStatus.SUCCESS if exit_code == 0 else BuildStatus.FAILED
         return out.decode() + err.decode(), return_code
-
-
-
-
 
 
 class WindowsDefaultStrategy(DefaultBuildStrategy):
@@ -241,14 +300,14 @@ class WindowsDefaultStrategy(DefaultBuildStrategy):
         return bfiles
 
     def pre_build(self, Platform,
-                        Buildmode,
-                        Target_dir,
-                        Optimization,
-                        _tmp_dir,
-                        VC_Version,
-                        Favorsizeorspeed="",
-                        Inlinefunctionexpansion="",
-                        Intrinsicfunctions=""):
+                  Buildmode,
+                  Target_dir,
+                  Optimization,
+                  _tmp_dir,
+                  VC_Version,
+                  Favorsizeorspeed="",
+                  Inlinefunctionexpansion="",
+                  Intrinsicfunctions=""):
         """ Modifying the build file to save flags """
         files = []
         for filename in glob.iglob(Target_dir + '**/**', recursive=True):
@@ -276,7 +335,8 @@ class WindowsDefaultStrategy(DefaultBuildStrategy):
                 if Favorsizeorspeed != "":
                     projobj.set_favorsizeorspeed(Favorsizeorspeed)
                 if Inlinefunctionexpansion != "":
-                    projobj.set_inlinefunctionexpansion(Inlinefunctionexpansion)
+                    projobj.set_inlinefunctionexpansion(
+                        Inlinefunctionexpansion)
                 if Intrinsicfunctions != "":
                     projobj.enable_intrinsicfunctions()
                 projobj.write()
@@ -312,20 +372,22 @@ class WindowsDefaultStrategy(DefaultBuildStrategy):
         file_cache = {}
         if source_code_prefix:
             for f in glob.glob(source_code_prefix + '/**/*', recursive=True):
-                if os.path.isfile(f) and ".git" not in f and len(os.path.basename(f))>3:
+                if os.path.isfile(f) and ".git" not in f and len(os.path.basename(f)) > 3:
                     try:
                         with open(f, 'r', encoding="utf-8") as source_f:
-                            assert os.path.basename(f).lower() not in file_cache.keys()
+                            assert os.path.basename(
+                                f).lower() not in file_cache.keys()
                             file_cache[f] = source_f.readlines()
                     except Exception as e:
                         try:
                             with open(f, 'r', encoding="utf-16") as source_f:
-                                assert os.path.basename(f).lower() not in file_cache.keys()
+                                assert os.path.basename(
+                                    f).lower() not in file_cache.keys()
                                 file_cache[f] = source_f.readlines()
                         except Exception as e:
                             pass
 
-        if len(file_cache.keys())<1:
+        if len(file_cache.keys()) < 1:
             return {}, {}, ""
 
         # binfile = binfile.replace("/", "\\")
@@ -333,7 +395,8 @@ class WindowsDefaultStrategy(DefaultBuildStrategy):
         binfile = binfile.split("\\")[-1]
         logger.info("Processing %s, move to %s", binfile, binfolder)
         cmd = f"Dia2Dump -lines * {binfile}"
-        out, _err, _exit_code = cmd_with_output(cmd, platform='windows', cwd=binfolder)
+        out, _err, _exit_code = cmd_with_output(
+            cmd, platform='windows', cwd=binfolder)
         file_cache = {}
         try:
             lines_notclean = out.decode().split("\r\n")
@@ -362,31 +425,40 @@ class WindowsDefaultStrategy(DefaultBuildStrategy):
                 func_name_infoitem = {}
             if line.startswith("line"):
                 if len(re.split(r"\w:\\", line)) == 2:
-                    source_file = re.findall(r"\w:\\", line)[0] + re.split(r"\w:\\", line)[1]
+                    source_file = re.findall(r"\w:\\", line)[
+                        0] + re.split(r"\w:\\", line)[1]
                     if "MD5" in source_file:
                         source_file_cleaned = source_file.split(" (MD5: ")[0]
-                        source_file_md5 = source_file.split(" (MD5: ")[1].replace(")", "")
-                        file_hash_lookup[source_file_cleaned.strip()]=source_file_md5
+                        source_file_md5 = source_file.split(
+                            " (MD5: ")[1].replace(")", "")
+                        file_hash_lookup[source_file_cleaned.strip()
+                                         ] = source_file_md5
                     if "0x3" in source_file:
                         source_file_cleaned = source_file.split(" (0x3: ")[0]
-                        source_file_md5 = source_file.split(" (0x3: ")[1].replace(")", "")
-                        file_hash_lookup[source_file_cleaned.strip()]=source_file_md5
-                rva = re.findall(r"at \[\w+\]", line)[0].replace("at ", "").replace("[", "").replace("]", "")
-                length = int(re.findall(r"len \= \w+", line)[0].replace("len = ", ""), 16)
-                line_number = int(re.findall(r"line \d+", line)[0].replace("line ", ""))
+                        source_file_md5 = source_file.split(
+                            " (0x3: ")[1].replace(")", "")
+                        file_hash_lookup[source_file_cleaned.strip()
+                                         ] = source_file_md5
+                rva = re.findall(
+                    r"at \[\w+\]", line)[0].replace("at ", "").replace("[", "").replace("]", "")
+                length = int(re.findall(r"len \= \w+", line)
+                             [0].replace("len = ", ""), 16)
+                line_number = int(re.findall(r"line \d+", line)
+                                  [0].replace("line ", ""))
                 lines_dict["line_number"] = line_number
                 lines_dict["rva"] = rva
                 lines_dict["length"] = length
                 lines_dict["source_code"] = ""
                 if source_file_cleaned not in file_cache.keys():
                     try:
-                        file_cache[source_file_cleaned] = open(source_file_cleaned, 'r', encoding="utf-8", errors="ignore").readlines()
+                        file_cache[source_file_cleaned] = open(
+                            source_file_cleaned, 'r', encoding="utf-8", errors="ignore").readlines()
                     except:
                         file_cache[source_file_cleaned] = [""]
                 filecontent = file_cache[source_file_cleaned]
-                if len(filecontent)>line_number-1:
+                if len(filecontent) > line_number-1:
                     lines_dict["source_code"] = filecontent[line_number-1].strip()
-                
+
                 lines_dict["source_file"] = source_file
 
                 if "rva_start" not in func_name_infoitem.keys():
@@ -394,7 +466,7 @@ class WindowsDefaultStrategy(DefaultBuildStrategy):
                 if line_number > 10000000:
                     dbg_seg_length = dbg_seg_length + length
                 rva_seg_length = rva_seg_length + length
-                if i+1<len(lines) and (not lines[i + 1].startswith("line")):
+                if i+1 < len(lines) and (not lines[i + 1].startswith("line")):
                     func_name_infoitem["rva_end"] = str(
                         hex(int(rva, 16) + int(length))).replace("0x", "").rjust(
                             len(rva), "0")
@@ -408,21 +480,25 @@ class WindowsDefaultStrategy(DefaultBuildStrategy):
                     lines_infos[func_name] = [lines_dict]
         return funcs_infos, lines_infos, source_file
 
-
     def post_build_hook(self, dest_binfolder, build_mode, library, repoinfo, toolset,
                         optimization, commit_hexsha):
         """ Postprocess the pdb """
         bin_files = self.dia_list_binaries(dest_binfolder)
         outer_list = []
         func_cache = {}
+        
+        logger.info(f"This is getting triggered: {dest_binfolder} {repoinfo}")
         if not os.path.isdir(movedir):
             os.makedirs(movedir)
         for _, binfile in enumerate(bin_files):
-            logger.info("Moving %s -> %s", binfile, os.path.join(movedir, os.path.basename(binfile)))
-            
-            shutil.copy(binfile, os.path.join(movedir, os.path.basename(binfile)))
+            logger.info("Moving %s -> %s", binfile,
+                        os.path.join(movedir, os.path.basename(binfile)))
 
-            funcs_infos, lines_infos, source_file = self.dia_get_func_funcinfo(binfile, source_codedir)
+            shutil.copy(binfile, os.path.join(
+                movedir, os.path.basename(binfile)))
+
+            funcs_infos, lines_infos, source_file = self.dia_get_func_funcinfo(
+                binfile, source_codedir)
             item_dict = {}
             item_dict["functions"] = []
             item_dict["file"] = binfile
@@ -432,27 +508,30 @@ class WindowsDefaultStrategy(DefaultBuildStrategy):
                 functions_val["source_file"] = source_file
                 functions_val["function_info"] = funcs_infos[func_name]
                 functions_val["lines"] = lines_infos[func_name]
-                if len(functions_val["lines"])>0:
+                if len(functions_val["lines"]) > 0:
                     functions_val["source_file"] = functions_val["lines"][0]["source_file"]
 
-                
                 if "MD5" in functions_val["source_file"]:
-                    source_file_cleaned = functions_val["source_file"].split(" (MD5: ")[0]
+                    source_file_cleaned = functions_val["source_file"].split(" (MD5: ")[
+                        0]
                 elif " (0x3: " in functions_val["source_file"]:
-                    source_file_cleaned = functions_val["source_file"].split(" (0x3: ")[0]
+                    source_file_cleaned = functions_val["source_file"].split(" (0x3: ")[
+                        0]
                 else:
                     source_file_cleaned = functions_val["source_file"]
 
                 # match priority clangfirst
                 if source_file_cleaned not in func_cache.keys():
                     try:
-                        func_cache[source_file_cleaned] = clang_get_functions(source_file_cleaned)
+                        func_cache[source_file_cleaned] = clang_get_functions(
+                            source_file_cleaned)
                     except Exception as e:
                         logger.info("Clang parser error %s", e)
                         func_cache[source_file_cleaned] = []
                     beforetime = time.time()
-                    func_cache[source_file_cleaned] += ctags_get_functions(source_file_cleaned)
-                
+                    func_cache[source_file_cleaned] += ctags_get_functions(
+                        source_file_cleaned)
+
                 funcsourceinfo = func_cache[source_file_cleaned]
                 for func in funcsourceinfo:
                     if "::" in func_name and "::" in func[0]:
@@ -494,18 +573,16 @@ class WindowsDefaultStrategy(DefaultBuildStrategy):
             os.makedirs(movedir)
         shutil.move(os.path.join(dest_binfolder, PDBJSONNAME), movedir)
 
-
-
     def run_build(self,
-            repo,
-            target_dir,
-            build_mode,
-            library,
-            optimization,
-            slnfile=None,
-            platform='linux',
-            compiler_version='v142', 
-            num_p_job=16):
+                  repo,
+                  target_dir,
+                  build_mode,
+                  library,
+                  optimization,
+                  slnfile=None,
+                  platform='linux',
+                  compiler_version='v142',
+                  num_p_job=16):
         """ Generate cmd to execute """
         if platform.lower() == 'windows':
             cmd = ["powershell", "-Command", "msbuild"]
@@ -540,7 +617,7 @@ class WindowsDefaultStrategy(DefaultBuildStrategy):
                 logger.info("Saving .s and .o files as well ")
             else:
                 cflags = 'CLAGS="$CFLAGS"'
-                
+
             cmd = ""
             if 'bootstrap' in build_tool:
                 cmd = f'cd {target_dir} && ./bootstrap && ' \
@@ -563,7 +640,6 @@ class WindowsDefaultStrategy(DefaultBuildStrategy):
 
 class vcpkgStrategy(DefaultBuildStrategy):
 
-
     def clone_data(repo, optimization_level, mode):
         """ vcpkg don't need clone, pass the final result dir as clone dir """
         # vcpkg packge name is also stored in 'url' because of scraper code
@@ -575,18 +651,19 @@ class vcpkgStrategy(DefaultBuildStrategy):
         return b'No need for clone', 0, dest_path
 
     def pre_build(repo, target_dir, build_mode, library, optimization,
-                        slnfile, platform, compiler_version, version=None):
+                  slnfile, platform, compiler_version, version=None):
         return b'No need for precheck', 0, ""
 
-
     def run_build(repo, target_dir, build_mode, library, optimization,
-                        slnfile, platform, compiler_version, version=None):
+                  slnfile, platform, compiler_version, version=None):
         """"""
         logger.info(f" >>> Building {repo} ...")
         triplet_cpu_arch = "x64"
-        triplet_path = os.path.relpath(os.path.join(target_dir, "triplets", f"{triplet_cpu_arch}-{optimization.lower()}-windows.cmake"))
-        triplet_flags = {"VCPKG_TARGET_ARCHITECTURE": triplet_cpu_arch, "VCPKG_CRT_LINKAGE":"dynamic", "VCPKG_LIBRARY_LINKAGE":"dynamic"}
-        if build_mode.lower()=="release":
+        triplet_path = os.path.relpath(os.path.join(
+            target_dir, "triplets", f"{triplet_cpu_arch}-{optimization.lower()}-windows.cmake"))
+        triplet_flags = {"VCPKG_TARGET_ARCHITECTURE": triplet_cpu_arch,
+                         "VCPKG_CRT_LINKAGE": "dynamic", "VCPKG_LIBRARY_LINKAGE": "dynamic"}
+        if build_mode.lower() == "release":
             triplet_flags["VCPKG_BUILD_TYPE"] = "release"
         else:
             triplet_flags["VCPKG_BUILD_TYPE"] = "debug"
@@ -598,13 +675,13 @@ class vcpkgStrategy(DefaultBuildStrategy):
         triplet_flags["CMAKE_C_FLAGS_RELEASE"] = f"/{optimization}"
         triplet_flags["VCPKG_CXX_FLAGS_RELEASE"] = f"/{optimization}"
         triplet_flags["VCPKG_C_FLAGS_RELEASE"] = f"/{optimization}"
-        
+
         builddir = os.path.join(target_dir, "build"+os.urandom(8).hex())
         bindir = os.path.join(target_dir, "bin"+os.urandom(8).hex())
         with open(triplet_path, "w") as f:
             for x in triplet_flags:
                 f.write(f"set({x} {triplet_flags[x]})\n")
-        
+
         cmd = f"vcpkg install {repo} --overlay-triplets={target_dir}/triplets --x-install-root={builddir} --triplet {triplet_cpu_arch}-{optimization}-windows --x-packages-root={bindir}"
 
         if not os.path.exists(f"Binaries/{repo}-{triplet_cpu_arch}-{optimization}-{version.replace(':','')}({compiler_version})"):
@@ -613,12 +690,11 @@ class vcpkgStrategy(DefaultBuildStrategy):
         else:
             logger.info("Alredy built")
         post_processing_pdb(
-            bindir, build_mode, library=library, repoinfo={"url":repo, "updated_at": version}, toolset=compiler_version,
-                    optimization=optimization, source_codedir=target_dir, commit=version, movedir=f"Binaries/{repo}-{triplet_cpu_arch}-{optimization}-{version.replace(':','')}({compiler_version})")
+            bindir, build_mode, library=library, repoinfo={"url": repo, "updated_at": version}, toolset=compiler_version,
+            optimization=optimization, source_codedir=target_dir, commit=version, movedir=f"Binaries/{repo}-{triplet_cpu_arch}-{optimization}-{version.replace(':','')}({compiler_version})")
         shutil.rmtree(r"C:\vcpkg\buildtrees", ignore_errors=True)
         shutil.rmtree(r"C:\vcpkg\packages", ignore_errors=True)
         shutil.rmtree(r"C:\vcpkg\downloads", ignore_errors=True)
         shutil.rmtree(BUILD_FOLDER, ignore_errors=True)
 
-        return 
-    
+        return
