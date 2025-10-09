@@ -63,7 +63,7 @@ DB_PATH = "data/ghtorrent.db"
 
 DEST = "~/repos"
 
-G = "b89581cf542519aa28b2e0904fbefd31ae67c19a"
+# G = "b89581cf542519aa28b2e0904fbefd31ae67c19a"
 
 RATELIMIT_URL = "https://api.github.com/rate_limit"
 SCRAPE_CHECKPOINT = f"{BIN_DIR}/scrape-checkpoint"
@@ -74,8 +74,8 @@ BINPATH = "/binaries"
 if os.name=="nt":
     BINPATH = "binaries"
 
-PDBPATH = "Pdbs"
-BUILDPATH = "Builds"
+PDBPATH = "/binaries/Pdbs" # is this used
+BUILDPATH = "Builds" # is this used
 PDBJSONNAME = "pdbinfo.json"
 WIN_PREFIX = "C:\\Assemblage\\repo-scraper-builder\\Binaries\\"
 

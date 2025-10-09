@@ -132,16 +132,6 @@ class Builder(BasicWorker):
             }
         }
 
-    def on_init(self):
-        """ prepare dir here """
-        self.bin_dir = os.path.join(os.path.abspath(os.getcwd()), BINPATH)
-        self.pdb_dir = os.path.join(os.path.abspath(os.getcwd()), PDBPATH)
-        if not os.path.exists(self.bin_dir):
-            os.mkdir(self.bin_dir)
-            logger.info('self.init Created Binary folder')
-        if not os.path.exists(self.pdb_dir):
-            os.mkdir(self.pdb_dir)
-            logger.info('self.init Created Pdb folder')
 
     def control_message_handler(self, msg):
         """ reset opt id of this worker and recreate rmq connection """
