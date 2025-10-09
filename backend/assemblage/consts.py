@@ -81,3 +81,27 @@ WIN_PREFIX = "C:\\Assemblage\\repo-scraper-builder\\Binaries\\"
 
 AWS_AUTO_REBOOT_PREFIX = "auto-worker"
 REPO_SIZE_THRESHOLD = 50
+
+
+# Scraper constants
+SCRAPER_TIMESTAMP_RECORDFILE_PATH = "/binaries/crawled.json"
+
+SCRAPER_RATE_INTERVAL = 5 
+# Controls how long between scrapings. Setting to 0 may result in the scraper choking other units.
+
+SCRAPER_REPO_BUNDLESIZE = 10
+# Controls how many repositories should be sent to the coordinator at a time. Lower = lower latency.
+
+SCRAPER_PAGE_SIZE = 100 
+# how many repos per page of search results for the crawler. Unlikely to require changing
+
+OLDEST_PERMITTED_DATA_TIMESTAMP = 1262322000 # (Jan 1 2010) crawler terminates when it's reached this timestamp
+GITHUB_REPO_URL = "https://api.github.com/search/repositories"
+SCRAPER_REQUEST_TIMEOUT_S = 10 # timeout when waiting for HTTP request reply in seconds
+
+SCRAPER_RATE_LIMIT = 5000 # how many queries are predicted to be permitted in a QUERY_RATE_LIMIT_TIME interval
+QUERY_RATE_LIMIT_TIME = 3600 # how often the query limit refreshes: default 1 hour
+
+# How long to wait when a rate limit is hit before resuming operation
+RATE_LIMIT_WAIT = 60
+SECONDARY_RATE_LIMIT_WAIT = 120

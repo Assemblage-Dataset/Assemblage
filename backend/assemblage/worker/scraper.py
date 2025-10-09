@@ -35,6 +35,12 @@ from assemblage.analyze.analyze import get_build_system
 
 SEARCH_RATE_LIMIT = 30
 RATE_LIMIT = 5000
+from assemblage.consts import (
+    SCRAPER_TIMESTAMP_RECORDFILE_PATH, OLDEST_PERMITTED_DATA_TIMESTAMP, SCRAPER_PAGE_SIZE, 
+    GITHUB_REPO_URL, SCRAPER_REQUEST_TIMEOUT_S, SCRAPER_REPO_BUNDLESIZE,
+    SCRAPER_RATE_INTERVAL, QUERY_RATE_LIMIT_TIME, SCRAPER_RATE_LIMIT, 
+    RATE_LIMIT_WAIT, SECONDARY_RATE_LIMIT_WAIT
+)
 
 logger = logging.getLogger(__name__)
 
@@ -115,11 +121,10 @@ class GithubRepositories(DataSource):
         self.token = git_token
         # self.lang = lang
         self.qualifier = qualifier
-        self.page_size = 100
         self.crawl_time_interval = crawl_time_interval
         self.crawl_time_start = crawl_time_start
         self.proxies = proxies
-        self.query_pile = int(time.time())//3600
+        self.query_pile = int(time.time())//QUERY_RATE_LIMIT_TIME # part of the rate limiting check code
         self.sort = sort
         self.order = order
         self.queries = 0
@@ -148,12 +153,17 @@ class GithubRepositories(DataSource):
         }
 
     def query_limit(self):
-        if int(time.time())//3600 != self.query_pile:
-            self.query_pile = int(time.time())//3600
+        '''Checks that the scraper has not performed too many queries. If so, scraper sleeps until rate limit rollover.'''
+        if int(time.time())//QUERY_RATE_LIMIT_TIME != self.query_pile:
+            # the time interval has rolled over without exceeding queries -- can reset rate limit
+            self.query_pile = int(time.time())//QUERY_RATE_LIMIT_TIME
             self.queries = 0
-        if self.queries > RATE_LIMIT:
-            logger.info("Worker %s idle soon", self.workerid)
-            time.sleep(3600-int(time.time()) % 3600)
+        if self.queries > SCRAPER_RATE_LIMIT:
+            # queries exceeded -- put the worker to sleep until query is refreshed
+            # NOTE: the query is assumed to refresh every QUERY_RATE_LIMIT_TIME. Not determined directly from the message provided by GitHub
+            sleeptime = QUERY_RATE_LIMIT_TIME-int(time.time()) % QUERY_RATE_LIMIT_TIME
+            logger.info("Worker %s idle soon due to reaching rate limit: sleeping for %s", self.parent_workerid, sleeptime)
+            time.sleep(sleeptime)
             self.queries = 0
 
     def _process_repo_message(self, repo):
@@ -164,12 +174,14 @@ class GithubRepositories(DataSource):
         default_branch = repo["default_branch"]
         try:
             page = requests.get(url + f"/git/trees/{default_branch}",
-                                headers=self.auth_headers, proxies=self.random_proxy(), timeout=10)
+                                headers=self.auth_headers, proxies=self.random_proxy(), timeout=SCRAPER_REQUEST_TIMEOUT_S)
             if "secondary rate limit" in page.text:
+                logger.warning("Secondary rate limit detected")
                 logger.info(page.text.replace("\n", ""))
-                time.sleep(120)
+                time.sleep(SECONDARY_RATE_LIMIT_WAIT) 
+                # TODO: this assumes that SECONDARY_RATE_LIMIT_WAIT will allow secondary rate limit to pass, which isn't necessarily the case if multiple components are making API requests
                 page = requests.get(url + f"/git/trees/{default_branch}",
-                                    headers=self.auth_headers, proxies=self.random_proxy(), timeout=10)
+                                    headers=self.auth_headers, proxies=self.random_proxy(), timeout=SCRAPER_REQUEST_TIMEOUT_S)
             elif "rate limit" in page.text:
                 sleep_remaining = self.token_checker.rate_reset("", self.token)
 
@@ -178,9 +190,9 @@ class GithubRepositories(DataSource):
                             sleep_remaining)
                 # to give updates on remaining sleep ...
                 while sleep_remaining > 0:
-                    sleep_chunk = min(interval, sleep_remaining)
-                    logger.info("Crawler %s sleeping... %ds remaining",
-                                self.workerid, sleep_remaining)
+                    sleep_chunk = min(RATE_LIMIT_WAIT, sleep_remaining)
+                    logger.info("Crawler %s sleeping due to hitting rate limit... %ds remaining",
+                                self.datsourceid, sleep_remaining)
                     time.sleep(sleep_chunk)
                     sleep_remaining -= sleep_chunk
 
@@ -303,21 +315,22 @@ class Scraper(BasicWorker):
         }])
         self.repocache = []
         self.workerid = workerid
-        self.bundle_number = 10
         self.sent = 0
 
     def run(self):
         self.repocache = []
         for repo in iter(self.data_source):
             self.repocache.append(repo)
-            if len(self.repocache) >= self.bundle_number:
+            
+            # once enough repositories have been collected, send a message to the coordinator
+            if len(self.repocache) >= SCRAPER_REPO_BUNDLESIZE:
                 try:
                     self.mq_client.send_kind_msg(
                         'scrape', json.dumps(self.repocache))
                     self.repocache = []
-                    self.sent += self.bundle_number
-                    logger.info("Crawler %s sent %s repos, total: %s",
-                                self.workerid, self.bundle_number, self.sent)
+                    self.total_repos_sent += SCRAPER_REPO_BUNDLESIZE
+                    logger.info("Scraper %s bundled and sent %s repos to coordinator. Total repos sent by this scraper: %s",
+                                self.workerid, SCRAPER_REPO_BUNDLESIZE, self.total_repos_sent)
                 except Exception as err:
                     logger.info("Sending repos errored: %s", str(err))
                     self.mq_client = MessageClient(
