@@ -221,13 +221,13 @@ class Coordinator:
             count = 0
             try:
                 for repo in db_man.find_repo_by_status(build_status=BuildStatus.SUCCESS,
-                                                       clone_status=BuildStatus.SUCCESS,
+                                                       clone_status=CloneStatus.SUCCESS,
                                                        build_opt_id=None):
                     for b_status in db_man.find_status_by_repoid(repo.id):
-                        if b_status.clone_status == BuildStatus.FAILED and b_status.build_status == BuildStatus.INIT:
+                        if b_status.clone_status == CloneStatus.FAILED and b_status.build_status == BuildStatus.INIT:
                             db_man.update_repo_status(
                                 status_id=b_status.id,
-                                clone_status=BuildStatus.INIT)
+                                clone_status=CloneStatus.NOT_STARTED)
                             count += 1
                     if count % 100 == 0 and count != 0:
                         logger.info("Recycled %s tasks", count)
@@ -366,8 +366,7 @@ class Coordinator:
         """ collect binary metadata from worker"""
         db_man = DBManager(self.db_addr)
         recv_msg = json.loads(body.decode())
-        logger.info("Received binary: %s on %s",
-                     recv_msg['file_name'], recv_msg['task_id'])
+        
         db_man.insert_binary(
             file_name=recv_msg['file_name'],
             description='',

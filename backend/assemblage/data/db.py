@@ -24,7 +24,9 @@ logger = logging.getLogger(__name__)
 
 
 class DBManager:
-    """ manager for db query and connection """
+    """ manager for db query and connection
+        TODO: Depreciate this
+    """
 
     def __init__(self, db_addr): 
         # create the DB manager, init called when Coordinator first __init__ to start the db
@@ -334,7 +336,6 @@ class DBManager:
         add a binary record into database, 1 buildopt may have multiple binaries.
         and binaries may already deleted on disk
         """
-        logger.info(f"Adding binary to database Binary={file_name}")
         new_bin = BuildDO(
             file_name=file_name, description=description,
             status_id=status_id)

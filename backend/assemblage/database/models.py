@@ -17,6 +17,27 @@ from pydantic import HttpUrl
 
 Base = declarative_base()
 
+class BuildOpt(SQLModel, table=True):
+    """ build option for how to build a repo """
+    __tablename__ = 'buildopt'
+    id: int = Field( primary_key=True)
+    # git = Column(String(length=255), default="")
+    platform: str = Field(max_length=255, default="")
+    language: str = Field(max_length=255, default="")
+    compiler_name: str = Field(max_length=10, default="")
+    compiler_flag: str = Field(max_length=255, default="")
+    build_system: str = Field(max_length=255, default="")
+    build_command: str = Field(max_length=255, default="")
+    library: str = Field(max_length=255, default="")
+    enable: bool = False
+    statuses: list["Status"] = Relationship(back_populates="build_opt")
+
+    def __repr__(self) -> str:
+        return f'BuildOpt(platform={self.platform}, ,platform={self.platform}, ' \
+               f'language={self.language}, compiler flag={self.compiler_flag}), ' \
+               f'compiler name={self.compiler_name})'
+
+
 class Status(SQLModel, table=True):
     """ the build/clone status of repo with a specific build option """
     __tablename__ = 'b_status'
@@ -31,39 +52,16 @@ class Status(SQLModel, table=True):
     build_msg: str = ""
     build_opt_id: int | None = Field(
         default=None, foreign_key="buildopt.id")  # cascade
-    # build_opt_id: int = Column(Integer, ForeignKey(
-    #     'buildopt._id', ondelete="CASCADE"))
-    # repo_id: int = Column(Integer, ForeignKey("projects._id", ondelete="CASCADE"))
     repo_id: int = Field( foreign_key="projects.id")  # cascade
 
     mod_timestamp: int = -1
     build_time: int = -1
     commit_hexsha: str = Field(max_length=255, default="")
+    build_opt: BuildOpt | None = Relationship(back_populates="statuses")
+
     binaries: List["BuildDO"] = Relationship(
         back_populates="status", sa_relationship_kwargs={"cascade": "all, delete"})
     project: "RepoDO" = Relationship(back_populates="statuses")
-
-
-class BuildOpt(SQLModel, table=True):
-    """ build option for how to build a repo """
-    __tablename__ = 'buildopt'
-    id: int = Field( primary_key=True)
-    # git = Column(String(length=255), default="")
-    platform: str = Field(max_length=255, default="")
-    language: str = Field(max_length=255, default="")
-    compiler_name: str = Field(max_length=10, default="")
-    compiler_flag: str = Field(max_length=255, default="")
-    build_system: str = Field(max_length=255, default="")
-    build_command: str = Field(max_length=255, default="")
-    library: str = Field(max_length=255, default="")
-    enable: bool = False
-
-    def __repr__(self) -> str:
-        return f'BuildOpt(platform={self.platform}, ,platform={self.platform}, ' \
-               f'language={self.language}, compiler flag={self.compiler_flag}), ' \
-               f'compiler name={self.compiler_name})'
-    class Config:
-        use_enum_values = True
 
 class BuildDO(SQLModel, table=True):
     """ Build object to collect build information - How binaries are built"""
@@ -116,3 +114,4 @@ class RepoDO(SQLModel, table=True):
         return f'Repo(id={self._id} ,name={self.name}, url={self.url})'
     class Config:
         use_enum_values = True
+        

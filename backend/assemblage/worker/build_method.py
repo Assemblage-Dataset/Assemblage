@@ -129,8 +129,7 @@ class BuildStrategy:
                         dest_binfolder, build_mode, library, repoinfo, toolset,
                         optimization, commit_hexsha):
         """ post process hook  """
-        logger.info("post build hook- nohting is happening here")
-
+        pass
 
 class DefaultBuildStrategy(BuildStrategy):
 
