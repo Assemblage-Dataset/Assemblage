@@ -20,7 +20,7 @@ import grpc
 import requests
 import ntpath
 
-from assemblage.consts import BINPATH, PDBPATH, TASK_TIMEOUT_THRESHOLD, BuildStatus, MAX_MQ_SIZE
+from assemblage.consts import BINPATH, PDBPATH, TASK_TIMEOUT_THRESHOLD, BuildStatus, MAX_MQ_SIZE, CloneStatus
 from assemblage.worker.base_worker import BasicWorker
 from assemblage.worker import build_method
 from assemblage.worker.find_bin import find_elf_bin
@@ -301,7 +301,7 @@ class Builder(BasicWorker):
                       url=task['url'],
                       status=clone_status,
                       msg=self.uuid[:5]+clone_msg.decode())
-        if clone_status == BuildStatus.SUCCESS:
+        if clone_status == CloneStatus.SUCCESS:
             logger.info("Clone SUCCESS, Attempting to build `%s`", url)
             folders.append(clone_dir)
             compiler_flag = self.compiler_flag

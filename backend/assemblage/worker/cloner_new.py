@@ -355,7 +355,7 @@ class Builder(BasicWorker):
                       url=repo['url'],
                       status=clone_status,
                       msg=self.uuid[:5]+clone_msg.decode())
-        if clone_status == BuildStatus.SUCCESS:
+        if clone_status == CloneStatus.SUCCESS:
             logging.info("Clone SUCCESS, Attempting to build `%s`", url)
             folders.append(clone_dir)
             build_task_configs = []

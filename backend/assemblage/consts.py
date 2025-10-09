@@ -25,9 +25,8 @@ class BuildStatus(str, Enum):
         return self.name
 
 
-#    # priority high: 2, mid: 1, low 0
-#     priority = Column(Integer, default=0, nullable=False, index=True)
-#     # 0 : not started 1 : processing 2 : failed 3 : success 10 : command failed
+# add a recloned status, for when a project is updated and then repulled, to tell buidler to reclone + rebuild, 
+# but store binaries in a new dir 
 
 class CloneStatus(str, Enum):
     NOT_STARTED = "not_started"
