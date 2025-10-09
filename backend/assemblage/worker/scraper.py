@@ -60,9 +60,20 @@ class DataSource(object):
 
     def __init__(self, build_sys_callback) -> None:
         self.build_sys_callback = build_sys_callback
-        # TODO: remove this hard coded path
-        self.record_file = "/binaries/crawled.json"
-        self.workerud = os.urandom(4).hex()
+        self.record_file = SCRAPER_TIMESTAMP_RECORDFILE_PATH
+        
+        # TODO: replace with checking that DB has the appropriate data
+        if not os.path.exists(self.record_file):  
+            with open(self.record_file, "w") as record_file:
+                now = int(time.time())
+                json.dump({"latest_crawled":now}, record_file, indent=4)
+                logger.info("No saved scrape time data found at %s. Starting from (seconds since epoch) %s...", self.record_file, now)
+
+    # TODO: I want to remove this but ONLY once we know that won't break anything else for sure. 
+    def init():
+        '''Deprecated'''
+        logger.warning("DataSource.init() should not be called: init() functionality has been rolled into __init__, delete the line of code that uses this")
+
 
     @abstractclassmethod
     def fetch_data(self):
@@ -73,11 +84,6 @@ class DataSource(object):
         """ take a repo and files in repo, check if its valid or need to be discarded"""
         return True
 
-    def init(self):
-        """ delay initialization, user must call this before use """
-        if not os.path.exists(self.record_file):
-            with open(self.record_file, "w") as record_file:
-                json.dump([int(time.time())], record_file, indent=4)
 
     def check_cache(self, interval):
         """ update time cache """
