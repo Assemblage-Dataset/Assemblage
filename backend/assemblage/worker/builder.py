@@ -12,13 +12,9 @@ import os
 import shutil
 import json
 import time
-import random
-import string
 import stat
 
 import glob
-import grpc
-import requests
 import ntpath
 
 from assemblage.consts import BINPATH, PDBPATH, TASK_TIMEOUT_THRESHOLD, BuildStatus, MAX_MQ_SIZE, CloneStatus
@@ -26,10 +22,12 @@ from assemblage.worker.base_worker import BasicWorker
 from assemblage.worker import build_method
 from assemblage.worker.find_bin import find_elf_bin
 from assemblage.worker.profile import AWSProfile
-from assemblage.protobufs.assemblage_pb2 import getBuildOptRequest
 from assemblage.worker.build_method import DefaultBuildStrategy
 
 logger = logging.getLogger(__name__)
+
+
+NON_EXE_MODE = stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH
 
 class Builder(BasicWorker):
     """
@@ -40,7 +38,6 @@ class Builder(BasicWorker):
     def __init__(self,
                  rabbitmq_host,
                  rabbitmq_port,
-                 rpc_stub,
                  worker_type,
                  opt_id,
                  platform="linux",
@@ -57,7 +54,7 @@ class Builder(BasicWorker):
                 #  send_binary_method="s3"
                  aws_profile= None
                  ):
-        super().__init__(rabbitmq_host, rabbitmq_port, rpc_stub, worker_type,
+        super().__init__(rabbitmq_host, rabbitmq_port, worker_type,
                          opt_id)
         logger.info("Worker inited")
         self.compiler_version = compiler
@@ -136,34 +133,35 @@ class Builder(BasicWorker):
 
     def control_message_handler(self, msg):
         """ reset opt id of this worker and recreate rmq connection """
-        request = getBuildOptRequest(request="get")
-        try:
-            build_options = []
-            for build_option in self.rpc_stub.getBuildOpt(request):
-                build_options.append(build_option)
-        except grpc.RpcError as rpc_error:
-            if rpc_error.code() == grpc.StatusCode.UNAVAILABLE:
-                logger.info(
-                    'CLI Failed To connect to any addresses; Coordinator may be inactive'
-                )
-            else:
-                logger.info("RPC Error: %s", rpc_error)
-            return
-        for build_opt_record in build_options:
-            if build_opt_record.id == msg:
-                self.opt_id = msg
-                self.compiler_version = build_opt_record.compiler_name
-                self.library = build_opt_record.library
-                self.compiler_flag = build_opt_record.compiler_flag.replace(
-                    "-", "")
-                self.input_queue_name = f"queue_{self.opt_id}"
-                self.change_input(self.input_queue_name, self.input_queue_args)
-                logger.info("Build opt id switched to %d", msg)
+        # not deleting yet to save for reference later
+        # request = getBuildOptRequest(request="get")
+        # try:
+        #     build_options = []
+        #     for build_option in self.rpc_stub.getBuildOpt(request):
+        #         build_options.append(build_option)
+        # except grpc.RpcError as rpc_error:
+        #     if rpc_error.code() == grpc.StatusCode.UNAVAILABLE:
+        #         logger.info(
+        #             'CLI Failed To connect to any addresses; Coordinator may be inactive'
+        #         )
+        #     else:
+        #         logger.info("RPC Error: %s", rpc_error)
+        #     return
+        # for build_opt_record in build_options:
+        #     if build_opt_record.id == msg:
+        #         self.opt_id = msg
+        #         self.compiler_version = build_opt_record.compiler_name
+        #         self.library = build_opt_record.library
+        #         self.compiler_flag = build_opt_record.compiler_flag.replace(
+        #             "-", "")
+        #         self.input_queue_name = f"queue_{self.opt_id}"
+        #         self.change_input(self.input_queue_name, self.input_queue_args)
+        #         logger.info("Build opt id switched to %d", msg)
 
     def save_binaries(self, clone_dir, repo, original_files):
         """ Store the binaries in the specified output directory. """
-        no_exe_mode &= ~(stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH) # set files to be non executable, if we want to execute later, 
         
+        self.build_strategy.own_dir(os.path.dirname(clone_dir))  # possibly overkill here
 
         if self.platform == 'linux':
             bin_found = {
@@ -184,14 +182,13 @@ class Builder(BasicWorker):
                 base = os.path.basename(fpath)
                 # put some time stamp to avoid duplicate
                 shutil.move(fpath, f"{dest}/{base}", copy_function=shutil.copy2)
-                os.chmod(fpath, no_exe_mode)
+                os.chmod(f"{dest}/{base}", NON_EXE_MODE)
                 
                 self.send_msg(kind='binary',
                               task_id=repo['task_id'],
                               repo=repo,
                               file_name=f"{dest}/{base}")
             self.build_strategy.own_dir(os.path.dirname(dest)) # own successes too...
-
             return dest
         elif self.platform == 'windows':
             dest = os.path.join(self.bin_dir, os.urandom(16).hex())

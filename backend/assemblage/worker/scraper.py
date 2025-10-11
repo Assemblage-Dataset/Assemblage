@@ -288,7 +288,7 @@ class Scraper(BasicWorker):
     def __init__(self, rabbitmq_port, rabbitmq_host, workerid, data_source: DataSource):
         # TODO: refactor here make scraper connect to gRPC control port
         logger.info("Booting crawler %s", workerid)
-        super().__init__(rabbitmq_host, rabbitmq_port, None, "scraper",
+        super().__init__(rabbitmq_host, rabbitmq_port, "scraper",
                          -1)
         self.data_source = data_source
         self.data_source.init()
