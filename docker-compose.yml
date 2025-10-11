@@ -33,6 +33,8 @@ services:
       context: .
       dockerfile: docker/gcc/Dockerfile
     command: python3 /app/scripts/workers/example_cluster.py --type  coordinator
+    environment: # do not remove!!
+      - name=coordinator
     environment:
       PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
     env_file:
@@ -68,6 +70,8 @@ services:
       PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
     env_file:
       - secrets.env
+    environment: # do not remove!!
+      - name=scraper_0
     deploy:
       resources:
         limits:
@@ -91,6 +95,8 @@ services:
       PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
     env_file:
       - secrets.env
+    environment: # do not remove!!
+      - name=builder_0
     depends_on:
       coordinator: 
         condition: service_healthy

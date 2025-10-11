@@ -129,6 +129,6 @@ class BasicWorker:
         self.t_daemon.start()
         self.t_job = threading.Thread(target=self.job_thread)
         self.t_job.start()
-        logging.info("Worker %s inited", self.uuid)
+        logging.info("Worker %s inited", self.uuid) # add healthcheck function here 
         self.t_daemon.join()
         self.t_job.join()
