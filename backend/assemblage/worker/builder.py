@@ -14,6 +14,7 @@ import json
 import time
 import random
 import string
+import stat
 
 import glob
 import grpc
@@ -159,22 +160,21 @@ class Builder(BasicWorker):
                 self.change_input(self.input_queue_name, self.input_queue_args)
                 logger.info("Build opt id switched to %d", msg)
 
-    def scan_binaries(self, clone_dir, repo, original_files):
+    def save_binaries(self, clone_dir, repo, original_files):
         """ Store the binaries in the specified output directory. """
-        logger.info("scanning binary function invoked!")
+        no_exe_mode &= ~(stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH) # set files to be non executable, if we want to execute later, 
+        
+
         if self.platform == 'linux':
             bin_found = {
                 f for f in find_elf_bin(clone_dir)
                 if (os.path.exists(f))
             }
-            
-            
             if not bin_found:
                 logger.warning("no binaries found, build may have not been a success")
                 return None
             else: 
                 logger.info(f"{len(bin_found)} binaries found")
-
             dest = f"{BINPATH}/successes/{"/".join(clone_dir.rstrip("/").split("/")[-2:])}"
             try:
                 os.mkdir(dest)
@@ -184,10 +184,14 @@ class Builder(BasicWorker):
                 base = os.path.basename(fpath)
                 # put some time stamp to avoid duplicate
                 shutil.move(fpath, f"{dest}/{base}", copy_function=shutil.copy2)
+                os.chmod(fpath, no_exe_mode)
+                
                 self.send_msg(kind='binary',
                               task_id=repo['task_id'],
                               repo=repo,
                               file_name=f"{dest}/{base}")
+            self.build_strategy.own_dir(os.path.dirname(dest)) # own successes too...
+
             return dest
         elif self.platform == 'windows':
             dest = os.path.join(self.bin_dir, os.urandom(16).hex())
@@ -290,7 +294,6 @@ class Builder(BasicWorker):
                      url,
                      datetime.datetime.now().strftime("%H:%M:%S"), task['build_system'])
         clone_msg, clone_status, clone_dir = self.build_strategy.clone_data(task)
-        folders = []
         original_files = []
         for filename in glob.iglob(clone_dir + '**/**', recursive=True):
             original_files.append(filename)
@@ -303,7 +306,6 @@ class Builder(BasicWorker):
                       msg=self.uuid[:5]+clone_msg.decode())
         if clone_status == CloneStatus.SUCCESS:
             logger.info("Clone SUCCESS, Attempting to build `%s`", url)
-            folders.append(clone_dir)
             compiler_flag = self.compiler_flag
             build_mode = self.build_mode
             compiler_version = self.compiler_version
@@ -341,11 +343,8 @@ class Builder(BasicWorker):
                                         compiler_flag, commit_hexsha)
             logger.info(f"Post build hook done, build_status: {build_status}")
             
-            
-            
-            
             if build_status == BuildStatus.SUCCESS:
-                    dest_binfolder = self.scan_binaries(
+                    dest_binfolder = self.save_binaries(
                         clone_dir, task, original_files=original_files)
                     logger.info(f"Binaries saved to {dest_binfolder}")
             self.send_msg(repo=task,
@@ -355,7 +354,6 @@ class Builder(BasicWorker):
                             msg="Build Process Finished",
                             commit_hexsha=commit_hexsha,
                             build_time=(after_build_time - before_build_time))
-            folders.append(clone_dir) # might not be neccesary anymore 
         else:
             logger.info("Clone FAILURE %s: %s", url, clone_msg)
         # build_method.clean(folders)

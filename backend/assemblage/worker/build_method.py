@@ -163,6 +163,20 @@ class DefaultBuildStrategy(BuildStrategy):
         if len(parts) >= 2:
             return parts[0], parts[1]
         return None, None
+    def own_dir(self, dir: str):
+               # # see above for how i feel about this
+        for root, dirs, files in os.walk(dir):
+            for d in dirs:
+                try: 
+                    os.chown(os.path.join(root, d), self.output_dir_uid, self.output_dir_gid)
+                except:
+                    pass
+            for f in files:
+                try: 
+                    os.chown(os.path.join(root, f), self.output_dir_uid, self.output_dir_gid)
+                except:
+                    pass# this is from a weird edge case where there was a symbolic link pushed to git
+        os.chown(dir, self.output_dir_uid, self.output_dir_gid)
 
     def clone_data(self, repo):
         """ Clone repo """
@@ -175,35 +189,23 @@ class DefaultBuildStrategy(BuildStrategy):
         if not project_name:
             project_name = os.urandom(8).hex()
 
-        parent_dir = f"/binaries/projects/{user_name}"
-        os.makedirs(f"{parent_dir}", exist_ok=True)
+        git_user_dir = f"/binaries/projects/{user_name}"
+        os.makedirs(f"{git_user_dir}", exist_ok=True)
 
-        clone_dir = f'{parent_dir}/{project_name}'
+        clone_dir = f'{git_user_dir}/{project_name}'
+        
         out, err, exit_code = cmd_with_output(
             f'git clone --recursive {repo["url"]} {clone_dir}/', 600, "linux")
 
         logger.info(f"cloned to : git clone --recursive {repo["url"]} {clone_dir}/")
 
         # # see above for how i feel about this
-        for root, dirs, files in os.walk(clone_dir):
-            for d in dirs:
-                try: 
-                    os.chown(os.path.join(root, d), self.output_dir_uid, self.output_dir_gid)
-                except:
-                    pass
-            for f in files:
-                try: 
-                    os.chown(os.path.join(root, f), self.output_dir_uid, self.output_dir_gid)
-                except:
-                    pass# this is from a weird edge case where there was a symbolic link pushed to git
-        os.chown(clone_dir, self.output_dir_uid, self.output_dir_gid)
-        os.chown(parent_dir, self.output_dir_uid, self.output_dir_gid)
-
-        # # maybe try add more verboese errors?
+        self.own_dir(git_user_dir) # ensure all projects 
+        # # maybe try add more verbose errors?
         return_code = CloneStatus.SUCCESS if exit_code == 0 else CloneStatus.FAILED
         if return_code == CloneStatus.FAILED:
             try:
-                os.removedirs(f"{parent_dir}")
+                os.removedirs(f"{git_user_dir}") # will fail if not empty, ie the git user has a nother project already cloned
             except:
                 pass
             try:
