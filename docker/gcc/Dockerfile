@@ -1,4 +1,4 @@
-FROM  assemblage-gh:base
+FROM  ubuntu:noble-20250910
 
 RUN apt-get update && apt-get -y upgrade 
 
@@ -6,14 +6,14 @@ RUN DEBIAN_FRONTEND="noninteractive" apt-get -y install tzdata cmake build-essen
 
 # set up grpc
 # ENV GRPC_RELEASE_TAG v1.12.x
-RUN rm -rf /var/local/git/grpc
-RUN git clone https://github.com/grpc/grpc /var/local/git/grpc --recurse-submodules && \
-    cd /var/local/git/grpc && \
-    git submodule update --init && \
-    mkdir -p cmake/build && \
-    cd cmake/build && \
-    cmake ../.. && \
-    make -j64 && make install
+# RUN rm -rf /var/local/git/grpc
+# RUN git clone https://github.com/grpc/grpc /var/local/git/grpc --recurse-submodules && \
+#     cd /var/local/git/grpc && \
+#     git submodule update --init && \
+#     mkdir -p cmake/build && \
+#     cd cmake/build && \
+#     cmake ../.. && \
+#     make -j64 && make install
 
 # setup python
 
@@ -38,16 +38,23 @@ RUN curl -fsSL https://deb.nodesource.com/setup_current.x | bash - && apt-get up
 RUN curl https://raw.githubusercontent.com/pshved/timeout/master/timeout | \
     tee /usr/local/bin/timeout && chmod 755 /usr/local/bin/timeout
 
-COPY . /assemblage
+COPY ./backend/ /app
 
-WORKDIR /assemblage
+WORKDIR /app
 ENV PIP_USE_PEP517=1
 
 RUN python3 -m venv /venv
 ENV PATH="/venv/bin:$PATH"
+ENV PYTHONPATH=/app
+
 RUN pip install --upgrade pip setuptools wheel
 RUN pip install -r requirements.txt
 
-RUN cp -r /assemblage/aws /root/.aws
+COPY ./aws /root/.aws
 RUN export AWS_CONFIG_FILE=/root/.aws/config
 RUN export AWS_SHARED_CREDENTIALS_FILE=/root/.aws/credentials
+
+ENV CC 'gcc'
+ENV CXX 'g++'
+
+RUN echo '1:gcc' >> /conf

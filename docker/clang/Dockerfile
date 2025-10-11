@@ -1,5 +1,5 @@
 
-FROM  assemblage-gh:base
+FROM ubuntu:noble-20250910
 
 RUN apt-get update && apt-get -y upgrade
 
@@ -10,17 +10,25 @@ RUN apt-get -y update && apt-get install -y make build-essential libssl-dev zlib
         xz-utils tk-dev libxml2-dev libxmlsec1-dev libffi-dev liblzma-dev \
         mecab-ipadic-utf8 git libboost-all-dev cmake flex bison libzmq3-dev \
         autoconf libtool pkg-config libc++-dev libc++abi-dev bundler automake \
-        g++ unzip python3-pip python3.12-venv libjpeg-dev zlib1g-dev
+        g++ unzip python3-pip python3.12-venv libjpeg-dev zlib1g-dev clang
 
-COPY . /assemblage
+COPY ./backend /app
 
-WORKDIR /assemblage
+WORKDIR /app
 ENV PIP_USE_PEP517=1
-
 RUN python3 -m venv /venv
+ENV PYTHONPATH=/app
 ENV PATH="/venv/bin:$PATH"
 RUN pip install --upgrade pip setuptools wheel
 RUN pip install -r requirements.txt
-RUN cp -r aws /root/.aws
+COPY ./aws /root/.aws
 RUN export AWS_CONFIG_FILE=/root/.aws/config
 RUN export AWS_SHARED_CREDENTIALS_FILE=/root/.aws/credentials
+
+ENV CC='clang'
+ENV CXX='clang++'
+
+RUN echo '2:clang' >> /conf
+
+RUN cp /usr/bin/clang /usr/bin/cc && cp /usr/bin/clang++ /usr/bin/cc1plus && \
+    cp -f /usr/bin/clang /usr/bin/gcc && cp -f /usr/bin/clang++ /usr/bin/g++
