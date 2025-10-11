@@ -21,7 +21,6 @@ import yaml
 from assemblage.analyze.analyze import get_build_system
 from assemblage.coordinator.coordinator import Coordinator
 from assemblage.data.db import DBManager
-from assemblage.protobufs.assemblage_pb2_grpc import AssemblageServiceStub
 from assemblage.worker.scraper import DataSource, Scraper
 from assemblage.worker.builder import Builder
 from assemblage.worker.profile import AWSProfile
@@ -450,7 +449,6 @@ class AssemblageCluster:
                     worker = Builder(
                         self.mq_addr,
                         self.mq_port,
-                        rpc_stub=AssemblageServiceStub(channel),
                         worker_type="builder;linux",
                         platform="linux",
                         opt_id=builder_config['build_opt'],
@@ -466,7 +464,6 @@ class AssemblageCluster:
     def _run_coordinator(self):
         cor = Coordinator(self.mq_addr,
                           self.mq_port,
-                          "[::]:50052",
                           self.db_conn_str,
                           self.name,
                           self.aws_mode)
@@ -474,17 +471,16 @@ class AssemblageCluster:
 
     def _run_postprocesser(self, post_conf):
         time.sleep(10)
-        with grpc.insecure_channel(self.grpc_addr) as channel:
-            post = PostProcessor(
-                self.mq_addr,
-                self.mq_port,
-                AssemblageServiceStub(channel),
-                "postprocesser;linux",
-                post_conf["opt_id"],
-                self.aws_profile,
-                post_conf["analysis"]
-            )
-            post.run()
+        # with grpc.insecure_channel(self.grpc_addr) as channel:
+        #     post = PostProcessor(
+        #         self.mq_addr,
+        #         self.mq_port,
+        #         "postprocesser;linux",
+        #         post_conf["opt_id"],
+        #         self.aws_profile,
+        #         post_conf["analysis"]
+        #     )
+        #     post.run()
 
     def init(self):
         """ init cluster, generate configure """

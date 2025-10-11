@@ -287,6 +287,8 @@ class DefaultBuildStrategy(BuildStrategy):
 
         out, err, exit_code = cmd_with_output(cmd, 600, platform)
         return_code = BuildStatus.SUCCESS if exit_code == 0 else BuildStatus.FAILED
+        self.own_dir(os.path.dirname(target_dir)) 
+
         return out.decode() + err.decode(), return_code
 
 
