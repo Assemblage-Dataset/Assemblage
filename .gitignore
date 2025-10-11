@@ -54,3 +54,7 @@ dump_*
 *.out
 local_config/
 !backend/requirements.txt
+
+
+# temporarily 
+frontend/
