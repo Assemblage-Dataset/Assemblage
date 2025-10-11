@@ -21,6 +21,7 @@ from assemblage.worker.scraper import GithubRepositories
 from assemblage.worker.profile import AWSProfile
 from assemblage.worker.postprocess import PostAnalysis
 from assemblage.worker.build_method import BuildStrategy, DefaultBuildStrategy, cmd_with_output
+from assemblage.worker.build_method import BuildStrategy, DefaultBuildStrategy, cmd_with_output
 from assemblage.windows.parsers.proj import Project
 from assemblage.windows.parsers.sln import Solution
 

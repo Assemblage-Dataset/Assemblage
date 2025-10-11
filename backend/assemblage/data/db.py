@@ -5,15 +5,18 @@ Yihao Sun
 """
 
 import datetime
+import inspect
 import random
 import time
 import logging
 
 import sqlalchemy.exc
 from sqlalchemy import select, update, create_engine, func, or_, inspect
+from sqlalchemy import select, update, create_engine, func, or_, inspect
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.expression import desc, true
 from sqlalchemy.sql import Insert
+from assemblage.data.object import Base, init_clean_database
 
 from assemblage.database.models import BuildDO, BuildOpt, RepoDO, Status
 from assemblage.consts import BuildStatus, SUPPORTED_LANGUAGE, CloneStatus
