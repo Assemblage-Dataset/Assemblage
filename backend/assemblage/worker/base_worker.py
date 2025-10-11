@@ -16,7 +16,6 @@ import time
 import uuid
 from assemblage.consts import PING_INTERVAL
 
-from assemblage.protobufs.assemblage_pb2 import PingRequest, RegisterRequest
 from assemblage.worker.mq import MessageClient
 
 
@@ -25,8 +24,7 @@ class BasicWorker:
     Worker base class
     """
 
-    def __init__(self, rabbitmq_host, rabbitmq_port, rpc_stub, worker_type, opt_id):
-        self.rpc_stub = rpc_stub
+    def __init__(self, rabbitmq_host, rabbitmq_port, worker_type, opt_id):
         self.worker_type = worker_type
         self.opt_id = opt_id
         self.rabbitmq_host = rabbitmq_host
@@ -85,20 +83,6 @@ class BasicWorker:
         if input_queue_name:
             self.mq_client.change_input_queue(input_queue_name, input_queue_args,
                                               self.job_handler)
-
-    def control_thread(self):
-        ''' try to restart whole program when builder is keep idle '''
-        while True:
-            req = PingRequest()
-            req.ping = 1
-            req.uuid = self.uuid
-            req.task = self.opt_id
-            req.msg = "ping"
-            response = self.rpc_stub.ping(req)
-            if response.task != self.opt_id:
-                self.control_message_handler(response.task)
-            time.sleep(PING_INTERVAL)
-
     def job_thread(self):
         """ the job thread """
         if self.input_queue_name:
@@ -108,13 +92,6 @@ class BasicWorker:
         else:
             self.job_handler(None, None, None, None)
 
-    def register(self):
-        """ register worker to server """
-        register_req = RegisterRequest()
-        register_req.uuid = self.uuid
-        register_req.opt = self.opt_id
-        register_req.type = self.worker_type
-        self.rpc_stub.registWorker(register_req)
 
     def run(self):
         """ run the worker """
@@ -123,12 +100,7 @@ class BasicWorker:
         self.setup_mq_client()
         logging.info("MQ started ....")
         logging.info("Job queue started ....")
-        self.register()
-        logging.info("Worker registered ....")
-        self.t_daemon = threading.Thread(target=self.control_thread)
-        self.t_daemon.start()
         self.t_job = threading.Thread(target=self.job_thread)
         self.t_job.start()
         logging.info("Worker %s inited", self.uuid) # add healthcheck function here 
-        self.t_daemon.join()
         self.t_job.join()

@@ -5,23 +5,15 @@ Yihao Sun
 """
 
 import os
-import os
 import sys
 import threading
 import time
 import logging
 import json
 from concurrent.futures import ThreadPoolExecutor
-import grpc
 import pika
 import boto3
-import datetime
-import re
-from botocore.exceptions import ClientError
 
-from assemblage.protobufs.assemblage_pb2_grpc import add_AssemblageServiceServicer_to_server
-
-from assemblage.coordinator.rpc import InfoService
 from assemblage.data.db import DBManager
 from collections import Counter
 from assemblage.consts import AWS_AUTO_REBOOT_PREFIX, BIN_DIR, TASK_TIMEOUT_THRESHOLD, WORKER_TIMEOUT_THRESHOLD, BuildStatus, REPO_SIZE_THRESHOLD, CloneStatus
@@ -88,7 +80,7 @@ class Coordinator:
     TODO: also configure creating separate RabbitMQ users for each service
     """
 
-    def __init__(self, rabbitmq_host, rabbitmq_port, grpc_addr, db_addr, cluster_name, aws_mode=0, reproduce_mode=0):
+    def __init__(self, rabbitmq_host, rabbitmq_port, db_addr, cluster_name, aws_mode=0, reproduce_mode=0):
         logger.info("Coordinator Init")
         self.rabbitmq_host = rabbitmq_host
         self.rabbitmq_port = rabbitmq_port
@@ -105,7 +97,6 @@ class Coordinator:
         self.channel.queue_declare(queue='scrape', durable=True)
         # To receive results about binaries
         self.channel.queue_declare(queue='binary', durable=True)
-        self.grpc_addr = grpc_addr
         self.db_addr = db_addr
         
         self.cluster_name = cluster_name
@@ -115,21 +106,11 @@ class Coordinator:
         else:
             self.aws_flag = False
         # setup rpc service
-        self.rpc_service = InfoService(self.db_addr)
         # 
         
 
     def __del__(self):
         self.channel.close()
-
-    def __rpc(self):
-        """ start rpc server, this blocking """
-        rpc_server = grpc.server(ThreadPoolExecutor(max_workers=50))
-        add_AssemblageServiceServicer_to_server(self.rpc_service, rpc_server)
-        rpc_server.add_insecure_port(self.grpc_addr)
-        logger.info("Starting server on %s", self.grpc_addr)
-        rpc_server.start()
-        rpc_server.wait_for_termination()
 
     def __dispatch_task(self, build_opt_id, sleep=True):
         """ send a number of task into worker, and the keep repo name if queue """
@@ -235,17 +216,6 @@ class Coordinator:
                 time.sleep(1)
             except Exception as err:
                 logger.info("Recycle thread err %s", err)
-            time.sleep(1)
-
-    def __clean_worker(self):
-        time.sleep(60)
-        while True:
-            worker = self.rpc_service.workers.copy()
-            while len(self.rpc_service.workers) > 0:
-                self.rpc_service.workers.pop()
-            for worker_info in worker:
-                if abs(time.time() - worker_info['timestamp']) < WORKER_TIMEOUT_THRESHOLD:
-                    self.rpc_service.workers.append(worker_info)
             time.sleep(1)
 
     def __consume_binary(self):
@@ -442,25 +412,21 @@ class Coordinator:
             else:
                 t_dispatch_list.append(threading.Thread(
                     target=self.__dispatch_task, args=(build_opt.id, True)))
-        t_rpc = threading.Thread(target=self.__rpc)
         # t_ddisasm = threading.Thread(target=self.__disasm_task)
         t_consume_clone = threading.Thread(target=self.__consume_clone)
         t_consume_build = threading.Thread(target=self.__consume_build)
         t_consume_binary = threading.Thread(target=self.__consume_binary)
         t_scrape = threading.Thread(target=self.__consume_scraped_data)
         t_clean_task = threading.Thread(target=self.__clean_overtime)
-        t_clean_worker = threading.Thread(target=self.__clean_worker)
         t_recycle_worker = threading.Thread(target=self.__recycle_clone)
         t_reboot_worker = threading.Thread(target=self.__reboot_worker)
         t_daemon = threading.Thread(target=self.__daemon)
         logger.info("Processes ready")
         with open("/tmp/setup_complete.txt", "w") as f:
             f.write("done")
-        t_clean_worker.start()
         t_clean_task.start()
         for t_dispatch in t_dispatch_list:
             t_dispatch.start()
-        t_rpc.start()
         t_recycle_worker.start()
         t_consume_clone.start()
         t_consume_build.start()
@@ -469,11 +435,9 @@ class Coordinator:
         t_reboot_worker.start()
         logger.info("Threads joining")
         t_clean_task.join()
-        t_rpc.join()
         for t_dispatch in t_dispatch_list:
             t_dispatch.join()
         t_scrape.join()
-        t_clean_worker.join()
         t_consume_binary.join()
         t_consume_clone.join()
         t_consume_build.join()
