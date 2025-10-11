@@ -107,39 +107,6 @@ services:
       - ./backend:/app 
       - builder-data:/binaries
 
-
-# web server
-  # web-backend:
-  #   image: assemblage-web-backend:latest
-  #   command: uvicorn scripts.web_server:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app
-  #   build:
-  #     context: .
-  #     dockerfile: docker/web/backend/Dockerfile
-  #   depends_on:
-  #     database:
-  #       condition: service_healthy
-  #     rabbitmq:
-  #       condition: service_healthy
-  #   env_file:
-  #       - secrets.env
-  #   volumes:
-  #       - ./backend:/app 
-  #   ports:
-  #      - 8000:8000
-
-  # web-frontend: 
-  #   image: assemblage-web-frontend:latest
-  #   depends_on:
-  #     - web-backend
-  #   build: 
-  #     context: .
-  #     dockerfile: docker/web/frontend/Dockerfile.dev
-  #   volumes: 
-  #       - ./frontend:/app
-  #       - /app/node_modules # prevents then from being overwritten by not existing locally!
-  #   ports:
-  #     - "80:3000"
-
 volumes:
   builder-data:
     driver: local
