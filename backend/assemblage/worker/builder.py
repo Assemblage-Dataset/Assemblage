@@ -12,23 +12,22 @@ import os
 import shutil
 import json
 import time
-import random
-import string
+import stat
 
 import glob
-import grpc
-import requests
 import ntpath
 
-from assemblage.consts import BINPATH, PDBPATH, TASK_TIMEOUT_THRESHOLD, BuildStatus, MAX_MQ_SIZE
+from assemblage.consts import BINPATH, PDBPATH, TASK_TIMEOUT_THRESHOLD, BuildStatus, MAX_MQ_SIZE, CloneStatus
 from assemblage.worker.base_worker import BasicWorker
 from assemblage.worker import build_method
 from assemblage.worker.find_bin import find_elf_bin
 from assemblage.worker.profile import AWSProfile
-from assemblage.protobufs.assemblage_pb2 import getBuildOptRequest
 from assemblage.worker.build_method import DefaultBuildStrategy
 
 logger = logging.getLogger(__name__)
+
+
+NON_EXE_MODE = stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH
 
 class Builder(BasicWorker):
     """
@@ -39,7 +38,6 @@ class Builder(BasicWorker):
     def __init__(self,
                  rabbitmq_host,
                  rabbitmq_port,
-                 rpc_stub,
                  worker_type,
                  opt_id,
                  platform="linux",
@@ -56,7 +54,7 @@ class Builder(BasicWorker):
                 #  send_binary_method="s3"
                  aws_profile= None
                  ):
-        super().__init__(rabbitmq_host, rabbitmq_port, rpc_stub, worker_type,
+        super().__init__(rabbitmq_host, rabbitmq_port, worker_type,
                          opt_id)
         logger.info("Worker inited")
         self.compiler_version = compiler
@@ -64,6 +62,7 @@ class Builder(BasicWorker):
         self.library = library
         self.opt_id = opt_id
         self.build_mode = build_mode
+
         if blacklist:
             self.blacklist = blacklist
         else:
@@ -89,7 +88,7 @@ class Builder(BasicWorker):
         self.clone_proxy_token = proxy_token
         # self.build_callback = build_method.default_build_command_generator
         self.build_strategy = DefaultBuildStrategy()
-        self.on_init()
+        # self.on_init()
 
     def setup_job_queue_info(self):
         logger.info("setting up mq channel for %d", self.opt_id)
@@ -131,62 +130,50 @@ class Builder(BasicWorker):
             }
         }
 
-    def on_init(self):
-        """ prepare dir here """
-        self.bin_dir = os.path.join(os.path.abspath(os.getcwd()), BINPATH)
-        self.pdb_dir = os.path.join(os.path.abspath(os.getcwd()), PDBPATH)
-        if not os.path.exists(self.bin_dir):
-            os.mkdir(self.bin_dir)
-            logger.info('self.init Created Binary folder')
-        if not os.path.exists(self.pdb_dir):
-            os.mkdir(self.pdb_dir)
-            logger.info('self.init Created Pdb folder')
 
     def control_message_handler(self, msg):
         """ reset opt id of this worker and recreate rmq connection """
-        request = getBuildOptRequest(request="get")
-        try:
-            build_options = []
-            for build_option in self.rpc_stub.getBuildOpt(request):
-                build_options.append(build_option)
-        except grpc.RpcError as rpc_error:
-            if rpc_error.code() == grpc.StatusCode.UNAVAILABLE:
-                logger.info(
-                    'CLI Failed To connect to any addresses; Coordinator may be inactive'
-                )
-            else:
-                logger.info("RPC Error: %s", rpc_error)
-            return
-        for build_opt_record in build_options:
-            if build_opt_record.id == msg:
-                self.opt_id = msg
-                self.compiler_version = build_opt_record.compiler_name
-                self.library = build_opt_record.library
-                self.compiler_flag = build_opt_record.compiler_flag.replace(
-                    "-", "")
-                self.input_queue_name = f"queue_{self.opt_id}"
-                self.change_input(self.input_queue_name, self.input_queue_args)
-                logger.info("Build opt id switched to %d", msg)
+        # not deleting yet to save for reference later
+        # request = getBuildOptRequest(request="get")
+        # try:
+        #     build_options = []
+        #     for build_option in self.rpc_stub.getBuildOpt(request):
+        #         build_options.append(build_option)
+        # except grpc.RpcError as rpc_error:
+        #     if rpc_error.code() == grpc.StatusCode.UNAVAILABLE:
+        #         logger.info(
+        #             'CLI Failed To connect to any addresses; Coordinator may be inactive'
+        #         )
+        #     else:
+        #         logger.info("RPC Error: %s", rpc_error)
+        #     return
+        # for build_opt_record in build_options:
+        #     if build_opt_record.id == msg:
+        #         self.opt_id = msg
+        #         self.compiler_version = build_opt_record.compiler_name
+        #         self.library = build_opt_record.library
+        #         self.compiler_flag = build_opt_record.compiler_flag.replace(
+        #             "-", "")
+        #         self.input_queue_name = f"queue_{self.opt_id}"
+        #         self.change_input(self.input_queue_name, self.input_queue_args)
+        #         logger.info("Build opt id switched to %d", msg)
 
-    def scan_binaries(self, clone_dir, repo, original_files):
+    def save_binaries(self, clone_dir, repo, original_files):
         """ Store the binaries in the specified output directory. """
-        logger.info("scanning binary function invoked!")
+        
+        self.build_strategy.own_dir(os.path.dirname(clone_dir))  # possibly overkill here
+
         if self.platform == 'linux':
             bin_found = {
                 f for f in find_elf_bin(clone_dir)
                 if (os.path.exists(f))
             }
-            
-            
             if not bin_found:
                 logger.warning("no binaries found, build may have not been a success")
                 return None
             else: 
-                logger.info(f"binaries found: {bin_found}")
-
-            save_base = os.path.basename(clone_dir)
-
-            dest = f"{BINPATH}/successes/{save_base}"
+                logger.info(f"{len(bin_found)} binaries found")
+            dest = f"{BINPATH}/successes/{"/".join(clone_dir.rstrip("/").split("/")[-2:])}"
             try:
                 os.mkdir(dest)
             except FileNotFoundError:
@@ -194,12 +181,14 @@ class Builder(BasicWorker):
             for fpath in bin_found:
                 base = os.path.basename(fpath)
                 # put some time stamp to avoid duplicate
-                shutil.move(fpath, f"{dest}/{base}")
+                shutil.move(fpath, f"{dest}/{base}", copy_function=shutil.copy2)
+                os.chmod(f"{dest}/{base}", NON_EXE_MODE)
+                
                 self.send_msg(kind='binary',
                               task_id=repo['task_id'],
                               repo=repo,
                               file_name=f"{dest}/{base}")
-                logger.info('Moving ELF file `%s` %s', fpath, f"{dest}/{base}")
+            self.build_strategy.own_dir(os.path.dirname(dest)) # own successes too...
             return dest
         elif self.platform == 'windows':
             dest = os.path.join(self.bin_dir, os.urandom(16).hex())
@@ -302,7 +291,6 @@ class Builder(BasicWorker):
                      url,
                      datetime.datetime.now().strftime("%H:%M:%S"), task['build_system'])
         clone_msg, clone_status, clone_dir = self.build_strategy.clone_data(task)
-        folders = []
         original_files = []
         for filename in glob.iglob(clone_dir + '**/**', recursive=True):
             original_files.append(filename)
@@ -313,9 +301,8 @@ class Builder(BasicWorker):
                       url=task['url'],
                       status=clone_status,
                       msg=self.uuid[:5]+clone_msg.decode())
-        if clone_status == BuildStatus.SUCCESS:
+        if clone_status == CloneStatus.SUCCESS:
             logger.info("Clone SUCCESS, Attempting to build `%s`", url)
-            folders.append(clone_dir)
             compiler_flag = self.compiler_flag
             build_mode = self.build_mode
             compiler_version = self.compiler_version
@@ -343,33 +330,30 @@ class Builder(BasicWorker):
                 platform=self.platform,
                 slnfile=None,
             )
+        
             
             after_build_time = int(time.time())
-            logger.info("Build exit %s", build_msg.replace("\n", " "))
+            # logger.info("Build exit %s", build_msg.replace("\n", " "))
             self.build_strategy.post_build_hook(clone_dir,
                                         build_mode, platform,
                                         task, compiler_version,
                                         compiler_flag, commit_hexsha)
             logger.info(f"Post build hook done, build_status: {build_status}")
             
-            
-            
-            
             if build_status == BuildStatus.SUCCESS:
-                    dest_binfolder = self.scan_binaries(
+                    dest_binfolder = self.save_binaries(
                         clone_dir, task, original_files=original_files)
                     logger.info(f"Binaries saved to {dest_binfolder}")
             self.send_msg(repo=task,
                             kind='build',
-                            url=url,
+                            url=url, # can we send id + commit
                             status=build_status,
                             msg="Build Process Finished",
                             commit_hexsha=commit_hexsha,
                             build_time=(after_build_time - before_build_time))
-            folders.append(clone_dir)
         else:
             logger.info("Clone FAILURE %s: %s", url, clone_msg)
-        build_method.clean(folders)
+        # build_method.clean(folders)
         logger.debug("Worker %s finished %s at %s", self.uuid[:5], url,
                       datetime.datetime.now().strftime("%H:%M:%S"))
 

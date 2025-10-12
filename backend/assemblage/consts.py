@@ -25,9 +25,8 @@ class BuildStatus(str, Enum):
         return self.name
 
 
-#    # priority high: 2, mid: 1, low 0
-#     priority = Column(Integer, default=0, nullable=False, index=True)
-#     # 0 : not started 1 : processing 2 : failed 3 : success 10 : command failed
+# add a recloned status, for when a project is updated and then repulled, to tell buidler to reclone + rebuild, 
+# but store binaries in a new dir 
 
 class CloneStatus(str, Enum):
     NOT_STARTED = "not_started"
@@ -63,7 +62,7 @@ DB_PATH = "data/ghtorrent.db"
 
 DEST = "~/repos"
 
-G = "b89581cf542519aa28b2e0904fbefd31ae67c19a"
+# G = "b89581cf542519aa28b2e0904fbefd31ae67c19a"
 
 RATELIMIT_URL = "https://api.github.com/rate_limit"
 SCRAPE_CHECKPOINT = f"{BIN_DIR}/scrape-checkpoint"
@@ -74,8 +73,8 @@ BINPATH = "/binaries"
 if os.name=="nt":
     BINPATH = "binaries"
 
-PDBPATH = "Pdbs"
-BUILDPATH = "Builds"
+PDBPATH = "/binaries/Pdbs" # is this used
+BUILDPATH = "Builds" # is this used
 PDBJSONNAME = "pdbinfo.json"
 WIN_PREFIX = "C:\\Assemblage\\repo-scraper-builder\\Binaries\\"
 

@@ -15,7 +15,12 @@ For up to date info and download, please visit the [dataset page](https://assemb
 
 
 ## ENVIRONMENT VARIABLES FOR secrets.env
-MYSQL_ROOT_PASSWORD=example
-MYSQL_DATABASE=mydb
-MYSQL_USER=user
-MYSQL_PASSWORD=password
+```
+DB_HOST=assemblage-db
+POSTGRES_DATABASE=assemblage
+POSTGRES_USER=assemblage
+POSTGRES_PASSWORD=<password>
+DB_PORT=5432
+SAVE_ASSEMBLY=true
+GITHUB_TOKEN=<github_pat_token>
+```
