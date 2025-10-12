@@ -1,5 +1,5 @@
 
-FROM  ubuntu:noble-20250910
+FROM ubuntu:noble-20250910
 
 RUN apt-get update && apt-get -y upgrade
 

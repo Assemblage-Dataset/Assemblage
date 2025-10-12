@@ -5,6 +5,7 @@ Yihao Sun
 """
 
 import datetime
+import inspect
 import random
 import time
 import logging
@@ -24,7 +25,9 @@ logger = logging.getLogger(__name__)
 
 
 class DBManager:
-    """ manager for db query and connection """
+    """ manager for db query and connection
+        TODO: Depreciate this
+    """
 
     def __init__(self, db_addr): 
         # create the DB manager, init called when Coordinator first __init__ to start the db
@@ -302,28 +305,31 @@ class DBManager:
         """
         with Session(self.engine) as session:
             # looking for if a repo exists
-            repo = RepoDO(**repos_msg)
-            # t_prev = time.time()
-            session.add(repo)
-            session.flush()
-            if "id" in repos_msg and repo.id != repos_msg["id"]:
-                logging.info("Insert repo error %s", repos_msg['url'])
-                return 0
-            all_opt = session.execute(select(BuildOpt)).all()
-            # logging.info("%s", all_opt)
-            if not repoonly:
-                for opt in all_opt:
-                    if repos_msg['build_system'] in opt[0].build_system:
-                        _s = Status()
-                        _s.clone_status = CloneStatus.NOT_STARTED
-                        _s.clone_msg = ''
-                        _s.build_status = BuildStatus.INIT
-                        _s.build_msg = ''
-                        _s.build_opt_id = opt[0].id
-                        _s.mod_timestamp = int(time.time())
-                        _s.repo_id = repo.id
-                        session.add(_s)
-            session.commit()
+            try: 
+                repo = RepoDO(**repos_msg)
+                # t_prev = time.time()
+                session.add(repo)
+                session.flush()
+                if "id" in repos_msg and repo.id != repos_msg["id"]:
+                    logging.info("Insert repo error %s", repos_msg['url'])
+                    return 0
+                all_opt = session.execute(select(BuildOpt)).all()
+                # logging.info("%s", all_opt)
+                if not repoonly:
+                    for opt in all_opt:
+                        if repos_msg['build_system'] in opt[0].build_system:
+                            _s = Status()
+                            _s.clone_status = CloneStatus.NOT_STARTED
+                            _s.clone_msg = ''
+                            _s.build_status = BuildStatus.INIT
+                            _s.build_msg = ''
+                            _s.build_opt_id = opt[0].id
+                            _s.mod_timestamp = int(time.time())
+                            _s.repo_id = repo.id
+                            session.add(_s)
+                session.commit()
+            except: 
+                logger.warning("Something went wrong. This should be fixed. Likely a duplicate key")
         return 1
 
     def insert_binary(self, file_name, description, status_id):
@@ -331,7 +337,6 @@ class DBManager:
         add a binary record into database, 1 buildopt may have multiple binaries.
         and binaries may already deleted on disk
         """
-        logger.info(f"Adding binary to database Binary={file_name}")
         new_bin = BuildDO(
             file_name=file_name, description=description,
             status_id=status_id)
