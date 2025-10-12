@@ -76,6 +76,8 @@ class DataSource(object):
         
         # TODO: replace with checking that DB has the appropriate data
         if not os.path.exists(self.record_file):  
+            index = SCRAPER_TIMESTAMP_RECORDFILE_PATH.rfind("/")
+            os.makedirs(SCRAPER_TIMESTAMP_RECORDFILE_PATH[:index], exist_ok=True) # TODO: this is a VERY rough fix to ensure that binaries folder exists
             with open(self.record_file, "w") as record_file:
                 now = int(time.time())
                 json.dump({"latest_crawled":now}, record_file, indent=4)
