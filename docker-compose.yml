@@ -103,7 +103,7 @@ services:
     volumes:
       - ./backend:/app 
       - builder-data:/binaries
-
+    mem_limit: 250g
 volumes:
   builder-data:
     driver: local
