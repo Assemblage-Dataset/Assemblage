@@ -42,10 +42,6 @@ build_msgs.txt
 # data
 *.csv
 *.json
-Pdbs/*
-Builds/*
-Binaries/*
-binaries/*
 *.out
 *.txt
 db-data/
