@@ -16,7 +16,7 @@ import boto3
 from botocore.exceptions import ClientError
 from assemblage.consts import PDBJSONNAME, BINPATH, BuildStatus
 from assemblage.bootstrap import AssemblageCluster
-from ..assemblage.worker.clang_parser import get_functions
+from assemblage.worker.clang_parser import get_functions
 from assemblage.worker.scraper import GithubRepositories
 from assemblage.worker.profile import AWSProfile
 from assemblage.worker.postprocess import PostAnalysis
