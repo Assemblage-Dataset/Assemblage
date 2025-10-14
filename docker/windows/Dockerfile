@@ -81,6 +81,7 @@ RUN "Start-Process regsvr32 -ArgumentList '/s', 'C:\\Program Files (x86)\\Micros
 
 
 # add to path ( note may need to create a script that does this at run time)
+ENV PYTHONPATH=C:\app
 
 # #
 COPY ./backend C:\app
