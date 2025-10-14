@@ -6,11 +6,10 @@ New Entry Point for Assemblage Functions
 import os
 import sys
 from assemblage.consts import WorkerType
-
-from assemblage.config import CoordinatorSettings, BuilderSettings, ScraperSettings
-
-
-
+from assemblage.config import BuilderSettings, CoordinatorSettings, ScraperSettings
+from assemblage.coordinator.coordinator import Coordinator
+from assemblage.worker.builder import Builder
+from assemblage.worker.scraper import Scraper
 
 
 
@@ -36,11 +35,19 @@ if __name__ == "__main__":
     match worker_type: 
         case WorkerType.Coordinator:
             print("Starting Coordinator")
+            # settings = CoordinatorSettings()
+            # coordinator = Coordinator()
+            # coordinator.run()
             # call start coordinator
         case WorkerType.Builder:
             print("Starting Builder")
+            settings = BuilderSettings()
+            # builder = Builder()
+            # builder.run()
             # call start builder
         case WorkerType.Scraper:
             print("Starting Scraper")
-
+            settings = ScraperSettings()
+            # scraper = Scraper()
+            # scraper.run()
             # call start scraper
