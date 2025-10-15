@@ -6,6 +6,11 @@ from enum import Enum
 import os
 
 
+class RuntimeEnv(str,Enum): 
+    dev = "development"
+    prod = "production"
+ 
+
 class WorkerType(str, Enum):
     Coordinator = "coordinator"
     Builder = "builder"
