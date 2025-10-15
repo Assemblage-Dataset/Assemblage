@@ -57,9 +57,9 @@ services:
     build:
       context: .
       dockerfile: docker/gcc/Dockerfile
-    command: python3 /app/scripts/workers/example_cluster.py --type scraper --id 0
+    command: python3 /app/scripts/start_worker.py 
     healthcheck:
-      test: [ "CMD", "bash", "-c", "pgrep -f example_cluster.py > /dev/null" ]
+      test: [ "CMD", "bash", "-c", "pgrep -f start_worker.py > /dev/null" ]
       interval: 10s
       start_period: 5s
     depends_on:
@@ -68,6 +68,7 @@ services:
     environment:
       PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
       name: scraper_0
+      type: scraper
     env_file:
       - secrets.env
     deploy:
