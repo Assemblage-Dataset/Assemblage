@@ -31,6 +31,7 @@ import random
 
 import requests
 
+from assemblage.config import ScraperSettings
 from assemblage.worker.base_worker import BasicWorker
 from assemblage.worker.mq import MessageClient
 from assemblage.analyze.tokenchecker import TokenChecker
@@ -39,7 +40,8 @@ from assemblage.consts import (
     SCRAPER_TIMESTAMP_RECORDFILE_PATH, OLDEST_PERMITTED_DATA_TIMESTAMP, SCRAPER_PAGE_SIZE, 
     GITHUB_REPO_URL, SCRAPER_REQUEST_TIMEOUT_S, SCRAPER_REPO_BUNDLESIZE,
     SCRAPER_RATE_INTERVAL, QUERY_RATE_LIMIT_TIME, SCRAPER_RATE_LIMIT, 
-    RATE_LIMIT_WAIT, SECONDARY_RATE_LIMIT_WAIT
+    RATE_LIMIT_WAIT, SECONDARY_RATE_LIMIT_WAIT, 
+    ScrapeSource
 )
 
 logger = logging.getLogger(__name__)
