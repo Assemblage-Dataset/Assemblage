@@ -18,6 +18,8 @@ from assemblage.data.db import DBManager
 from collections import Counter
 from assemblage.consts import AWS_AUTO_REBOOT_PREFIX, BIN_DIR, TASK_TIMEOUT_THRESHOLD, WORKER_TIMEOUT_THRESHOLD, BuildStatus, REPO_SIZE_THRESHOLD, CloneStatus
 
+from assemblage.config import CoordinatorSettings
+
 
 SLEEP_INTERVAL = 1200
 logging.basicConfig(
@@ -80,10 +82,11 @@ class Coordinator:
     TODO: also configure creating separate RabbitMQ users for each service
     """
 
-    def __init__(self, rabbitmq_host, rabbitmq_port, db_addr, cluster_name, aws_mode=0, reproduce_mode=0):
+    #def __init__(self, rabbitmq_host, rabbitmq_port, db_addr, cluster_name, aws_mode=0, reproduce_mode=0):
+    def __init__(self, settings:CoordinatorSettings):
         logger.info("Coordinator Init")
-        self.rabbitmq_host = rabbitmq_host
-        self.rabbitmq_port = rabbitmq_port
+        self.rabbitmq_host = settings.mq_host
+        self.rabbitmq_port = settings.mq_port
         self.channel = create_channel(
             self.rabbitmq_host, self.rabbitmq_port, 500, 350)
         # Do not use round-robin scheduling.
@@ -97,14 +100,11 @@ class Coordinator:
         self.channel.queue_declare(queue='scrape', durable=True)
         # To receive results about binaries
         self.channel.queue_declare(queue='binary', durable=True)
-        self.db_addr = db_addr
+        self.db_addr = settings.databaseURL
         
-        self.cluster_name = cluster_name
-        self.reproduce_mode = reproduce_mode
-        if aws_mode == 1:
-            self.aws_flag = True
-        else:
-            self.aws_flag = False
+        self.cluster_name = settings.cluster_name
+        self.reproduce_mode = settings.reproduce_mode
+        self.aws_flag = (settings.aws_mode==1)
         # setup rpc service
         # 
         

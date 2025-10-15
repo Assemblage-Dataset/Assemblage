@@ -17,8 +17,8 @@ from assemblage.worker.profile import AWSProfile
 from assemblage.worker.postprocess import PostAnalysis
 from assemblage.worker.build_method import BuildStrategy, DefaultBuildStrategy
 from assemblage.worker.build_method import cmd_with_output
-from assemblage.config import Settings
-settings = Settings()
+# from assemblage.config import Settings
+# settings = Settings()
 
 
 time_now = int(time.time())

@@ -32,7 +32,7 @@ services:
     build:
       context: .
       dockerfile: docker/gcc/Dockerfile
-    command: python3 /app/scripts/workers/example_cluster.py --type  coordinator
+    command: python3 /app/scripts/start_worker.py --type coordinator
     environment: # do not remove!!
       name: coordinator
       PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
@@ -57,7 +57,8 @@ services:
     build:
       context: .
       dockerfile: docker/gcc/Dockerfile
-    command: python3 /app/scripts/start_worker.py 
+    command: python3 /app/scripts/workers/example_cluster.py --type scraper --id 0
+    #command: python3 /app/scripts/start_worker.py --type scraper
     healthcheck:
       test: [ "CMD", "bash", "-c", "pgrep -f start_worker.py > /dev/null" ]
       interval: 10s

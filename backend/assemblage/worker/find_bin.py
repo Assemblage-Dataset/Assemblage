@@ -8,12 +8,12 @@ import os
 from elftools.elf.elffile import ELFFile
 from elftools.common.exceptions import ELFError
 
-from assemblage.config import Settings
+from assemblage.config import BuilderSettings
 
 logger = logging.getLogger(__name__)
 
 
-settings = Settings()
+settings = BuilderSettings()
 def find_elf_bin(path: str) -> set:
     """ Find elf files and executables """
     logger.info(f"Finding elf files and executables in {path}")
