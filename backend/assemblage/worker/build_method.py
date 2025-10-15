@@ -39,11 +39,9 @@ from assemblage.analyze.analyze import get_build_system
 from assemblage.worker.ctags_parser import get_functions as ctags_get_functions
 from assemblage.worker.clang_parser import get_functions as clang_get_functions
 from typing import Tuple
-from assemblage.config import Settings
 logger = logging.getLogger(__name__)
 
 
-settings = Settings()
 
 
 def cmd_with_output(cmd, timelimit=60, platform='linux', cwd=''):
@@ -91,6 +89,8 @@ def clean(folders):
 
 
 class BuildStrategy:
+    def __init__(self, save_assembly: bool = False):
+        self.save_assembly = save_assembly
 
     @abstractclassmethod
     def clone_data(self, repo) -> Tuple[bytes, int, str]:
@@ -133,7 +133,9 @@ class BuildStrategy:
 
 class DefaultBuildStrategy(BuildStrategy):
 
-    def __init__(self, tmp_dir="/tmp", num_p_job=16):
+    def __init__(self, save_assembly: bool, tmp_dir="/tmp", num_p_job=16,):
+        super().__init__(save_assembly)
+
         self.tmp_dir = tmp_dir
         self.num_p_job = num_p_job
         # this is not great, i dont like it but for now itll have to do
@@ -261,7 +263,7 @@ class DefaultBuildStrategy(BuildStrategy):
             build_tool = get_build_system(files)
             cmd = ""
 
-            if settings.SAVE_ASSEMBLY:
+            if self.save_assembly:
                 extra_flags = 'CFLAGS="$CFLAGS -save-temps=obj" CXXFLAGS="$CXXFLAGS -save-temps=obj"'
             else:
                 extra_flags = 'CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS"'
@@ -615,7 +617,7 @@ class WindowsDefaultStrategy(DefaultBuildStrategy):
                 files.append(filename.split("/")[-1])
             logger.info("%s files in repo", len(files))
             build_tool = get_build_system(files)
-            if settings.SAVE_ASSEMBLY:
+            if self.save_assembly:
                 cflags = 'CFLAGS="$CFLAGS -save-temps"'
                 logger.info("Saving .s and .o files as well ")
             else:
@@ -639,65 +641,3 @@ class WindowsDefaultStrategy(DefaultBuildStrategy):
             if return_code == BuildStatus.SUCCESS:
                 logger.warning(f"BUILD STATUS FOR {repo} succeeded!!!")
             return out.decode() + err.decode(), return_code
-
-
-class vcpkgStrategy(DefaultBuildStrategy):
-
-    def clone_data(repo, optimization_level, mode):
-        """ vcpkg don't need clone, pass the final result dir as clone dir """
-        # vcpkg packge name is also stored in 'url' because of scraper code
-        dest_path = f"{BUILD_FOLDER}/{repo}_{optimization_level}_{mode}"
-        if os.path.exists(dest_path):
-            shutil.rmtree(dest_path, ignore_errors=False, onerror=None)
-        os.makedirs(os.path.join(dest_path, "triplets"))
-        logger.info("Clone called")
-        return b'No need for clone', 0, dest_path
-
-    def pre_build(repo, target_dir, build_mode, library, optimization,
-                  slnfile, platform, compiler_version, version=None):
-        return b'No need for precheck', 0, ""
-
-    def run_build(repo, target_dir, build_mode, library, optimization,
-                  slnfile, platform, compiler_version, version=None):
-        """"""
-        logger.info(f" >>> Building {repo} ...")
-        triplet_cpu_arch = "x64"
-        triplet_path = os.path.relpath(os.path.join(
-            target_dir, "triplets", f"{triplet_cpu_arch}-{optimization.lower()}-windows.cmake"))
-        triplet_flags = {"VCPKG_TARGET_ARCHITECTURE": triplet_cpu_arch,
-                         "VCPKG_CRT_LINKAGE": "dynamic", "VCPKG_LIBRARY_LINKAGE": "dynamic"}
-        if build_mode.lower() == "release":
-            triplet_flags["VCPKG_BUILD_TYPE"] = "release"
-        else:
-            triplet_flags["VCPKG_BUILD_TYPE"] = "debug"
-        triplet_flags["CMAKE_CXX_FLAGS"] = f"/{optimization}"
-        triplet_flags["CMAKE_C_FLAGS"] = f"/{optimization}"
-        triplet_flags["VCPKG_CXX_FLAGS"] = f"/{optimization}"
-        triplet_flags["VCPKG_C_FLAGS"] = f"/{optimization}"
-        triplet_flags["CMAKE_CXX_FLAGS_RELEASE"] = f"/{optimization}"
-        triplet_flags["CMAKE_C_FLAGS_RELEASE"] = f"/{optimization}"
-        triplet_flags["VCPKG_CXX_FLAGS_RELEASE"] = f"/{optimization}"
-        triplet_flags["VCPKG_C_FLAGS_RELEASE"] = f"/{optimization}"
-
-        builddir = os.path.join(target_dir, "build"+os.urandom(8).hex())
-        bindir = os.path.join(target_dir, "bin"+os.urandom(8).hex())
-        with open(triplet_path, "w") as f:
-            for x in triplet_flags:
-                f.write(f"set({x} {triplet_flags[x]})\n")
-
-        cmd = f"vcpkg install {repo} --overlay-triplets={target_dir}/triplets --x-install-root={builddir} --triplet {triplet_cpu_arch}-{optimization}-windows --x-packages-root={bindir}"
-
-        if not os.path.exists(f"Binaries/{repo}-{triplet_cpu_arch}-{optimization}-{version.replace(':','')}({compiler_version})"):
-            os.system(cmd)
-            # Don't use subprocess, will cause weird error during running
-        else:
-            logger.info("Alredy built")
-        post_processing_pdb(
-            bindir, build_mode, library=library, repoinfo={"url": repo, "updated_at": version}, toolset=compiler_version,
-            optimization=optimization, source_codedir=target_dir, commit=version, movedir=f"Binaries/{repo}-{triplet_cpu_arch}-{optimization}-{version.replace(':','')}({compiler_version})")
-        shutil.rmtree(r"C:\vcpkg\buildtrees", ignore_errors=True)
-        shutil.rmtree(r"C:\vcpkg\packages", ignore_errors=True)
-        shutil.rmtree(r"C:\vcpkg\downloads", ignore_errors=True)
-        shutil.rmtree(BUILD_FOLDER, ignore_errors=True)
-
-        return

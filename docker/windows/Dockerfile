@@ -96,6 +96,9 @@ RUN python.exe -m pip install --prefer-binary -r requirements.txt
 # ENV AWS_CONFIG_FILE="C:\\Administrator\\.aws\\config"
 # ENV AWS_SHARED_CREDENTIALS_FILE="C:\\Administrator\\.aws\\credentials"
 
+# maybe need to figure out adding ^^ to path via ps1 script ( so might need to add script in this folder to 
+# add that to path as then run python.exe etc)
+CMD [ "python.exe", "C:\\app\\scripts\\start_worker.py" ]
 # Define the entry point for the docker container.
 # This entry point starts the developer command prompt and launches the PowerShell shell.
 # ENTRYPOINT ["C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\Tools\VsDevCmd.bat", "&&", "powershell.exe", "-NoLogo", "-ExecutionPolicy", "Bypass"]
