@@ -14,13 +14,29 @@ For up to date info and download, please visit the [dataset page](https://assemb
 <sub>The code in this repository is published under MIT license.</sub>
 
 
-## ENVIRONMENT VARIABLES FOR secrets.env
+Use separate ENV variable file for each container. 
+Also, in the compose file, specify the type - Coordinator,Scraper,Builder
+
+## ENVIRONMENT VARIABLES FOR coordinator.secrets.env
 ```
-DB_HOST=assemblage-db
+DB_HOST=assemblage-db (database container name)
 POSTGRES_DATABASE=assemblage
 POSTGRES_USER=assemblage
 POSTGRES_PASSWORD=<password>
 DB_PORT=5432
-SAVE_ASSEMBLY=true
+```
+## ENVIRONMENT VARIABLES FOR scraper.secrets.env
+```
 GITHUB_TOKEN=<github_pat_token>
 ```
+## ENVIRONEMNT VARIABLES FOR builder.secrets.env
+```
+SAVE_ASSEMBLY=true
+```
+
+## If using a builder or scraper on a distributed host also add
+```
+MQ_HOST=<mq_host>
+MQ_PORT=<mq_port>
+```
+You will also need to expose the rabbitmq port. TODO: add proper authentication
