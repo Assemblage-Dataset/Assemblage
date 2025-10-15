@@ -37,7 +37,7 @@ from assemblage.worker.mq import MessageClient
 from assemblage.analyze.tokenchecker import TokenChecker
 from assemblage.analyze.analyze import get_build_system
 from assemblage.consts import (
-    SCRAPER_TIMESTAMP_RECORDFILE_PATH, OLDEST_PERMITTED_DATA_TIMESTAMP, SCRAPER_PAGE_SIZE, 
+    SCRAPER_TIMESTAMP_RECORDFILE_PATH, SCRAPER_PAGE_SIZE, 
     GITHUB_REPO_URL, SCRAPER_REQUEST_TIMEOUT_S, SCRAPER_REPO_BUNDLESIZE,
     SCRAPER_RATE_INTERVAL, QUERY_RATE_LIMIT_TIME, SCRAPER_RATE_LIMIT, 
     RATE_LIMIT_WAIT, SECONDARY_RATE_LIMIT_WAIT, 
@@ -101,9 +101,9 @@ class DataSource(object):
         return True
 
     # TODO: should this be moved into GitHubRepositories, or is this code shared across all data sources?
+    # NOTE: Currently unused.
     def update_time_record(self, interval):
         """ Updates SCRAPER_TIMESTAMP_RECORDFILE_PATH with how far back the scraper has looked on its data source (i.e. GitHub)"""
-        # TODO: replace with database query
 
         while os.path.exists(self.record_file+'.lock'):
             time.sleep(0.25)
@@ -145,21 +145,26 @@ class GithubRepositories(DataSource):
     """ a data generator for Windows c repositories """
 
     # TODO: crawl_time_start can be removed, replaced with db call? probably crawl_time_interval replaced with const too
-    def __init__(self, git_token, qualifier, crawl_time_start, crawl_time_interval,
-                 proxies, sort=GithubTimeOrder.CREATED, order="",
+    def __init__(self, parent_id:int, git_token:str, qualifiers:set, crawl_time_start:int, crawl_time_end:int, crawl_time_interval:int,
+                 proxies:list, sort=GithubTimeOrder.CREATED, order="",
                  build_sys_callback=get_build_system) -> None:
         super().__init__(build_sys_callback)
         self.token = git_token
         # self.lang = lang
-        self.qualifier = qualifier # an iterable containing the qualifiers to be used in the query
+        self.qualifiers = qualifiers # a set containing the qualifiers to be used in the query
+
+        # determines the time span to be scraped -- none of these variables change
         self.crawl_time_interval = crawl_time_interval
         self.crawl_time_start = crawl_time_start
+        self.crawl_time_end = crawl_time_end
+
         self.proxies = proxies
-        self.query_pile = int(time.time())//QUERY_RATE_LIMIT_TIME # part of the rate limiting check code
         self.sort = sort
         self.order = order
+        self.query_pile = int(time.time())//QUERY_RATE_LIMIT_TIME # part of the rate limiting check code
         self.queries = 0 # queries performed since the last rate limit rollover
-        self.parent_workerid = -1 #os.urandom(4).hex()
+        self.parent_workerid = parent_id # useful for logging
+
         if "" not in self.proxies:
             self.proxies.append("")
 
@@ -271,22 +276,18 @@ class GithubRepositories(DataSource):
 
     def fetch_data(self):
         '''Requests search result pages from GitHub's Search API, then extracts the repository information from each result on each search page.'''
-        if self.crawl_time_start < OLDEST_PERMITTED_DATA_TIMESTAMP: # if the crawltime is older than permitted
+        if self.crawl_time_start < self.crawl_time_end: # if the crawltime is older than permitted
             logger.error("Warning: start crawl time %s is earlier than the oldest permitted timestamp %s.")
-            crawl_time = self.crawl_time_start
-        else:
-            crawl_time = self.crawl_time_start # exact value is unnecessary: we just need it to let us run the while loop once
-        # TODO: get the crawl_time from the database instead of taking it from self.
-        # Also need to consider whether we want to have the options to stagger crawlers by giving each a different crawl time?
-        # And how much we want to synchronize each crawler's crawl_time with the database
-        while crawl_time > OLDEST_PERMITTED_DATA_TIMESTAMP: # continue until oldest files have been read
+        crawl_time = self.crawl_time_start
+
+        while crawl_time > self.crawl_time_end: # continue until oldest files have been read
             #crawl_time = self.update_time_record(self.crawl_time_interval) # Update the cache so it's now QUERYLAP ms earlier 
             # TODO: still working on properly setting up the crawl time. for now it restarts from the env variable every time
 
             # Build the query to GitHub's servers, according to the last visited data as stored in SCRAPER_TIMESTAMP_RECORDFILE_PATH
             query_time_start = datetime.utcfromtimestamp(crawl_time).isoformat()
             query_time_end = datetime.utcfromtimestamp(crawl_time + self.crawl_time_interval).isoformat()
-            qualifier_str = " ".join(self.qualifier)
+            qualifier_str = " ".join(self.qualifiers)
             query_s = f'{self.sort.value}:{query_time_start}+08:00..{query_time_end}+08:00 {qualifier_str}'
 
             logger.debug("Crawler query is ' %s ' (GitHub)", query_s)
@@ -381,14 +382,15 @@ class Scraper(BasicWorker):
         # as GitHub is the only valid source right now, we fallback to this in any case.
         # If more sources are added, go ahead and put this into its own if statement.
         self.data_source = GithubRepositories(
+            workerid,
             git_token=settings.git_token,
-            qualifier={
+            qualifiers={
                 "language:c++"
             },   # TODO extract somewhere
             crawl_time_start = settings.start_time,
+            crawl_time_end = settings.end_time,
             crawl_time_interval = settings.interval,
-            proxies = [],  # TODO extract somewhere
-            build_sys_callback = get_build_system
+            proxies = []  # TODO extract somewhere
         )
         self.data_source.parent_workerid = workerid 
         

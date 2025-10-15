@@ -10,6 +10,7 @@ from assemblage.config import BuilderSettings, CoordinatorSettings, ScraperSetti
 from assemblage.coordinator.coordinator import Coordinator
 from assemblage.worker.builder import Builder
 from assemblage.worker.scraper import Scraper
+import threading
 
 
 
@@ -53,3 +54,17 @@ if __name__ == "__main__":
             scraper = Scraper(settings=settings, workerid=0)
             scraper.run()
             # call start scraper
+
+            # multithread staggered execution example
+            '''
+            scraper1 = Scraper(settings=settings, workerid=0)
+            settings2 = ScraperSettings()
+            settings2.start_time -= 31556952 # have this scraper start a year earlier than the other
+            scraper2 = Scraper(settings=settings2, workerid=1)
+            t1 = threading.Thread(target=scraper1.run)
+            t2 = threading.Thread(target=scraper2.run)
+            t1.start()
+            t2.start()
+            t1.join()
+            t2.join()
+            '''
