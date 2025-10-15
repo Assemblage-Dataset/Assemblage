@@ -3,6 +3,7 @@ from .consts import RuntimeEnv
 from pydantic_settings import BaseSettings
 from pydantic import computed_field, Field
 import platform
+import os
 
 
 class AssemblageSettings(BaseSettings):
@@ -39,11 +40,16 @@ class CoordinatorSettings(AssemblageSettings):
     """
     Coordinator specific settings
     """
-    db_host: str = Field(..., env="DB_HOST")
-    db_port: int = Field(..., env="DB_PORT")
-    db_name: str = Field(..., env="POSTGRES_DATABASE")
-    db_user: str = Field(..., env="POSTGRES_USER")
-    db_pass: str = Field(..., env="POSTGRES_PASSWORD")
+    db_host: str = Field(os.getenv('DB_HOST'))
+    db_port: int = Field(os.getenv('DB_PORT'))
+    db_name: str = Field(os.getenv('POSTGRES_DATABASE'))
+    db_user: str = Field(os.getenv("POSTGRES_USER"))
+    db_pass: str = Field(os.getenv("POSTGRES_PASSWORD"))
+
+    # extracted directly from coordinator
+    reproduce_mode: int = Field(0)
+    aws_mode: int = Field(0)
+    cluster_name:str = Field("ClusterName")
 
     mq_manage_port: int = Field(default=56723)
 

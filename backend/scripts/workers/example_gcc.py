@@ -19,8 +19,8 @@ from ..assemblage.worker.scraper import GithubRepositories
 from ..assemblage.consts import BuildStatus
 from assemblage.worker.build_method import BuildStrategy, cmd_with_output
 from ..assemblage.worker.profile import AWSProfile
-from assemblage.config import Settings
-settings = Settings()
+from assemblage.config import BuilderSettings
+settings = BuilderSettings()
 
 
 time_now = int(time.time())

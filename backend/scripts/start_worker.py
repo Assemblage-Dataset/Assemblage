@@ -35,9 +35,9 @@ if __name__ == "__main__":
     match worker_type: 
         case WorkerType.Coordinator:
             print("Starting Coordinator")
-            # settings = CoordinatorSettings()
-            # coordinator = Coordinator()
-            # coordinator.run()
+            settings = CoordinatorSettings()
+            coordinator = Coordinator(settings)
+            coordinator.run()
             # call start coordinator
         case WorkerType.Builder:
             print("Starting Builder")
