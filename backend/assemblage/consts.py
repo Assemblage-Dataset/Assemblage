@@ -1,10 +1,21 @@
 """
-constant
+constants definitions
 
 """
-from enum import Enum, IntEnum
+from enum import Enum
 import os
-from sre_constants import SUCCESS
+
+
+class RuntimeEnv(str,Enum): 
+    dev = "development"
+    prod = "production"
+ 
+
+class WorkerType(str, Enum):
+    Coordinator = "coordinator"
+    Builder = "builder"
+    Scraper = "Scraper"
+    
 
 class BuildStatus(str, Enum):
     """
@@ -44,6 +55,9 @@ class PriorityStatus(str, Enum):
     HIGH = "high"
     def __str__(self):
         return self.name
+    
+    
+    
 
 
 PING_INTERVAL = 10
@@ -57,26 +71,19 @@ TASK_TIMEOUT_THRESHOLD = 600
 # set this to max worker size for one build type
 MAX_MQ_SIZE = 3600
 
-# DB for metadata, repo statuses
-DB_PATH = "data/ghtorrent.db"
-
-DEST = "~/repos"
-
-# G = "b89581cf542519aa28b2e0904fbefd31ae67c19a"
-
 RATELIMIT_URL = "https://api.github.com/rate_limit"
-SCRAPE_CHECKPOINT = f"{BIN_DIR}/scrape-checkpoint"
 
 # Windows related constants
 LOG_FILE = "assemblage.log"
-BINPATH = "/binaries"
 if os.name=="nt":
     BINPATH = "binaries"
+else: 
+    BINPATH = "/binaries"
 
-PDBPATH = "/binaries/Pdbs" # is this used
+
+PDBPATH = f"{BINPATH}/Pdbs" # is this used
 BUILDPATH = "Builds" # is this used
 PDBJSONNAME = "pdbinfo.json"
-WIN_PREFIX = "C:\\Assemblage\\repo-scraper-builder\\Binaries\\"
 
 AWS_AUTO_REBOOT_PREFIX = "auto-worker"
 REPO_SIZE_THRESHOLD = 50

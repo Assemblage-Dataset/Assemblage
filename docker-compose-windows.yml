@@ -1,0 +1,32 @@
+services:
+
+  win_builder:
+    image: assemblage-windows:latest
+    build:
+      context: .
+      dockerfile: docker/windows/Dockerfile
+    command: python.exe C:\\app\\scripts\\workers\\start_worker.py --type builder --id 0
+    # healthcheck:
+    #   test: [ "CMD", "bash", "-c", "pgrep -f example_windows_standalone.py > /dev/null" ]
+    #   interval: 10s
+    #   start_period: 5s
+    environment:
+      PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
+      name: win_builder
+      PYTHONPATH: "C:\\app;"
+      TYPE: builder
+    env_file:
+      - secrets.env
+    deploy:
+      restart_policy:
+        condition: on-failure
+    volumes:
+      - ./backend:C:\app 
+      - builder-data:C:\binaries
+    mem_limit: 250g
+
+volumes:
+  builder-data:
+    driver: local
+
+
