@@ -42,12 +42,14 @@ if __name__ == "__main__":
         case WorkerType.Builder:
             print("Starting Builder")
             settings = BuilderSettings()
-            # builder = Builder()
-            # builder.run()
+            print(settings.runtime_env)
+            builder = Builder(settings=settings, opt_id=0)
+            builder.run()
             # call start builder
         case WorkerType.Scraper:
             print("Starting Scraper")
             settings = ScraperSettings()
+            print(settings.mq_host)
             # scraper = Scraper()
             # scraper.run()
             # call start scraper

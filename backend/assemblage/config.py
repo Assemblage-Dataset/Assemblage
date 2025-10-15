@@ -1,24 +1,23 @@
 from typing import Any
+from .consts import RuntimeEnv
 from pydantic_settings import BaseSettings
-from pydantic import computed_field
-import os
-
+from pydantic import computed_field, Field
+import platform
 
 
 class AssemblageSettings(BaseSettings):
-    '''
+    """
     Core env variables and settings
-    
-    '''
+    """
     app_name: str = "Assemblage"
-    mode: str = os.getenv(key="MODE", default="development")    
-    mq_host: str = os.getenv("MQ_HOST", default="rabb")
-    mq_port: str = os.getenv("MQ_PORT", default="5672")
+    runtime_env: RuntimeEnv = Field(default=RuntimeEnv.prod, env="ENV")
+    mq_host: str = Field(default="rabbitmq", env="MQ_HOST")
+    mq_port: int = Field(default=5672, env="MQ_PORT")
 
     @computed_field
-    def loggingConfig(self)->dict[str, Any]:
-    # not sure this is working
-        log_level = 'DEBUG' if self.mode == 'development' else 'INFO'
+    @property
+    def loggingConfig(self) -> dict[str, Any]:
+        log_level = 'DEBUG' if self.runtime_env == RuntimeEnv.dev else 'INFO'
         return {
             'version': 1,
             'formatters': {'default': {
@@ -32,34 +31,40 @@ class AssemblageSettings(BaseSettings):
             'root': {
                 'level': log_level,
                 'handlers': ['wsgi']
-            }}
+            }
+        }
+
 
 class CoordinatorSettings(AssemblageSettings):
-    '''
-    Coordinator specific settings - potentially backend will need to inherit this too/ just copy the db
-    
-    '''
-    db_host: str = os.getenv("DB_HOST", "assemblage-db")
-    db_port: str = os.getenv("DB_PORT","5432")
-    db_name: str = os.getenv("POSTGRES_DATABASE") # set error cathcing if any of thses are not set. they have to be in secrets.env otherwise db will break too
-    db_user: str = os.getenv("POSTGRES_USER")
-    db_pass: str = os.getenv("POSTGRES_PASSWORD")
-    def databaseURL(self)->str:
-        return f"postgresql+psycopg2://{self.db_user}:{self.db_pass}@{self.db_host}:{self.db_port}/{self.db_name}" 
-    mq_manage_port: int = 56723
+    """
+    Coordinator specific settings
+    """
+    db_host: str = Field(..., env="DB_HOST")
+    db_port: int = Field(..., env="DB_PORT")
+    db_name: str = Field(..., env="POSTGRES_DATABASE")
+    db_user: str = Field(..., env="POSTGRES_USER")
+    db_pass: str = Field(..., env="POSTGRES_PASSWORD")
+
+    mq_manage_port: int = Field(default=56723)
+
+    @computed_field
+    @property
+    def databaseURL(self) -> str:
+        return f"postgresql+psycopg2://{self.db_user}:{self.db_pass}@{self.db_host}:{self.db_port}/{self.db_name}"
+
 
 class ScraperSettings(AssemblageSettings):
-    '''
+    """
     Scraper specific settings
-    '''
-    git_token: str = os.getenv("GITHUB_TOKEN")
-    
-    
+    """
+    git_token: str = Field(..., env="GITHUB_TOKEN")
+
+
 class BuilderSettings(AssemblageSettings):
-    '''
+    """
     Builder specific settings
-    '''
-    SAVE_ASSEMBLY: bool = (os.getenv("SAVE_ASSEMBLY", "true").lower() == "true")
-    
-    
+    """
+    SAVE_ASSEMBLY: bool = Field(default=True, env="SAVE_ASSEMBLY")
+    # detect what platform ( linux, windows, darwin) teh builder is running on. for now just needed in builder 
+    platform: str = Field(default_factory=lambda: platform.system().lower()) 
 
