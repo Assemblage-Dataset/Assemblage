@@ -280,7 +280,8 @@ class GithubRepositories(DataSource):
         # Also need to consider whether we want to have the options to stagger crawlers by giving each a different crawl time?
         # And how much we want to synchronize each crawler's crawl_time with the database
         while crawl_time > OLDEST_PERMITTED_DATA_TIMESTAMP: # continue until oldest files have been read
-            crawl_time = self.update_time_record(self.crawl_time_interval) # Update the cache so it's now QUERYLAP ms earlier 
+            #crawl_time = self.update_time_record(self.crawl_time_interval) # Update the cache so it's now QUERYLAP ms earlier 
+            # TODO: still working on properly setting up the crawl time. for now it restarts from the env variable every time
 
             # Build the query to GitHub's servers, according to the last visited data as stored in SCRAPER_TIMESTAMP_RECORDFILE_PATH
             query_time_start = datetime.utcfromtimestamp(crawl_time).isoformat()
@@ -368,19 +369,33 @@ class Scraper(BasicWorker):
     scraper class, wrap all github operation
     '''
 
-    def __init__(self, rabbitmq_port, rabbitmq_host, workerid, data_source: DataSource):
+    #def __init__(self, rabbitmq_port, rabbitmq_host, workerid, data_source: DataSource):
+    def __init__(self, settings: ScraperSettings, workerid: int):
         # TODO: refactor here make scraper connect to gRPC control port
         logger.info("Booting crawler %s", workerid)
-        super().__init__(rabbitmq_host, rabbitmq_port, "scraper",
+        super().__init__(settings.mq_host, settings.mq_port, "scraper",
                          -1)
-        self.data_source = data_source
-        self.data_source.parent_workerid = workerid 
-        #self.data_source.init()
+        if settings.source != ScrapeSource.GITHUB:
+            logger.error("Scrape source %s not defined: defaulting to setting up a GitHub source", settings.source)
 
+        # as GitHub is the only valid source right now, we fallback to this in any case.
+        # If more sources are added, go ahead and put this into its own if statement.
+        self.data_source = GithubRepositories(
+            git_token=settings.git_token,
+            qualifier={
+                "language:c++"
+            },   # TODO extract somewhere
+            crawl_time_start = settings.start_time,
+            crawl_time_interval = settings.interval,
+            proxies = [],  # TODO extract somewhere
+            build_sys_callback = get_build_system
+        )
+        self.data_source.parent_workerid = workerid 
+        
         # Set up messaging
-        self.rabbitmq_port = rabbitmq_port
-        self.rabbitmq_host = rabbitmq_host
-        self.mq_client = MessageClient(rabbitmq_host, rabbitmq_port, 'scraper')
+        self.rabbitmq_port = settings.mq_port
+        self.rabbitmq_host = settings.mq_host
+        self.mq_client = MessageClient(settings.mq_host, settings.mq_port, 'scraper')
         self.mq_client.add_output_queues([{
             'name': 'scrape',
             'params': {

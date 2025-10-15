@@ -49,7 +49,7 @@ if __name__ == "__main__":
         case WorkerType.Scraper:
             print("Starting Scraper")
             settings = ScraperSettings()
-            print(settings.mq_host)
-            # scraper = Scraper()
-            # scraper.run()
+            #print(settings.dict())
+            scraper = Scraper(settings=settings, workerid=0)
+            scraper.run()
             # call start scraper
