@@ -10,7 +10,7 @@ class AssemblageSettings(BaseSettings):
     Core env variables and settings
     """
     app_name: str = "Assemblage"
-    runtime_env: RuntimeEnv = Field(default=RuntimeEnv.prod, env="ENV")
+    runtime_env: RuntimeEnv = Field(default=RuntimeEnv.prod, env="RUNTIME_ENV")
     mq_host: str = Field(default="rabbitmq", env="MQ_HOST")
     mq_port: int = Field(default=5672, env="MQ_PORT")
 

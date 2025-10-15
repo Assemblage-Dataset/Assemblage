@@ -42,6 +42,8 @@ if __name__ == "__main__":
         case WorkerType.Builder:
             print("Starting Builder")
             settings = BuilderSettings()
+            
+            print(settings.platform)
             print(settings.runtime_env)
             builder = Builder(settings=settings, opt_id=0)
             builder.run()

@@ -9,20 +9,23 @@ Yihao Sun
 import datetime
 import logging
 import os
+import platform
 import shutil
 import json
+import sys
 import time
 import stat
 
 import glob
 import ntpath
 
-from assemblage.consts import BINPATH, PDBPATH, TASK_TIMEOUT_THRESHOLD, BuildStatus, MAX_MQ_SIZE, CloneStatus
+from assemblage.consts import BINPATH, PDBPATH, TASK_TIMEOUT_THRESHOLD, BuildStatus, MAX_MQ_SIZE, CloneStatus, WorkerType
 from assemblage.worker.base_worker import BasicWorker
 from assemblage.worker import build_method
 from assemblage.worker.find_bin import find_elf_bin
 from assemblage.worker.profile import AWSProfile
-from assemblage.worker.build_method import DefaultBuildStrategy
+from assemblage.worker.build_method import DefaultBuildStrategy, WindowsDefaultStrategy
+from assemblage.config import BuilderSettings
 
 logger = logging.getLogger(__name__)
 
@@ -36,12 +39,9 @@ class Builder(BasicWorker):
     """
 
     def __init__(self,
-                 rabbitmq_host,
-                 rabbitmq_port,
-                 worker_type,
-                 opt_id,
-                 platform="linux",
-                 build_mode="Debug",
+                 settings: BuilderSettings, # generic builder settings class,
+                 opt_id: int, # keep for now i thik this sets the build opt from the table?  - change to be included in message from coordinator...
+                 build_mode="Debug", # change to enum / string literal
                  library="",
                  compiler_flag="",
                  tmp_dir="/tmp/",
@@ -54,41 +54,47 @@ class Builder(BasicWorker):
                 #  send_binary_method="s3"
                  aws_profile= None
                  ):
-        super().__init__(rabbitmq_host, rabbitmq_port, worker_type,
+        super().__init__(settings.mq_host, settings.mq_port, WorkerType.Builder,
                          opt_id)
         logger.info("Worker inited")
-        self.compiler_version = compiler
-        self.compiler_flag = compiler_flag
-        self.library = library
-        self.opt_id = opt_id
-        self.build_mode = build_mode
+        self.compiler_version = compiler  # should be detected from envs / build arg on runtime
+        self.compiler_flag = compiler_flag # not sure on this. should this be sent via build command for coordinator?
+        self.library = library # what is this?
+        self.opt_id = opt_id # should be sent via coordinator command
+        self.build_mode = build_mode #
 
-        if blacklist:
+        if blacklist: # what is this
             self.blacklist = blacklist
         else:
             self.blacklist = []
         # "S3" method will utilize the credentials found in
         # `~/.aws/credentials`. Use "FTP" if you want to connect
         # to a local FTP server instead.
-        self.aws_profile = aws_profile
-        self.platform = platform
-        self.rand_build = rand_build
-        self.server_addr = rabbitmq_host
+        self.aws_profile = aws_profile # probably strip and rewrite for minio?
+        self.platform = settings.platform # 
+        self.rand_build = rand_build # what?
+        self.server_addr = settings.mq_host # 
         self.route_key = f"worker.{self.opt_id}"
-        self.mq_client = None
-        if self.library == "x86" and self.platform == "windows":
+        self.mq_client = None # going to be re worked later(?)
+        if self.library == "x86" and self.platform == "windows": # what is the point of this?
             self.library = "x86"
-        self.random_pick = random_pick
+        self.random_pick = random_pick # what is this?
         #  a repo keep track of the (URL, opt_id) built before
-        self.built_b_status_list = []
-        self.tmp_dir = os.path.realpath(tmp_dir)
+        self.built_b_status_list = [] # is this used? 
+        self.tmp_dir = os.path.realpath(tmp_dir) # is this needed now?
         if not os.path.exists(self.tmp_dir):
             os.mkdir(self.tmp_dir)
-        self.clone_proxy_servers = proxy_clone_servers
-        self.clone_proxy_token = proxy_token
+        self.clone_proxy_servers = proxy_clone_servers # what?
+        self.clone_proxy_token = proxy_token # what?
         # self.build_callback = build_method.default_build_command_generator
-        self.build_strategy = DefaultBuildStrategy()
-        # self.on_init()
+    
+        if self.platform.lower() == "linux":
+            self.build_strategy = DefaultBuildStrategy(settings.SAVE_ASSEMBLY) # rename to linux build strat?
+        elif self.platform.lower() == "windows":
+            self.build_strategy = WindowsDefaultStrategy(settings.SAVE_ASSEMBLY)
+        else:
+            logger.error("Running on invalid platform. Options are Linux or Windows")
+            sys.exit(1)
 
     def setup_job_queue_info(self):
         logger.info("setting up mq channel for %d", self.opt_id)
@@ -165,7 +171,7 @@ class Builder(BasicWorker):
 
         if self.platform == 'linux':
             bin_found = {
-                f for f in find_elf_bin(clone_dir)
+                f for f in find_elf_bin(clone_dir, self.save_assembly)
                 if (os.path.exists(f))
             }
             if not bin_found:
