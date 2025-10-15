@@ -14,7 +14,7 @@ class RuntimeEnv(str,Enum):
 class WorkerType(str, Enum):
     Coordinator = "coordinator"
     Builder = "builder"
-    Scraper = "Scraper"
+    Scraper = "scraper"
     
 
 class BuildStatus(str, Enum):
@@ -111,3 +111,9 @@ QUERY_RATE_LIMIT_TIME = 3600 # how often the query limit refreshes: default 1 ho
 # How long to wait when a rate limit is hit before resuming operation
 RATE_LIMIT_WAIT = 60
 SECONDARY_RATE_LIMIT_WAIT = 120
+
+
+class ScrapeSource(str, Enum):
+    GITHUB = "github"
+    def __str__(self):
+        return self.name
