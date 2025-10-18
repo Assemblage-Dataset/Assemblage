@@ -17,8 +17,8 @@ from assemblage.worker.profile import AWSProfile
 from assemblage.worker.postprocess import PostAnalysis
 from assemblage.worker.build_method import BuildStrategy, DefaultBuildStrategy
 from assemblage.worker.build_method import cmd_with_output
-from assemblage.config import Settings
-settings = Settings()
+# from assemblage.config import Settings
+# settings = Settings()
 
 
 time_now = int(time.time())
@@ -58,17 +58,17 @@ def get_build_system(files):
 
 
 # define scraper data source
-github_c_repos = GithubRepositories(
-    git_token= os.getenv("GITHUB_TOKEN"),
-    qualifier={
-        "language:c++",
-        # "stars:>1"
-    }, 
-    crawl_time_start= start,
-    crawl_time_interval=querylap,
-    proxies=[],
-    build_sys_callback=lambda x: 'all'
-)
+# github_c_repos = GithubRepositories(
+#     git_token= os.getenv("GITHUB_TOKEN"),
+#     qualifier={
+#         "language:c++",
+#         # "stars:>1"
+#     }, 
+#     crawl_time_start= start,
+#     crawl_time_interval=querylap,
+#     proxies=[],
+#     build_sys_callback=lambda x: 'all'
+# )
 aws_profile = AWSProfile("assemblage-test", "assemblage")
 
 # class SampleBuild(BuildStrategy):
@@ -120,9 +120,7 @@ aws_profile = AWSProfile("assemblage-test", "assemblage")
 
 test_cluster_c = AssemblageCluster(name="sample"). \
                 aws(aws_profile). \
-                message_broker(). \
-                scraper([github_c_repos]). \
-                build_option(
+                message_broker().build_option(
                     1, platform="linux", language="c++", 
                     compiler_name="clang",
                     build_system="all"). \
