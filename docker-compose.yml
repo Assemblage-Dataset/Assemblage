@@ -33,7 +33,7 @@ services:
       context: .
       dockerfile: docker/gcc/Dockerfile
     #command: python3 /app/scripts/workers/example_cluster.py --type  coordinator
-    command: python3 /app/scripts/start_worker.py
+    command: python3 /app/scripts/start_worker.py --type scraper --id 0
     #command: python.exe C:\\app\\scripts\\workers\\start_worker.py --type builder --id 0
     environment: # do not remove!!
       name: coordinator
@@ -54,59 +54,59 @@ services:
         condition: on-failure
     volumes:
       - ./backend:/app 
-  scraper_0:
-    image: assemblage-gcc:default
-    build:
-      context: .
-      dockerfile: docker/gcc/Dockerfile
-    command: python3 /app/scripts/start_worker.py --type scraper --id 0
-    healthcheck:
-      test: [ "CMD", "bash", "-c", "pgrep -f start_worker.py > /dev/null" ]
-      interval: 10s
-      start_period: 5s
-    depends_on:
-      coordinator:
-        condition: service_healthy
-    environment:
-      PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
-      name: scraper_0
-      type: scraper
-    env_file:
-      - secrets.env
-    deploy:
-      resources:
-        limits:
-          memory: 2048M
-      restart_policy:
-        condition: on-failure
-    volumes:
-      - ./backend:/app 
-      - scraper-data:/binaries
-  builder_0:
-    image: assemblage-clang:default
-    build:
-      context: .
-      dockerfile: docker/clang/Dockerfile
-    command: python3 /app/scripts/workers/example_cluster.py --type builder --id 0
-    healthcheck:
-      test: [ "CMD", "bash", "-c", "pgrep -f example_cluster.py > /dev/null" ]
-      interval: 10s
-      start_period: 5s
-    environment:
-      PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
-      name: builder_0
-    env_file:
-      - secrets.env
-    depends_on:
-      coordinator: 
-        condition: service_healthy
-    deploy:
-      restart_policy:
-        condition: on-failure
-    volumes:
-      - ./backend:/app 
-      - builder-data:/binaries
-    mem_limit: 250g
+  # scraper_0:
+  #   image: assemblage-gcc:default
+  #   build:
+  #     context: .
+  #     dockerfile: docker/gcc/Dockerfile
+  #   command: python3 /app/scripts/start_worker.py --type scraper --id 0
+  #   healthcheck:
+  #     test: [ "CMD", "bash", "-c", "pgrep -f start_worker.py > /dev/null" ]
+  #     interval: 10s
+  #     start_period: 5s
+  #   depends_on:
+  #     coordinator:
+  #       condition: service_healthy
+  #   environment:
+  #     PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
+  #     name: scraper_0
+  #     type: scraper
+  #   env_file:
+  #     - secrets.env
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 2048M
+  #     restart_policy:
+  #       condition: on-failure
+  #   volumes:
+  #     - ./backend:/app 
+  #     - scraper-data:/binaries
+  # builder_0:
+  #   image: assemblage-clang:default
+  #   build:
+  #     context: .
+  #     dockerfile: docker/clang/Dockerfile
+  #   command: python3 /app/scripts/workers/example_cluster.py --type builder --id 0
+  #   healthcheck:
+  #     test: [ "CMD", "bash", "-c", "pgrep -f example_cluster.py > /dev/null" ]
+  #     interval: 10s
+  #     start_period: 5s
+  #   environment:
+  #     PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
+  #     name: builder_0
+  #   env_file:
+  #     - secrets.env
+  #   depends_on:
+  #     coordinator: 
+  #       condition: service_healthy
+  #   deploy:
+  #     restart_policy:
+  #       condition: on-failure
+  #   volumes:
+  #     - ./backend:/app 
+  #     - builder-data:/binaries
+  #   mem_limit: 250g
 volumes:
   builder-data:
     driver: local
