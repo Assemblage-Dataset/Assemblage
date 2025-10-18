@@ -34,19 +34,16 @@ import requests
 from assemblage.config import ScraperSettings
 from assemblage.worker.base_worker import BasicWorker
 from assemblage.worker.mq import MessageClient
-from assemblage.analyze.tokenchecker import TokenChecker
+#from assemblage.analyze.tokenchecker import TokenChecker
 from assemblage.analyze.analyze import get_build_system
 from assemblage.consts import (
     SCRAPER_TIMESTAMP_RECORDFILE_PATH, SCRAPER_PAGE_SIZE, 
     GITHUB_REPO_URL, SCRAPER_REQUEST_TIMEOUT_S, SCRAPER_REPO_BUNDLESIZE,
-    SCRAPER_RATE_INTERVAL, QUERY_RATE_LIMIT_TIME, SCRAPER_RATE_LIMIT, 
-    RATE_LIMIT_WAIT, SECONDARY_RATE_LIMIT_WAIT, 
-    ScrapeSource
+    SCRAPER_RATE_INTERVAL, RATE_LIMIT_WAIT, SECONDARY_RATE_LIMIT_WAIT, RATE_LIMIT_UPDATE_INTERVAL,
+    ScrapeSource, GithubTimeOrder
 )
 
 logger = logging.getLogger(__name__)
-
-# SEARCH_RATE_LIMIT = 30 # unused
 
 '''
 possible TODO:
@@ -99,6 +96,10 @@ class DataSource(object):
     def data_filter(self, repo,  files):
         """ take a repo and files in repo, check if its valid or need to be discarded"""
         return True
+    
+    @abstractclassmethod
+    def get_request(self, query, payload=None, headers=None, proxy=None):
+        '''Gets the requested query, handling rate limits as necessary.'''
 
     # TODO: should this be moved into GitHubRepositories, or is this code shared across all data sources?
     # NOTE: Currently unused.
@@ -136,106 +137,52 @@ class DataSource(object):
                 yield r
 
 
-class GithubTimeOrder(Enum):
-    CREATED = "created"
-    PUSHED = "pushed"
 
 
 class GithubRepositories(DataSource):
-    """ a data generator for Windows c repositories """
+    """A data generator which uses the GitHub REST API to scrape repository data."""
 
-    # TODO: crawl_time_start can be removed, replaced with db call? probably crawl_time_interval replaced with const too
+    # TODO: crawl_time_interval can be replaced with const
     def __init__(self, parent_id:int, git_token:str, qualifiers:set, crawl_time_start:int, crawl_time_end:int, crawl_time_interval:int,
-                 proxies:list, sort=GithubTimeOrder.CREATED, order="",
-                 build_sys_callback=get_build_system) -> None:
+                 proxies:list, sort=GithubTimeOrder.CREATED, build_sys_callback=get_build_system) -> None:
         super().__init__(build_sys_callback)
-        self.token = git_token
-        # self.lang = lang
-        self.qualifiers = qualifiers # a set containing the qualifiers to be used in the query
+        
+        self.parent_workerid = parent_id # allows the logger to note that this data generator belongs to the parent crawler
 
-        # determines the time span to be scraped -- none of these variables change
+        # github authentication configuration
+        self.set_token(git_token)
+        self.proxies = proxies
+        if "" not in self.proxies:
+            self.proxies.append("")
+
+        # Determine the time span to be scraped -- none of these variables change after assignment
         self.crawl_time_interval = crawl_time_interval
         self.crawl_time_start = crawl_time_start
         self.crawl_time_end = crawl_time_end
 
-        self.proxies = proxies
-        self.sort = sort
-        self.order = order
-        self.query_pile = int(time.time())//QUERY_RATE_LIMIT_TIME # part of the rate limiting check code
-        self.queries = 0 # queries performed since the last rate limit rollover
-        self.parent_workerid = parent_id # useful for logging
-
-        if "" not in self.proxies:
-            self.proxies.append("")
-
-        if not self.token:
-            logger.warning('''No Token is set, scraper will be severely rate-limited\n.
-                                  Please configure PAT and add it to secrets.env as GITHUB_TOKEN and then restart
-                           ''')
-            self.auth_headers = {}
-        else:
-            self.auth_headers = {
-                "Authorization": f"Bearer {self.token}",
-            }
-        self.token_checker = TokenChecker(self.auth_headers)
+        # Determine format of query
+        self.qualifiers = qualifiers # a set containing the qualifiers to be used in the query
+        self.sort = sort # sort-by method
 
 
     def random_proxy(self):
         '''Returns a random proxy from the data source's defined proxies.'''
-        proxy = random.choice(self.proxies)
         if self.proxies == []:
             return None
-        return {
-            'https': proxy,
-        }
+        else:
+            return {
+                'https': random.choice(self.proxies),
+            }
 
-    def query_limit(self):
-        '''Checks that the scraper has not performed too many queries. If so, scraper sleeps until rate limit rollover.'''
-        if int(time.time())//QUERY_RATE_LIMIT_TIME != self.query_pile:
-            # the time interval has rolled over without exceeding queries -- can reset rate limit
-            self.query_pile = int(time.time())//QUERY_RATE_LIMIT_TIME
-            self.queries = 0
-        if self.queries > SCRAPER_RATE_LIMIT:
-            # queries exceeded -- put the worker to sleep until query is refreshed
-            # NOTE: the query is assumed to refresh every QUERY_RATE_LIMIT_TIME. Not determined directly from the message provided by GitHub
-            sleeptime = QUERY_RATE_LIMIT_TIME-int(time.time()) % QUERY_RATE_LIMIT_TIME
-            logger.info("Worker %s idle soon due to reaching rate limit: sleeping for %s", self.parent_workerid, sleeptime)
-            time.sleep(sleeptime)
-            self.queries = 0
 
     def _process_repo_message(self, repo):
         '''Given a single entry in the GitHub search results, requests the repository page, extracts the files, and returns select metadata with the files.'''
         time.sleep(SCRAPER_RATE_INTERVAL) # prevents scraper from monopolizing resources
         url = repo["url"]
-        self.query_limit()
-        # Avoid secondary rate limit
         default_branch = repo["default_branch"]
         # Accesses the repository itself in order to extract files
         try:
-            page = requests.get(url + f"/git/trees/{default_branch}",
-                                headers=self.auth_headers, proxies=self.random_proxy(), timeout=SCRAPER_REQUEST_TIMEOUT_S)
-            if "secondary rate limit" in page.text:
-                logger.warning("Secondary rate limit detected")
-                logger.info(page.text.replace("\n", ""))
-                time.sleep(SECONDARY_RATE_LIMIT_WAIT) 
-                # TODO: this assumes that SECONDARY_RATE_LIMIT_WAIT will allow secondary rate limit to pass, which isn't necessarily the case if multiple components are making API requests
-                page = requests.get(url + f"/git/trees/{default_branch}",
-                                    headers=self.auth_headers, proxies=self.random_proxy(), timeout=SCRAPER_REQUEST_TIMEOUT_S)
-            elif "rate limit" in page.text:
-                sleep_remaining = self.token_checker.rate_reset("", self.token)
-
-                logger.info("Rate limit hit by crawler %s. Sleeping for %ss", self.parent_workerid,
-                            sleep_remaining)
-                # to give updates on remaining sleep ...
-                while sleep_remaining > 0:
-                    sleep_chunk = min(RATE_LIMIT_WAIT, sleep_remaining)
-                    logger.info("Crawler %s sleeping due to hitting rate limit... %ds remaining",
-                                self.datsourceid, sleep_remaining)
-                    time.sleep(sleep_chunk)
-                    sleep_remaining -= sleep_chunk
-
-                page = requests.get(url + f"/git/trees/{default_branch}",
-                                    headers=self.auth_headers, proxies=self.random_proxy(), timeout=SCRAPER_REQUEST_TIMEOUT_S)
+            page, _ = self.get_request(url + f"/git/trees/{default_branch}")
         except Exception as err:
             logger.info(err)
             return None, None
@@ -301,45 +248,10 @@ class GithubRepositories(DataSource):
                 try:
                     payload['page'] += 1
                     
-                    request_start_ts = float(time.time())
-                    r = requests.get(GITHUB_REPO_URL,
-                                     payload,
-                                     headers=self.auth_headers, proxies=self.random_proxy(), timeout=SCRAPER_REQUEST_TIMEOUT_S)
-                    request_response_time = round(float(time.time()) - request_start_ts, 3)
+                    r, request_response_time = self.get_request(GITHUB_REPO_URL, payload=payload)
                     logger.info("Crawler request respond in %ss", request_response_time)
+
                     rdict = json.loads(r.text)
-
-                    # Catch possible request errors
-                    try:
-                        if "X-RateLimit-Limit" in r.headers and int(r.headers["X-RateLimit-Limit"]) < SCRAPER_RATE_LIMIT:
-                            logger.warning("Rate limit is unexpectedly low (%s). This may indicate that your credentials are not as expected.", str(r.headers["X-RateLimit-Limit"]))
-                    except:
-                            logger.warning("Could not determine rate limit.")
-
-                    if "message" in rdict.keys() and "Bad credentials" in rdict["message"]:
-                        logger.warning("Bad credentials: the authentication token provided is not valid")
-                        time.sleep(RATE_LIMIT_WAIT)
-
-                    while "message" in rdict.keys() and "rate limit" in rdict["message"]:
-                        # Rate limit detected. Sleep, then retry query until success. 
-
-                        if "secondary" in rdict["message"]:
-                            logger.info("Secondary rate limit hit by crawler %s. Sleeping for %ss", self.parent_workerid, SECONDARY_RATE_LIMIT_WAIT)
-                            time.sleep(SECONDARY_RATE_LIMIT_WAIT)
-                        else:
-                            logger.info("Rate limit hit by crawler %s. Sleeping for %ss", self.parent_workerid, RATE_LIMIT_WAIT)
-                            time.sleep(RATE_LIMIT_WAIT)
-
-                        # Retry query
-                        request_start_ts = float(time.time())
-                        r = requests.get(GITHUB_REPO_URL,
-                                        payload,
-                                        headers=self.auth_headers, proxies=self.random_proxy(), timeout=SCRAPER_REQUEST_TIMEOUT_S)
-                        request_response_time = round(float(time.time()) - request_start_ts, 3)
-                        logger.info("Crawler request respond in %ss, delayed due to rate limit", request_response_time)
-
-                        rdict = json.loads(r.text)
-
                     # Break down the search query
                     if 'items' in rdict.keys():
                         total_query_results_count = min(rdict["total_count"], total_query_results_count) # update total query results count in case it has changed
@@ -363,6 +275,115 @@ class GithubRepositories(DataSource):
             crawl_time -= self.crawl_time_interval
             crawl_time = int(crawl_time)
         logger.info("scraping finished!")
+
+
+
+    def get_request(self, query:str, payload:set=None, headers="default", proxy:str="random"):
+        '''Gets the requested query, handling rate limits as necessary.
+        query:str, payload:set, headers:set, proxy:str
+        returns request, time_elapsed.
+        Default behavior is to send the query with an empty payload, self.auth_headers as headers, and a random proxy.'''
+
+        # There are two separate rate limits, for search api (from GITHUB_REPO_URL) and standard api (in process_repo_message). 
+        # Unauthenticated: 10/minute for search api, 60/hour for standard api
+        # Authenticated: 60/minute for search api, 5000/hour for standard api (~8 req/min)
+
+        use_headers:set = self.auth_headers if (headers=="default") else headers
+        use_proxy:str = self.random_proxy() if (proxy=="random") else proxy
+
+        start_request_time = float(time.time())
+        r = requests.get(query, payload, headers=use_headers, proxies=use_proxy, timeout=SCRAPER_REQUEST_TIMEOUT_S)
+        receipt_time = float(time.time())
+        
+        # The rest of the function checks for rate limits and other potential issues.
+
+        try:
+            total_rate_limit = int(r.headers["X-RateLimit-Limit"])
+            remaining_rate_limit = int(r.headers["X-RateLimit-Remaining"])
+            rate_limit_reset_time = float(r.headers["X-RateLimit-Reset"])
+        except:
+            logger.warning("Error when converting rate limit headers into values.")
+            # something has gone quite wrong, so don't bother giving fallback values
+            
+        #logger.info("Rate limit is %s, %s remaining: resets in %ss", total_rate_limit, remaining_rate_limit, round(rate_limit_reset_time-float(time.time()),2 ))
+
+        # Send an error if the response is generally bad.
+        if not r.ok: 
+            logger.error("Crawler request was UNSUCCESSFUL (status code %s). Query: %s", r.status_code, query)
+            if remaining_rate_limit == 0:  # Provides a hint for a common cause of bad requests.
+                logger.error("No requests remaining on rate limit.") 
+            
+            return None, start_request_time-receipt_time
+        
+        ## Check for important messages and warn the user. These need to be handled manually. 
+        rdict = json.loads(r.text)
+        if "message" in rdict.keys():
+            if "rate limit" in rdict["message"]:
+                if "secondary" in rdict["message"]:
+                    logger.warning("Secondary rate limit hit -- this indicates that GitHub has identified unusual scraper activity. Scraping should be paused.")
+                    self.sleep_and_update(SECONDARY_RATE_LIMIT_WAIT, reason="Secondary rate limit reached")
+
+            if "Bad credentials" in rdict["message"]:
+                logger.warning("Bad credentials: the authentication token provided is not valid. Please provide a valid token.")
+                logger.info("Scraping will proceed unauthenticated.")
+                self.set_token(None)
+                return self.get_request(query=query, payload=payload, headers=headers, proxy=proxy)
+
+        
+        # Check rate limits, handle according to https://docs.github.com/en/rest/using-the-rest-api/
+        if remaining_rate_limit == 0:
+            time_to_reset = rate_limit_reset_time - float(time.time())
+            logger.info("Rate limit (%s) reached. Crawler %s will sleep for %ss. ", 
+                        total_rate_limit, self.parent_workerid, round(time_to_reset, 2))
+            self.sleep_and_update(time_to_reset, reason="Rate limit reached")
+            # TODO: swap tokens or proxies?
+
+        if "Retry-After" in r.headers:  
+            # handles circumstances where rate limit has not been respected: wait for Retry-After seconds
+            retry_time = 0
+            try:
+                retry_time = int(r.headers["Retry-After"])
+            except:
+                logger.warning("Warning: was not able to extract Retry-After time from headers (text is '%s')", r.headers["Retry-After"])
+                retry_time = RATE_LIMIT_WAIT
+
+            # just in case the scraper has already slept for remaining_rate_limit time
+            time_since_response = int(time.time()) - receipt_time
+            time_to_sleep = max(0, retry_time - time_since_response)
+            if time_to_sleep > 0:
+                logger.info("Github refused connection due to rate limit, sleeping for %ss", round(time_to_sleep, 2))
+                self.sleep_and_update(time_to_sleep, reason="Rate limit reached (2)")
+                return self.get_request(query, payload=payload, headers=headers, proxy=proxy)
+
+        elapsed_time = round(float(time.time()) - start_request_time, 2)
+        return r, elapsed_time
+
+    def sleep_and_update(self, duration, reason=""):
+        '''Puts the crawler to sleep, and provides regular updates on when the crawler will awake. 
+        A reason for the sleep may be optionally displayed.
+        Intended for wait times that are potentially quite long.'''
+
+        time_left = duration
+        while (time_left > 0):
+            time.sleep(min(RATE_LIMIT_UPDATE_INTERVAL, duration))
+            time_left -= RATE_LIMIT_UPDATE_INTERVAL
+            logger.info("Crawler %s will wake up in %ss (%sh). Reason for sleep: %s", self.parent_workerid, round(time_left, 2), round(time_left/60, 1), reason)
+        logger.info("Crawler %s done sleeping, resuming activity...", self.parent_workerid)
+
+    def set_token(self, token):
+        ''' Sets the token and updates headers accordingly. '''
+        self.token = token
+        if not self.token:
+            logger.warning('''No Token is set. Scraper will be severely rate-limited\n.
+                                  Please configure a PAT and add it to secrets.env as GITHUB_TOKEN, and then restart.''')
+            self.auth_headers = {}
+        else:
+            self.auth_headers = {
+                "Authorization": f"Bearer {self.token}",
+            }
+        #self.token_checker = TokenChecker(self.auth_headers)
+
+
 
 
 class Scraper(BasicWorker):
