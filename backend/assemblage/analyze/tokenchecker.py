@@ -10,7 +10,7 @@ import logging
 
 from assemblage.consts import RATELIMIT_URL
 
-
+# This class is currently unused.
 class TokenChecker:
     ''' github api related util class '''
 
