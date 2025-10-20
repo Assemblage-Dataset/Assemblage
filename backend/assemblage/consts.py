@@ -111,3 +111,30 @@ QUERY_RATE_LIMIT_TIME = 3600 # how often the query limit refreshes: default 1 ho
 # How long to wait when a rate limit is hit before resuming operation
 RATE_LIMIT_WAIT = 60
 SECONDARY_RATE_LIMIT_WAIT = 120
+
+
+
+# Coordinator constants
+# TODO move to config/settings file? 
+CHANNEL_HEARTBEAT = 500
+CHANNEL_TIMEOUT = 350
+CHANNEL_CONNECTION_ATTEMPTS = 35
+CHANNEL_RETRY_DELAY = 15
+
+DISPATCH_INTERVAL = 0.1  # time between attempting dispatchs. 
+# 0 is OK except when there is a large dispatch backlog and all workers are on the same machine,
+# as working through the dispatch backlog might choke other workers
+
+IDLE_DISPATCH_INTERVAL = 5  # when no dispatches are found, how long to wait until trying again
+
+CLEAN_OVERTIME_INTERVAL = 600 
+AWS_REBOOT_SLEEP_INTERVAL = 1200
+
+class QueueName(str, Enum):
+    CLONE = 'clone'
+    SCRAPE = 'scrape'
+    BUILD = 'build'
+    BINARY = 'binary'
+    def __str__(self):
+        # to ensure compatibility with the areas where I haven't replaced channels with enums yet
+        return self.value 

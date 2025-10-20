@@ -39,9 +39,11 @@ from assemblage.analyze.analyze import get_build_system
 from assemblage.worker.ctags_parser import get_functions as ctags_get_functions
 from assemblage.worker.clang_parser import get_functions as clang_get_functions
 from typing import Tuple
+from assemblage.config import BuilderSettings
 logger = logging.getLogger(__name__)
 
 
+settings = BuilderSettings()
 
 
 def cmd_with_output(cmd, timelimit=60, platform='linux', cwd=''):

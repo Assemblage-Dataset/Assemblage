@@ -27,6 +27,8 @@ from assemblage.worker.profile import AWSProfile
 from assemblage.worker.postprocess import PostAnalysis, PostProcessor
 from assemblage.worker.build_method import cmd_with_output
 
+from assemblage.config import CoordinatorSettings
+
 
 logger = logging.getLogger(__name__)
 class AssemblageCluster:
@@ -462,11 +464,12 @@ class AssemblageCluster:
         
 
     def _run_coordinator(self):
-        cor = Coordinator(self.mq_addr,
-                          self.mq_port,
-                          self.db_conn_str,
-                          self.name,
-                          self.aws_mode)
+        # cor = Coordinator(self.mq_addr,
+        #                   self.mq_port,
+        #                   self.db_conn_str,
+        #                   self.name,
+        #                   self.aws_mode)
+        cor = Coordinator(CoordinatorSettings())
         cor.run()
 
     def _run_postprocesser(self, post_conf):
