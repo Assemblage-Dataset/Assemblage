@@ -33,6 +33,7 @@ services:
       context: .
       dockerfile: docker/gcc/Dockerfile
     command: python3 /app/scripts/start_worker.py --type coordinator
+    #command: python3 /app/scripts/workers/example_cluster.py --type coordinator
     environment: # do not remove!!
       name: coordinator
       PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
