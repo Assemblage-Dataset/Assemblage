@@ -1,10 +1,12 @@
 # escape=`
 
 # Use the microsoft dotnet framework docker image
+# Use the microsoft dotnet framework docker image
 FROM mcr.microsoft.com/windows/servercore:ltsc2022
 # FROM mcr.microsoft.com/dotnet/framework/sdk:4.8-windowsservercore-ltsc2022
 
 
+WORKDIR C:/tools
 WORKDIR C:/tools
 # Restore the default Windows shell for correct batch processing.
 SHELL ["cmd", "/S", "/C"]

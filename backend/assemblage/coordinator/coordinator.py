@@ -10,23 +10,29 @@ import threading
 import time
 import logging
 import json
-from concurrent.futures import ThreadPoolExecutor
+#from concurrent.futures import ThreadPoolExecutor
 import pika
-import boto3
+import boto3  # Only used in AWS mode
 
 from assemblage.data.db import DBManager
 from collections import Counter
-from assemblage.consts import AWS_AUTO_REBOOT_PREFIX, BIN_DIR, TASK_TIMEOUT_THRESHOLD, WORKER_TIMEOUT_THRESHOLD, BuildStatus, REPO_SIZE_THRESHOLD, CloneStatus
+from assemblage.consts import (AWS_AUTO_REBOOT_PREFIX, 
+    BIN_DIR, CLEAN_OVERTIME_INTERVAL, WORKER_TIMEOUT_THRESHOLD, BuildStatus, 
+    REPO_SIZE_THRESHOLD, CloneStatus, QueueName,
+    CHANNEL_HEARTBEAT, CHANNEL_TIMEOUT, CHANNEL_CONNECTION_ATTEMPTS, CHANNEL_RETRY_DELAY,
+    DISPATCH_INTERVAL, IDLE_DISPATCH_INTERVAL, AWS_REBOOT_SLEEP_INTERVAL
+    )
+
+from assemblage.config import CoordinatorSettings
 
 
-SLEEP_INTERVAL = 1200
+# TODO move to config?
 logging.basicConfig(
     format="%(asctime)s %(levelname)s:%(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
-
 
 def stop_the_world_excepthook(args):
     """ 
@@ -39,6 +45,7 @@ def stop_the_world_excepthook(args):
 
 
 threading.excepthook = stop_the_world_excepthook
+# TODO: this looks the same as the default excepthook, is this necessary?
 
 
 def patch_url(_url):
@@ -46,6 +53,7 @@ def patch_url(_url):
     return _url.replace('repos/', '').replace('api.', '')
 
 
+# Unused.
 def unpatch_url(_url: str) -> str:
     """ make url searchable in db """
     api_index = _url.find("/")
@@ -60,15 +68,18 @@ def unpatch_url(_url: str) -> str:
 
     return unpatched
 
-
-def create_channel(host, port, heartbeat, timeout):
+# TODO This is duplicated in rabbitmq and only slightly changed.
+def create_channel(host, port, heartbeat=CHANNEL_HEARTBEAT, timeout=CHANNEL_TIMEOUT,
+                   connection_attempts=CHANNEL_CONNECTION_ATTEMPTS, retry_delay=CHANNEL_RETRY_DELAY):
     """
     create a rabbit mq channel,
     this is blocking channel, since we are using single process worker
     don't do anything blocking before ack
     """
+    # A blocking connection halts execution of the caller thread when an action on the channel 
+    # (e.g. connected, channel_open, exchange_declared, queue_declared) is called until it returns returns.
     conn_params = pika.ConnectionParameters(host=host, port=port,
-                                            connection_attempts=35, retry_delay=3,
+                                            connection_attempts=connection_attempts, retry_delay=retry_delay,
                                             heartbeat=heartbeat, blocked_connection_timeout=timeout)
     conn = pika.BlockingConnection(conn_params)
     return conn.channel()
@@ -80,58 +91,60 @@ class Coordinator:
     TODO: also configure creating separate RabbitMQ users for each service
     """
 
-    def __init__(self, rabbitmq_host, rabbitmq_port, db_addr, cluster_name, aws_mode=0, reproduce_mode=0):
+    #def __init__(self, rabbitmq_host, rabbitmq_port, db_addr, cluster_name, aws_mode=0, reproduce_mode=0):
+    def __init__(self, settings:CoordinatorSettings):
         logger.info("Coordinator Init")
-        self.rabbitmq_host = rabbitmq_host
-        self.rabbitmq_port = rabbitmq_port
-        self.channel = create_channel(
-            self.rabbitmq_host, self.rabbitmq_port, 500, 350)
+        self.rabbitmq_host = settings.mq_host
+        self.rabbitmq_port = settings.mq_port
+        self.channel = create_channel(self.rabbitmq_host, self.rabbitmq_port)
         # Do not use round-robin scheduling.
         self.channel.basic_qos(prefetch_count=1)
 
         # To receive results about cloning
-        self.channel.queue_declare(queue='clone', durable=True)
+        self.channel.queue_declare(queue=QueueName.CLONE, durable=True)
         # To receive results about building
-        self.channel.queue_declare(queue='build', durable=True)
+        self.channel.queue_declare(queue=QueueName.BUILD, durable=True)
         # To receive results about scraping
-        self.channel.queue_declare(queue='scrape', durable=True)
+        self.channel.queue_declare(queue=QueueName.SCRAPE, durable=True)
         # To receive results about binaries
-        self.channel.queue_declare(queue='binary', durable=True)
-        self.db_addr = db_addr
+        self.channel.queue_declare(queue=QueueName.BINARY, durable=True)
+        self.db_addr = settings.databaseURL
         
-        self.cluster_name = cluster_name
-        self.reproduce_mode = reproduce_mode
-        if aws_mode == 1:
-            self.aws_flag = True
-        else:
-            self.aws_flag = False
+        self.cluster_name = settings.cluster_name  # Appears to be used only in AWS mode for reboots
+        self.reproduce_mode = settings.reproduce_mode
+        self.aws_flag = settings.aws_mode
         # setup rpc service
         # 
         
 
     def __del__(self):
-        self.channel.close()
+        self.channel.close() # ensure that channels are gracefully closed on deletion of object
 
+    # This is the task that sends work to the builder.
+    # 10/20/2025 minor change in functionality, dispatch now pauses for a short time between sends
+    # rather than a long sleep every 1200 seconds
     def __dispatch_task(self, build_opt_id, sleep=True):
-        """ send a number of task into worker, and the keep repo name if queue """
+        """Sends unbuilt repositories to the worker by enqueueing them with RabbitMQ"""
         try:
             logger.info("__dispatch_task thread started on %s", build_opt_id)
-            thread_channel = create_channel(
-                self.rabbitmq_host, self.rabbitmq_port, 500, 350)
+            thread_channel = create_channel(self.rabbitmq_host, self.rabbitmq_port)
             # we use topics to control which worker gets which jobs.
-            thread_channel.exchange_declare(
-                exchange='build_opt', exchange_type='topic')
+            thread_channel.exchange_declare(exchange='build_opt', exchange_type='topic')
             thread_channel.confirm_delivery()
             db_man = DBManager(self.db_addr)
+            tasks = db_man.find_status_by_status_code(
+                build_opt_id=build_opt_id,
+                clone_status=CloneStatus.NOT_STARTED,
+                build_status=BuildStatus.INIT,
+                limit=99999)
+            logger.info("__dispatch_task started successfully, %s tasks are ready to be queued for dispatch", len(tasks))
         except:
             logger.info("__dispatch_task start fail")
             exit(1)
         task_count = 0
-        sleep_interval = SLEEP_INTERVAL
-        task_pausetime = int(time.time()) - \
-            int(time.time()) % SLEEP_INTERVAL + sleep_interval
         while True:
             try:
+                # find an unstarted task
                 time_before_query = time.time()
                 tasks = db_man.find_status_by_status_code(
                     build_opt_id=build_opt_id,
@@ -140,22 +153,21 @@ class Coordinator:
                     limit=1)
                 if len(tasks) == 0:
                     logger.info("Dispatch thread on build option %s idle", build_opt_id)
-                    time.sleep(5)
+                    time.sleep(IDLE_DISPATCH_INTERVAL)
                     continue
+                # extract task
                 task = tasks[0]
+                # get the rest of the necessary information from the other tables in database
                 uncloned_repo = db_man.find_repo_by_id(task.repo_id)
                 # if uncloned_repo.size < REPO_SIZƒE_THRESHOLD:
                 #     logger.info("Discard task %s size %s", task.repo_id, uncloned_repo.size)
                 #     continue
                 build_opt = db_man.find_build_opt_by_id(task.build_opt_id)
-                db_man.update_repo_status(
-                    status_id=task.id, clone_status=CloneStatus.PROCESSING)
+                db_man.update_repo_status(status_id=task.id, clone_status=CloneStatus.PROCESSING)
                 time_after_query = time.time()
                 repo_url = patch_url(uncloned_repo.url)
                 out_dir = f'{BIN_DIR}/{task.id}'
-                # os.makedirs(out_dir, exist_ok=True)
-                repo_url = patch_url(uncloned_repo.url)
-                out_dir = f'{BIN_DIR}/{task.id}'
+                # format a request to be sent to the builder/cloner
                 clone_req = {'name': uncloned_repo.name, 'url': repo_url,
                              'task_id': task.id, 'opt_id': build_opt.id,
                              #  'commit_hexsha': task.commit_hexsha,
@@ -167,33 +179,36 @@ class Coordinator:
                              'msg_time': time.time()}
                 if self.reproduce_mode:
                     clone_req["mod_timestamp"] = task.mod_timestamp
-                thread_channel.basic_publish(
+
+                # Publish this task, to be picked up by a worker with the appropriate build option settings
+                thread_channel.basic_publish( 
                     exchange='build_opt', routing_key=f'worker.{build_opt.id}',
                     body=json.dumps(clone_req),
                     properties=pika.BasicProperties(delivery_mode=2))
-                waittime = max(0.1 - (time_after_query - time_before_query), 0)
-                # time.sleep(waittime)
+                
+                # log progress
                 if task_count % 10 == 0:
-                    logger.info('Placed %sth task on build option %d, took %ss, next dispatch in %ss', task_count,
-                                 task.build_opt_id, str(time_after_query - time_before_query)[:5], str(waittime)[:4])
+                    logger.info('Placed %sth task on build option %d in %ss', task_count,
+                                 task.build_opt_id, str(time_after_query - time_before_query)[:5])
                 task_count += 1
-                if sleep and time.time() > task_pausetime:
-                    logger.info(
-                        "Dispatch on %s will pause for 5min", build_opt_id)
-                    task_pausetime += sleep_interval
-                    time.sleep(300)
+
+                # sleep
+                if sleep:
+                    time.sleep(DISPATCH_INTERVAL)
             except Exception as e:
                 logger.info("Dispatch Err:", err=str(e))
-                self.channel = create_channel(
-                    self.rabbitmq_host, self.rabbitmq_port, 500, 350)
-                thread_channel = create_channel(
-                    self.rabbitmq_host, self.rabbitmq_port, 500, 350)
-                thread_channel.exchange_declare(
-                    exchange='build_opt', exchange_type='topic')
+                thread_channel = create_channel(self.rabbitmq_host, self.rabbitmq_port)  
+                thread_channel.exchange_declare(exchange='build_opt', exchange_type='topic')
                 thread_channel.confirm_delivery()
-                db_man = DBManager(self.db_addr)
+                #db_man = DBManager(self.db_addr)
 
+    # TODO: Possibly this runs occasionally at very long time scales, but I think this is a candidate for cutting
+    # Appears to be a helper method for the old DB system
     def __recycle_clone(self):
+        '''Runs a background thread which attempts to set certain failed clone attempts as ready to retry.'''
+        # My understanding is this attempts to retry previously-failed repo clones,
+        # setting their clone status to "not started".
+        # TODO: is the count+= 1 code unreachable? (checks for clone status is both success then failure?)
         try:
             logger.info("Recycle thread starting")
             db_man = DBManager(self.db_addr)
@@ -218,72 +233,104 @@ class Coordinator:
                 logger.info("Recycle thread err %s", err)
             time.sleep(1)
 
-    def __consume_binary(self):
+    # def __consume_binary(self):
+    #     '''Consumes binaries sent on 'binary' by calling recv_binary() on each message.'''
+    #     while True: # retries if process fails
+    #         try:
+    #             logger.info(
+    #                 "Coordinator binary consume thread started")
+    #             thread_channel = create_channel(
+    #                 self.rabbitmq_host, self.rabbitmq_port)
+    #             thread_channel.basic_consume(queue=QueueName.BINARY,
+    #                                          on_message_callback=self.recv_binary)
+    #             thread_channel.start_consuming()
+    #             logger.critical("Consuming binary exited!")
+    #         except Exception as err:
+    #             logger.critical("Saving binary failed!")
+    #             logger.critical(err)
+
+    # def __consume_clone(self):
+    #     while True:
+    #         try:
+    #             logger.info(
+    #                 "Coordinator clone consume thread started")
+    #             thread_channel = create_channel(
+    #                 self.rabbitmq_host, self.rabbitmq_port)
+    #             thread_channel.basic_consume(queue=QueueName.CLONE,
+    #                                          on_message_callback=self.recv_clone_info)
+    #             thread_channel.start_consuming()
+    #             logger.critical("Consuming clone exited")
+    #         except Exception as err:
+    #             logger.critical("Saving clone failed!")
+    #             logger.critical(err)
+
+    # def __consume_build(self):
+    #     while True:
+    #         try:
+    #             logger.info(
+    #                 "Coordinator build consume thread started")
+    #             thread_channel = create_channel(
+    #                 self.rabbitmq_host, self.rabbitmq_port)
+    #             thread_channel.basic_consume(queue=QueueName.BUILD,
+    #                                          on_message_callback=self.recv_build_info)
+    #             thread_channel.start_consuming()
+    #             logger.critical("Consuming build exited")
+    #         except Exception as err:
+    #             logger.critical("Saving build failed!")
+    #             logger.critical(err)
+
+    # def __consume_scraped_data(self):
+    #     while True:
+    #         try:
+    #             logger.info(
+    #                 "Coordinator crawl consume thread started")
+    #             thread_channel = create_channel(
+    #                 self.rabbitmq_host, self.rabbitmq_port)
+    #             thread_channel.basic_consume(queue=QueueName.SCRAPE,
+    #                                          on_message_callback=self.recv_scrape_info)
+    #             thread_channel.start_consuming()
+    #             logger.critical("Consuming scrape exited")
+    #         except Exception as err:
+    #             logger.critical("Saving scraped repo failed!")
+    #             logger.critical(err)
+
+    def __consume_from_queue(self, queue):
+        match queue:
+            case QueueName.SCRAPE:
+                callback = self.recv_scrape_info
+            case QueueName.CLONE:
+                callback = self.recv_clone_info
+            case QueueName.BUILD:
+                callback = self.recv_build_info
+            case QueueName.BINARY:
+                callback = self.recv_binary
+            case _:
+                logger.error("Error: queue type '%s' is not defined in __consume_from_queue", queue)
+                callback = None
+                return
+        
         while True:
             try:
-                logger.info(
-                    "Coordinator binary consume thread started")
-                thread_channel = create_channel(
-                    self.rabbitmq_host, self.rabbitmq_port, 500, 350)
-                thread_channel.basic_consume(queue='binary',
-                                             on_message_callback=self.recv_binary)
+                logger.info("Consume thread on queue '%s' started in coordinator", queue)
+                # Create a channel and listen on the relevant queue
+                thread_channel = create_channel(self.rabbitmq_host, self.rabbitmq_port)
+                thread_channel.basic_consume(queue=queue, on_message_callback=callback)
                 thread_channel.start_consuming()
-                logger.critical("Consuming binary exited!")
+                logger.critical("Consume thread '%s' exited", queue)
             except Exception as err:
-                logger.critical("Saving binary failed!")
+                logger.critical("Coordinator __consume_from_queue from queue '%s' failed!", queue)
                 logger.critical(err)
+        
 
-    def __consume_clone(self):
-        while True:
-            try:
-                logger.info(
-                    "Coordinator clone consume thread started")
-                thread_channel = create_channel(
-                    self.rabbitmq_host, self.rabbitmq_port, 500, 350)
-                thread_channel.basic_consume(queue='clone',
-                                             on_message_callback=self.recv_clone_info)
-                thread_channel.start_consuming()
-                logger.critical("Consuming clone exited")
-            except Exception as err:
-                logger.critical("Saving clone failed!")
-                logger.critical(err)
 
-    def __consume_build(self):
-        while True:
-            try:
-                logger.info(
-                    "Coordinator build consume thread started")
-                thread_channel = create_channel(
-                    self.rabbitmq_host, self.rabbitmq_port, 500, 350)
-                thread_channel.basic_consume(queue='build',
-                                             on_message_callback=self.recv_build_info)
-                thread_channel.start_consuming()
-                logger.critical("Consuming build exited")
-            except Exception as err:
-                logger.critical("Saving build failed!")
-                logger.critical(err)
 
-    def __consume_scraped_data(self):
-        while True:
-            try:
-                logger.info(
-                    "Coordinator crawl consume thread started")
-                thread_channel = create_channel(
-                    self.rabbitmq_host, self.rabbitmq_port, 500, 350)
-                thread_channel.basic_consume(queue='scrape',
-                                             on_message_callback=self.recv_scrape_info)
-                thread_channel.start_consuming()
-                logger.critical("Consuming scrape exited")
-            except Exception as err:
-                logger.critical("Saving scraped repo failed!")
-                logger.critical(err)
-
+    # TODO: another candidate for cutting?
     def __clean_overtime(self):
         ''' restore all overtime repo every 2 build circle '''
         db_man = DBManager(self.db_addr)
         while True:
-            time.sleep(TASK_TIMEOUT_THRESHOLD)
-            db_man.reset_timeout_status(TASK_TIMEOUT_THRESHOLD)
+            time.sleep(CLEAN_OVERTIME_INTERVAL)
+            db_man.reset_timeout_status(CLEAN_OVERTIME_INTERVAL)
             logger.info(">>>>>>>>>>>>>>>>>>>>>> cleanning overtime"
                          " tasks ......")
 
@@ -294,7 +341,7 @@ class Coordinator:
         sesh = boto3.Session(profile_name='assemblage')
         ec2_resource = sesh.resource('ec2')
         ec2_client = sesh.client('ec2')
-        sleep_time = SLEEP_INTERVAL
+        sleep_time = AWS_REBOOT_SLEEP_INTERVAL
         while 1:
             reboot_instance_ids = []
             for instance in ec2_resource.instances.all():
@@ -313,7 +360,12 @@ class Coordinator:
                     logger.info("%s min to next reboot", sleep_time/60-i)
                     time.sleep(60)
 
-    def recv_scrape_info(self, ch, method, _props, body):
+
+
+    # The callback, according to Pika's requirements, takes four arguments: the channel that the message was received on,
+    # delivery metadata, properties, and the message body. 
+
+    def recv_scrape_info(self, ch:pika.channel.Channel, method:pika.spec.Basic.Deliver, _props:pika.BasicProperties, body):
         ''' store scraped message to database page by page '''
         logger.info("Crawled msg received")
         ch.basic_ack(delivery_tag=method.delivery_tag)
@@ -399,24 +451,27 @@ class Coordinator:
         except OSError:
             pass
         
-        
         db_man = DBManager(self.db_addr)
         t_dispatch_list = []
         logger.info("%s dispatching thread starts", len(
             [x for x in db_man.all_enabled_build_options()]))
+        
+        # Create a dispatch thread for each build option configuration
         for build_opt in db_man.all_enabled_build_options():
             logger.info("boot dispatching thread for %d ...", build_opt.id)
-            if build_opt.platform == 'linux':
-                t_dispatch_list.append(threading.Thread(
-                    target=self.__dispatch_task, args=(build_opt.id, False)))
-            else:
-                t_dispatch_list.append(threading.Thread(
-                    target=self.__dispatch_task, args=(build_opt.id, True)))
+            t_dispatch_list.append(threading.Thread(
+                target=self.__dispatch_task, args=(build_opt.id, True)))
+
+
         # t_ddisasm = threading.Thread(target=self.__disasm_task)
-        t_consume_clone = threading.Thread(target=self.__consume_clone)
-        t_consume_build = threading.Thread(target=self.__consume_build)
-        t_consume_binary = threading.Thread(target=self.__consume_binary)
-        t_scrape = threading.Thread(target=self.__consume_scraped_data)
+        # t_consume_clone = threading.Thread(target=self.__consume_clone)
+        # t_consume_build = threading.Thread(target=self.__consume_build)
+        # t_consume_binary = threading.Thread(target=self.__consume_binary)
+        # t_scrape = threading.Thread(target=self.__consume_scraped_data)
+        t_consume_clone = threading.Thread(target=self.__consume_from_queue, args=(QueueName.CLONE,))
+        t_consume_build = threading.Thread(target=self.__consume_from_queue, args=(QueueName.BUILD,))
+        t_consume_binary = threading.Thread(target=self.__consume_from_queue, args=(QueueName.BINARY,))
+        t_scrape = threading.Thread(target=self.__consume_from_queue, args=(QueueName.SCRAPE,))
         t_clean_task = threading.Thread(target=self.__clean_overtime)
         t_recycle_worker = threading.Thread(target=self.__recycle_clone)
         t_reboot_worker = threading.Thread(target=self.__reboot_worker)
