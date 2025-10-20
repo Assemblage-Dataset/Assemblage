@@ -94,7 +94,8 @@ RUN python.exe -m pip install --prefer-binary -r requirements.txt
 # COPY ./aws C:\Administrator\.aws
 
 # ENV AWS_CONFIG_FILE="C:\\Administrator\\.aws\\config"
-# ENV AWS_SHARED_CREDENTIALS_FILE="C:\\Administrator\\.aws\\credentials"
+# ENV AWS_SHARED_CREDENTIALS_FILE="C:\\Administrator\\.aws\\credentials"E
+ENV PYTHONPATH="C:\\app;"
 
 # maybe need to figure out adding ^^ to path via ps1 script ( so might need to add script in this folder to 
 # add that to path as then run python.exe etc)
