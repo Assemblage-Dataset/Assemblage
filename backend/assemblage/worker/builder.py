@@ -9,7 +9,6 @@ Yihao Sun
 import datetime
 import logging
 import os
-import platform
 import shutil
 import json
 import sys
@@ -56,11 +55,14 @@ class Builder(BasicWorker):
                  ):
         super().__init__(settings.mq_host, settings.mq_port, WorkerType.Builder,
                          opt_id)
-        logger.info("Worker inited")
-        self.compiler_version = compiler  # should be detected from envs / build arg on runtime
-        self.compiler_flag = compiler_flag # not sure on this. should this be sent via build command for coordinator?
-        self.library = library # what is this?
-        self.opt_id = opt_id # should be sent via coordinator command
+        self.platform = settings.build_os # 
+        
+        
+        self.compiler = settings.compiler
+        self.library = settings.library # what is this?
+        
+        # self.opt_id = self._register_builder() register with cooridnator and get 
+        self.opt_id = opt_id # should be sent via coordinator command # 
         self.build_mode = build_mode #
 
         if blacklist: # what is this
@@ -71,13 +73,10 @@ class Builder(BasicWorker):
         # `~/.aws/credentials`. Use "FTP" if you want to connect
         # to a local FTP server instead.
         self.aws_profile = aws_profile # probably strip and rewrite for minio?
-        self.platform = settings.platform # 
         self.rand_build = rand_build # what?
         self.server_addr = settings.mq_host # 
-        self.route_key = f"worker.{self.opt_id}"
         self.mq_client = None # going to be re worked later(?)
-        if self.library == "x86" and self.platform == "windows": # what is the point of this?
-            self.library = "x86"
+        self.library = settings.library
         self.random_pick = random_pick # what is this?
         #  a repo keep track of the (URL, opt_id) built before
         self.built_b_status_list = [] # is this used? 
@@ -87,14 +86,20 @@ class Builder(BasicWorker):
         self.clone_proxy_servers = proxy_clone_servers # what?
         self.clone_proxy_token = proxy_token # what?
         # self.build_callback = build_method.default_build_command_generator
-    
-        if self.platform.lower() == "linux":
-            self.build_strategy = DefaultBuildStrategy(settings.SAVE_ASSEMBLY) # rename to linux build strat?
-        elif self.platform.lower() == "windows":
-            self.build_strategy = WindowsDefaultStrategy(settings.SAVE_ASSEMBLY)
+        self.compiler_flag = "" # not sure on this. for now not doing anything in practice
+
+        
+        if self.platform == "linux": 
+            self.build_strategy = DefaultBuildStrategy(self.compiler,settings.SAVE_ASSEMBLY) # rename to linux build strat?
+        elif self.platform == "windows":
+            self.build_strategy = WindowsDefaultStrategy(self.compiler,settings.SAVE_ASSEMBLY)
         else:
-            logger.error("Running on invalid platform. Options are Linux or Windows")
+            logger.error("Running on invalid platform: {self.platform}. Options are Linux or Windows")
             sys.exit(1)
+            
+        logger.info(f"{self.platform} Worker inited")
+
+        
 
     def setup_job_queue_info(self):
         logger.info("setting up mq channel for %d", self.opt_id)
@@ -238,6 +243,7 @@ class Builder(BasicWorker):
         '''
         send message into the queue with name `kind`
         '''
+        ret = {}
         if kind == 'clone':
             ret = {
                 'url': kwarg['url'],
@@ -256,9 +262,9 @@ class Builder(BasicWorker):
                 'build_time': kwarg['build_time'],
                 'commit_hexsha': kwarg['commit_hexsha']
             }
-            
+        elif kind == "setup": 
+            pass # send build option configuation
         elif kind == 'binary':
-            logger.info("sending binary from worker to queue")
             ret = {
                 'task_id': kwarg['task_id'],
                 'file_name': kwarg['file_name']
