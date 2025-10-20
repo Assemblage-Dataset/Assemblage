@@ -35,7 +35,7 @@ services:
     command: python3 /app/scripts/start_worker.py --type coordinator
     #command: python3 /app/scripts/workers/example_cluster.py --type coordinator
     environment: # do not remove!!
-      name: coordinator
+      TYPE: coordinator
       PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
     env_file:
       - secrets.env
@@ -70,7 +70,7 @@ services:
     environment:
       PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
       name: scraper_0
-      type: scraper
+      TYPE: scraper
     env_file:
       - secrets.env
     deploy:
