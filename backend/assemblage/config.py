@@ -1,9 +1,12 @@
 from typing import Any
-from .consts import RuntimeEnv
 from pydantic_settings import BaseSettings
 from pydantic import computed_field, Field
 from platform import machine, system
 import os
+import socket
+
+
+from assemblage.consts import RuntimeEnv
 
 
 class AssemblageSettings(BaseSettings):
@@ -14,6 +17,7 @@ class AssemblageSettings(BaseSettings):
     runtime_env: RuntimeEnv = Field(default=RuntimeEnv.prod, env="ENV")
     mq_host: str = Field(default="rabbitmq", env="MQ_HOST")
     mq_port: int = Field(default=5672, env="MQ_PORT")
+    name: str = Field(default_factory=lambda: os.getenv("NAME") or socket.gethostname())
 
     @computed_field
     @property

@@ -4,6 +4,9 @@ Assemblage Worker Node
 2. build repo
 3. collect binary file
 Yihao Sun
+
+2025
+Alex Duly
 """
 
 import datetime
@@ -53,16 +56,14 @@ class Builder(BasicWorker):
                 #  send_binary_method="s3"
                  aws_profile= None
                  ):
-        super().__init__(settings.mq_host, settings.mq_port, WorkerType.Builder,
-                         opt_id)
+        super().__init__(settings.name, settings.mq_host, settings.mq_port, WorkerType.Builder)
         self.platform = settings.build_os # 
         
-        
+        self.opt_id = None
         self.compiler = settings.compiler
         self.library = settings.library # what is this?
         
         # self.opt_id = self._register_builder() register with cooridnator and get 
-        self.opt_id = opt_id # should be sent via coordinator command # 
         self.build_mode = build_mode #
 
         if blacklist: # what is this
@@ -97,13 +98,17 @@ class Builder(BasicWorker):
             logger.error("Running on invalid platform: {self.platform}. Options are Linux or Windows")
             sys.exit(1)
             
-        logger.info(f"{self.platform} Worker inited")
+        logger.info(f"Builder: {self.name} initialised...")
 
         
 
     def setup_job_queue_info(self):
-        logger.info("setting up mq channel for %d", self.opt_id)
+        logger.info(f"setting up mq channel for {self.name}")
         self.topic_exchange = 'build_opt'
+        
+        # send message with builder config ( build opt), then wait to receive back the build opts to configure the route keys
+        
+        
         self.route_key = f'worker.{self.opt_id}'
         self.output_message_queue = [{
             'name': 'build',

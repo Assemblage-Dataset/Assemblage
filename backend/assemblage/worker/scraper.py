@@ -146,7 +146,7 @@ class GithubRepositories(DataSource):
     def __init__(self, git_token, qualifier, crawl_time_start, crawl_time_interval,
                  proxies, sort=GithubTimeOrder.CREATED, order="",
                  build_sys_callback=get_build_system) -> None:
-        super().__init__(build_sys_callback)
+        super().__init__("", build_sys_callback)
         self.token = git_token
         # self.lang = lang
         self.qualifier = qualifier # an iterable containing the qualifiers to be used in the query

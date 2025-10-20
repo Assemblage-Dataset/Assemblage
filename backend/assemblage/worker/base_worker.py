@@ -24,9 +24,8 @@ class BasicWorker:
     Worker base class
     """
 
-    def __init__(self, rabbitmq_host, rabbitmq_port, worker_type, opt_id):
-        self.worker_type = worker_type
-        self.opt_id = opt_id
+    def __init__(self, name, rabbitmq_host, rabbitmq_port, worker_type):
+        self.name = name
         self.rabbitmq_host = rabbitmq_host
         self.rabbitmq_port = rabbitmq_port
         self.uuid = str(uuid.uuid1())
@@ -40,10 +39,6 @@ class BasicWorker:
         self.t_daemon = None
         self.t_job = None
         self.platform = ""
-        self.on_init()
-
-    def on_init(self):
-        """ worker initialization hook """
 
     def setup_job_queue_info(self):
         """
@@ -95,12 +90,12 @@ class BasicWorker:
 
     def run(self):
         """ run the worker """
-        logging.info("starting worker ....")
+        logging.info("starting worker ...")
         self.setup_job_queue_info()
         self.setup_mq_client()
-        logging.info("MQ started ....")
-        logging.info("Job queue started ....")
+        logging.info("MQ started...")
+        logging.info("Job queue started ...")
         self.t_job = threading.Thread(target=self.job_thread)
         self.t_job.start()
-        logging.info("Worker %s inited", self.uuid) # add healthcheck function here 
+        logging.info(f"Worker {self.name}:{self.uuid} inited") # add healthcheck function here 
         self.t_job.join()

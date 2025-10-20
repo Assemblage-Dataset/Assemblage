@@ -135,6 +135,7 @@ class QueueName(str, Enum):
     SCRAPE = 'scrape'
     BUILD = 'build'
     BINARY = 'binary'
+    CONFIGURE= 'configure'
     def __str__(self):
         # to ensure compatibility with the areas where I haven't replaced channels with enums yet
         return self.value 
