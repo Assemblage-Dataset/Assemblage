@@ -8,7 +8,7 @@ Chang
 Yihao
 """
 
-from abc import abstractclassmethod
+from abc import abstractclassmethod, abstractmethod
 import os
 import glob
 import re
@@ -29,7 +29,7 @@ import boto3
 import requests
 
 from botocore.exceptions import ClientError
-from git import Repo, exc
+from setuptools import msvc
 
 from assemblage.worker.profile import AWSProfile
 from assemblage.consts import BuildStatus, PDBJSONNAME, BINPATH, CloneStatus
@@ -39,11 +39,7 @@ from assemblage.analyze.analyze import get_build_system
 from assemblage.worker.ctags_parser import get_functions as ctags_get_functions
 from assemblage.worker.clang_parser import get_functions as clang_get_functions
 from typing import Tuple
-from assemblage.config import BuilderSettings
 logger = logging.getLogger(__name__)
-
-
-settings = BuilderSettings()
 
 
 def cmd_with_output(cmd, timelimit=60, platform='linux', cwd=''):
@@ -91,9 +87,15 @@ def clean(folders):
 
 
 class BuildStrategy:
-    def __init__(self, save_assembly: bool = False):
+    def __init__(self, compiler, save_assembly: bool = False):
         self.save_assembly = save_assembly
-
+        self.compiler = compiler
+        self.compiler_version = self._get_compiler_version()
+        
+    @abstractmethod
+    def _get_compiler_version(self)->str:
+        pass    
+        
     @abstractclassmethod
     def clone_data(self, repo) -> Tuple[bytes, int, str]:
         """
@@ -135,8 +137,8 @@ class BuildStrategy:
 
 class DefaultBuildStrategy(BuildStrategy):
 
-    def __init__(self, save_assembly: bool, tmp_dir="/tmp", num_p_job=16,):
-        super().__init__(save_assembly)
+    def __init__(self, compiler, save_assembly: bool, tmp_dir="/tmp", num_p_job=16,):
+        super().__init__(compiler, save_assembly)
 
         self.tmp_dir = tmp_dir
         self.num_p_job = num_p_job
@@ -231,63 +233,63 @@ class DefaultBuildStrategy(BuildStrategy):
                   platform='linux',
                   compiler_version='v142'):
         """ Generate cmd to execute """
-        if platform.lower() == 'windows':
-            cmd = ["powershell", "-Command", "msbuild"]
-            if build_mode in ["Release", "Debug"]:
-                cmd.append(f"/property:Configuration={build_mode}")
-            if library == "x86" or library == "x86":
-                cmd.append("/property:Platform=x86")
-            elif library == "x64":
-                cmd.append("/property:Platform=x64")
-            elif library == "Mixed Platforms":
-                cmd.append("/property:Platform='Mixed Platforms'")
-            elif library == "Any CPU":
-                cmd.append("/p:Platform=Any CPU")
-            # cmd.append(f"/p:PlatformToolset={compiler_version}")
-            if compiler_version in ["v140", "v141"]:
-                cmd.append("/p:WindowsTargetPlatformVersion= ")
-            cmd.append("/maxcpucount:16")
-            cmd.append("/property:PostBuildEvent= ")
-            cmd.append("/property:OutDir=assemblage_outdir_bin/")
-            cmd.append(f"'{slnfile}'")
-            cmd = " ".join(cmd)
-            logger.info("Windows cmd generated: %s", cmd)
+        # if platform.lower() == 'windows':
+        #     cmd = ["powershell", "-Command", "msbuild"]
+        #     if build_mode in ["Release", "Debug"]:
+        #         cmd.append(f"/property:Configuration={build_mode}")
+        #     if library == "x86" or library == "x86":
+        #         cmd.append("/property:Platform=x86")
+        #     elif library == "x64":
+        #         cmd.append("/property:Platform=x64")
+        #     elif library == "Mixed Platforms":
+        #         cmd.append("/property:Platform='Mixed Platforms'")
+        #     elif library == "Any CPU":
+        #         cmd.append("/p:Platform=Any CPU")
+        #     # cmd.append(f"/p:PlatformToolset={compiler_version}")
+        #     if compiler_version in ["v140", "v141"]:
+        #         cmd.append("/p:WindowsTargetPlatformVersion= ")
+        #     cmd.append("/maxcpucount:16")
+        #     cmd.append("/property:PostBuildEvent= ")
+        #     cmd.append("/property:OutDir=assemblage_outdir_bin/")
+        #     cmd.append(f"'{slnfile}'")
+        #     cmd = " ".join(cmd)
+        #     logger.info("Windows cmd generated: %s", cmd)
 
-        if platform.lower() == 'linux':
+        # if platform.lower() == 'linux':
             # this currently isnt being reached
-            files = []
-            for filename in glob.iglob(target_dir + '**/**', recursive=True):
-                files.append(filename.split("/")[-1])
-            logger.info("%s files in repo: %s", len(files), repo)
-            logger.info(
-                f"Files found in {target_dir} {os.listdir(target_dir)}")
+        files = []
+        for filename in glob.iglob(target_dir + '**/**', recursive=True):
+            files.append(filename.split("/")[-1])
+        logger.info("%s files in repo: %s", len(files), repo)
+        logger.info(
+            f"Files found in {target_dir} {os.listdir(target_dir)}")
 
-            build_tool = get_build_system(files)
-            cmd = ""
+        build_tool = get_build_system(files)
+        cmd = ""
 
-            if self.save_assembly:
-                extra_flags = 'CFLAGS="$CFLAGS -save-temps=obj" CXXFLAGS="$CXXFLAGS -save-temps=obj"'
-            else:
-                extra_flags = 'CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS"'
+        if self.save_assembly:
+            extra_flags = 'CFLAGS="$CFLAGS -save-temps=obj" CXXFLAGS="$CXXFLAGS -save-temps=obj"'
+        else:
+            extra_flags = 'CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS"'
 
-            if 'bootstrap' in build_tool:
-                cmd = f'cd {target_dir} && ./bootstrap && ' \
-                    f'bash ./configure && timeout 10m make {extra_flags} -j{self.num_p_job}'
-            elif 'configure' in build_tool:
-                cmd = f'cd {target_dir} && bash ./configure && ' \
-                    f'timeout 10m make {extra_flags} -j{self.num_p_job}'
-            elif 'cmake' in build_tool:
-                cmd = f'cd {target_dir} && cmake -Bbuild ./ && cd build && ' \
-                    f'timeout 10m  make {extra_flags} -j{self.num_p_job}'
-            elif 'make' in build_tool:
-                cmd = f'cd {target_dir} && timeout 10m make {extra_flags} -j{self.num_p_job}'
-            logger.info("Linux cmd generated: %s", cmd)
+        if 'bootstrap' in build_tool:
+            cmd = f'cd {target_dir} && ./bootstrap && ' \
+                f'bash ./configure && timeout 10m make {extra_flags} -j{self.num_p_job}'
+        elif 'configure' in build_tool:
+            cmd = f'cd {target_dir} && bash ./configure && ' \
+                f'timeout 10m make {extra_flags} -j{self.num_p_job}'
+        elif 'cmake' in build_tool:
+            cmd = f'cd {target_dir} && cmake -Bbuild ./ && cd build && ' \
+                f'timeout 10m  make {extra_flags} -j{self.num_p_job}'
+        elif 'make' in build_tool:
+            cmd = f'cd {target_dir} && timeout 10m make {extra_flags} -j{self.num_p_job}'
+        logger.info("Linux cmd generated: %s", cmd)
 
-            if cmd == "":
-                logger.warning("No build command created for linux")
-                return "No Build Command Made", BuildStatus.FAILED
+        if cmd == "":
+            logger.warning("No build command created for linux")
+            return "No Build Command Made", BuildStatus.FAILED
 
-            cmd += "&& ls -a"
+        cmd += "&& ls -a"
 
         out, err, exit_code = cmd_with_output(cmd, 600, platform)
         return_code = BuildStatus.SUCCESS if exit_code == 0 else BuildStatus.FAILED
@@ -297,6 +299,24 @@ class DefaultBuildStrategy(BuildStrategy):
 
 
 class WindowsDefaultStrategy(DefaultBuildStrategy):
+    
+    def __init__(self, compiler, save_assembly: bool, tmp_dir="C:/Windows/Temp", num_p_job=16,):
+        super().__init__(compiler, save_assembly)
+        self.tmp_dir = tmp_dir
+        self.num_p_job = num_p_job
+        # this is not great, i dont like it but for now itll have to do
+    def _get_compiler_version(self)->str | None:
+        # currently this will only work for msvc. future can add more options
+        try: 
+            result = subprocess.run(["cl.exe"], capture_output=True, text=True)
+            
+            match = re.search(r'Version ([\d.]+)', result.stderr)
+            if match: 
+                return match.group(1)
+        except subprocess.CalledProcessError as e:
+            logger.warning("failed to get MSVC version")
+            return None
+                
 
     def dia_list_binaries(self, dest_binfolder):
         """ get binary file under the binfolder """

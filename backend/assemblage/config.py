@@ -2,7 +2,7 @@ from typing import Any
 from .consts import RuntimeEnv
 from pydantic_settings import BaseSettings
 from pydantic import computed_field, Field
-import platform
+from platform import machine, system
 import os
 
 
@@ -69,8 +69,12 @@ class ScraperSettings(AssemblageSettings):
 class BuilderSettings(AssemblageSettings):
     """
     Builder specific settings
+    This populates
     """
-    SAVE_ASSEMBLY: bool = Field(default=True, env="SAVE_ASSEMBLY")
+    SAVE_ASSEMBLY: bool = Field(default=True, env="SAVE_ASSEMBLY") # possibly should be sent via command from coordinator to make it dynamic, but thats later...
     # detect what platform ( linux, windows, darwin) teh builder is running on. for now just needed in builder 
-    platform: str = Field(default_factory=lambda: platform.system().lower()) 
+    library: str = Field(default_factory=lambda: "x64" if '64' in machine() else 'x86') # not quite perfect but should do for now    platform: str = Field(default_factory=lambda: platform.system().lower()) 
+    build_os: str = Field(default_factory=lambda: system().lower()) 
+    compiler:str = Field(os.getenv("COMPILER")) # what compiler the image is using # could enum thishow 
+    language:str = Field(os.getenv("LANGUAGE")) # what langauge ie c++  # could also enum this...
 

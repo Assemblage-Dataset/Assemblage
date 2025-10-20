@@ -76,7 +76,7 @@ RATELIMIT_URL = "https://api.github.com/rate_limit"
 # Windows related constants
 LOG_FILE = "assemblage.log"
 if os.name=="nt":
-    BINPATH = "binaries"
+    BINPATH = "C:/binaries"
 else: 
     BINPATH = "/binaries"
 
