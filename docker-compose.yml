@@ -26,17 +26,18 @@ services:
       start_period: 10s
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
+    ports:
+      - 5672:5672
 
   coordinator:
     image: assemblage-gcc:default
     build:
       context: .
       dockerfile: docker/gcc/Dockerfile
-    command: python3 /app/scripts/start_worker.py --type coordinator
-    #command: python3 /app/scripts/workers/example_cluster.py --type coordinator
+    command: python3 /app/scripts/start_worker.py
     environment: # do not remove!!
-      name: coordinator
       PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
+      TYPE: coordinator
     env_file:
       - secrets.env
     healthcheck:
@@ -61,7 +62,6 @@ services:
     command: python3 /app/scripts/start_worker.py 
     healthcheck:
       test: [ "CMD", "bash", "-c", "pgrep -f start_worker.py > /dev/null" ]
-      test: [ "CMD", "bash", "-c", "pgrep -f start_worker.py > /dev/null" ]
       interval: 10s
       start_period: 5s
     depends_on:
@@ -70,8 +70,7 @@ services:
     environment:
       PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
       name: scraper_0
-      type: scraper
-      type: scraper
+      TYPE: scraper
     env_file:
       - secrets.env
     deploy:
@@ -83,31 +82,31 @@ services:
     volumes:
       - ./backend:/app 
       - scraper-data:/binaries
-  builder_0:
-    image: assemblage-clang:default
-    build:
-      context: .
-      dockerfile: docker/clang/Dockerfile
-    command: python3 /app/scripts/workers/example_cluster.py --type builder --id 0
-    healthcheck:
-      test: [ "CMD", "bash", "-c", "pgrep -f example_cluster.py > /dev/null" ]
-      interval: 10s
-      start_period: 5s
-    environment:
-      PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
-      name: builder_0
-    env_file:
-      - secrets.env
-    depends_on:
-      coordinator: 
-        condition: service_healthy
-    deploy:
-      restart_policy:
-        condition: on-failure
-    volumes:
-      - ./backend:/app 
-      - builder-data:/binaries
-    mem_limit: 250g
+  # builder_0:
+  #   image: assemblage-clang:default
+  #   build:
+  #     context: .
+  #     dockerfile: docker/clang/Dockerfile
+  #   command: python3 /app/scripts/workers/example_cluster.py --type builder --id 0
+  #   healthcheck:
+  #     test: [ "CMD", "bash", "-c", "pgrep -f example_cluster.py > /dev/null" ]
+  #     interval: 10s
+  #     start_period: 5s
+  #   environment:
+  #     PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
+  #     name: builder_0
+  #   env_file:
+  #     - secrets.env
+  #   depends_on:
+  #     coordinator: 
+  #       condition: service_healthy
+  #   deploy:
+  #     restart_policy:
+  #       condition: on-failure
+  #   volumes:
+  #     - ./backend:/app 
+  #     - builder-data:/binaries
+  #   mem_limit: 250g
 volumes:
   builder-data:
     driver: local

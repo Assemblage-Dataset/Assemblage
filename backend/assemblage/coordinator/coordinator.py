@@ -18,12 +18,13 @@ from assemblage.data.db import DBManager
 from collections import Counter
 from assemblage.consts import (AWS_AUTO_REBOOT_PREFIX, 
     BIN_DIR, CLEAN_OVERTIME_INTERVAL, WORKER_TIMEOUT_THRESHOLD, BuildStatus, 
-    REPO_SIZE_THRESHOLD, CloneStatus, QueueName,
+    REPO_SIZE_THRESHOLD, CloneStatus, InputQueue, OutputQueue,
     CHANNEL_HEARTBEAT, CHANNEL_TIMEOUT, CHANNEL_CONNECTION_ATTEMPTS, CHANNEL_RETRY_DELAY,
     DISPATCH_INTERVAL, IDLE_DISPATCH_INTERVAL, AWS_REBOOT_SLEEP_INTERVAL
     )
 
 from assemblage.config import CoordinatorSettings
+from .mq.messages import BuilderRegIn
 
 
 # TODO move to config?
@@ -101,20 +102,19 @@ class Coordinator:
         self.channel.basic_qos(prefetch_count=1)
 
         # To receive results about cloning
-        self.channel.queue_declare(queue=QueueName.CLONE, durable=True)
+        self.channel.queue_declare(queue=InputQueue.CLONE, durable=True)
         # To receive results about building
-        self.channel.queue_declare(queue=QueueName.BUILD, durable=True)
+        self.channel.queue_declare(queue=InputQueue.BUILD, durable=True)
         # To receive results about scraping
-        self.channel.queue_declare(queue=QueueName.SCRAPE, durable=True)
+        self.channel.queue_declare(queue=InputQueue.SCRAPE, durable=True)
         # To receive results about binaries
-        self.channel.queue_declare(queue=QueueName.BINARY, durable=True)
+        self.channel.queue_declare(queue=InputQueue.BINARY, durable=True)
         self.db_addr = settings.databaseURL
         
         self.cluster_name = settings.cluster_name  # Appears to be used only in AWS mode for reboots
         self.reproduce_mode = settings.reproduce_mode
         self.aws_flag = settings.aws_mode
         # setup rpc service
-        # 
         
 
     def __del__(self):
@@ -296,14 +296,16 @@ class Coordinator:
 
     def __consume_from_queue(self, queue):
         match queue:
-            case QueueName.SCRAPE:
+            case InputQueue.SCRAPE:
                 callback = self.recv_scrape_info
-            case QueueName.CLONE:
+            case InputQueue.CLONE:
                 callback = self.recv_clone_info
-            case QueueName.BUILD:
+            case InputQueue.BUILD:
                 callback = self.recv_build_info
-            case QueueName.BINARY:
+            case InputQueue.BINARY:
                 callback = self.recv_binary
+            case InputQueue.BUILD_REG:
+                callback = self.recv_builder_registration
             case _:
                 logger.error("Error: queue type '%s' is not defined in __consume_from_queue", queue)
                 callback = None
@@ -438,6 +440,20 @@ class Coordinator:
                          recv_msg['opt_id'], task.clone_status, recv_msg['msg'])
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
+    def recv_builder_registration(self,ch,method,_props,body):
+        '''
+        This function receives a registration from the builder. 
+        On first connection to the coordinator, the builder sends a message containing what buildoptions it is using
+        If it doesnt exist in the database already, the build option is inserted into the table. 
+        Then a queue is spun up, and the coordinator will message the builder telling it the name of the queue to listen on for 
+        build instructions
+        '''
+
+        reg_info: BuilderRegIn = BuilderRegIn.from_json(body)
+        
+        
+        return
+
     def __daemon(self):
         while True:
             time.sleep(1)
@@ -451,7 +467,24 @@ class Coordinator:
         except OSError:
             pass
         
-        db_man = DBManager(self.db_addr)
+        db_man = DBManager(self.db_addr) # to do create better session management        
+        while True:
+            try: 
+                logger.info("Checking if tables exist")
+                if db_man.tables_exist(): 
+                    break
+                else: 
+                    logger.warning('''No tables in database.
+                                        Please use docker exec -it assemblage-coordinator-1;
+                                        alembic upgrade head.
+                                        To create the database to the latest revision. 
+                                        Please note you may have to run docker compose up -d again to start the other containers''')
+                    time.sleep(10)
+            except: 
+                logger.error("error checking if tables exist")
+                
+            
+        
         t_dispatch_list = []
         logger.info("%s dispatching thread starts", len(
             [x for x in db_man.all_enabled_build_options()]))
@@ -468,10 +501,12 @@ class Coordinator:
         # t_consume_build = threading.Thread(target=self.__consume_build)
         # t_consume_binary = threading.Thread(target=self.__consume_binary)
         # t_scrape = threading.Thread(target=self.__consume_scraped_data)
-        t_consume_clone = threading.Thread(target=self.__consume_from_queue, args=(QueueName.CLONE,))
-        t_consume_build = threading.Thread(target=self.__consume_from_queue, args=(QueueName.BUILD,))
-        t_consume_binary = threading.Thread(target=self.__consume_from_queue, args=(QueueName.BINARY,))
-        t_scrape = threading.Thread(target=self.__consume_from_queue, args=(QueueName.SCRAPE,))
+        
+        # t_consume_config = threading.Thread(self.__consume_from_queue, args=(QueueName.CONFIG,))
+        t_consume_clone = threading.Thread(target=self.__consume_from_queue, args=(InputQueue.CLONE,))
+        t_consume_build = threading.Thread(target=self.__consume_from_queue, args=(InputQueue.BUILD,))
+        t_consume_binary = threading.Thread(target=self.__consume_from_queue, args=(InputQueue.BINARY,))
+        t_scrape = threading.Thread(target=self.__consume_from_queue, args=(InputQueue.SCRAPE,))
         t_clean_task = threading.Thread(target=self.__clean_overtime)
         t_recycle_worker = threading.Thread(target=self.__recycle_clone)
         t_reboot_worker = threading.Thread(target=self.__reboot_worker)
