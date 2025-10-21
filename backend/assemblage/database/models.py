@@ -3,6 +3,7 @@ Rework models for database with SQLModels
 '''
 
 import datetime
+from email.policy import default
 import json
 from typing import List, Optional
 
@@ -26,9 +27,11 @@ class BuildOpt(SQLModel, table=True):
     language: str = Field(max_length=255, default="")
     compiler_name: str = Field(max_length=10, default="")
     compiler_flag: str = Field(max_length=255, default="")
+    compiler_version: str = Field(max_length=25)
     build_system: str = Field(max_length=255, default="")
     build_command: str = Field(max_length=255, default="")
     library: str = Field(max_length=255, default="")
+    save_assemblage: bool = False
     enable: bool = False
     statuses: list["Status"] = Relationship(back_populates="build_opt")
 
