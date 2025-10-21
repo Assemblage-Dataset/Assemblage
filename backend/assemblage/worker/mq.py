@@ -12,12 +12,17 @@ from pika.exchange_type import ExchangeType
 class MessageClient:
     ''' a rabbit mq wrapper for all different worker '''
 
-    def __init__(self, rabbitmq_host, rabbitmq_port, input_routing_key):
+    def __init__(self, rabbitmq_host, rabbitmq_port, input_routing_key, uuid):
         self.rabbitmq_host = rabbitmq_host
         self.rabbitmq_port = rabbitmq_port
         self.routing_key = input_routing_key
+        # recieve task info. 
         self.input_queue_name = None
         self.input_callback = None
+        # receive control information from coordinator
+        self.recv_control_queue_name = f'control-{uuid}'
+        self.recv_control_callback = None
+        
         # default exchange name
         self.exchange_name = None
         self.consume_tag = ''
@@ -56,7 +61,7 @@ class MessageClient:
 
     def add_input_queue(self, name, params, input_callback):
         '''
-        a woker can only have on input queue.
+        a worker can only have on input queue.
         if a new queue added old queue will lost
         '''
         res = self.channel.queue_declare(name, **params)

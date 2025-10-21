@@ -68,7 +68,7 @@ class BasicWorker:
     def setup_mq_client(self):
         """ setup mq connection based on the infomation provided in `setup_job_queue_info` """
         self.mq_client = MessageClient(self.rabbitmq_host, self.rabbitmq_port,
-                                       self.route_key)
+                                       self.route_key, self.uuid)
         if self.topic_exchange:
             self.mq_client.add_topic_exchange(self.topic_exchange)
         if self.output_message_queue != []:
