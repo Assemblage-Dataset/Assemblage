@@ -21,13 +21,14 @@ import stat
 import glob
 import ntpath
 
-from assemblage.consts import BINPATH, PDBPATH, TASK_TIMEOUT_THRESHOLD, BuildStatus, MAX_MQ_SIZE, CloneStatus, WorkerType
+from assemblage.consts import BINPATH, PDBPATH, TASK_TIMEOUT_THRESHOLD, BuildStatus, MAX_MQ_SIZE, CloneStatus, InputQueue, WorkerType
 from assemblage.worker.base_worker import BasicWorker
 from assemblage.worker import build_method
 from assemblage.worker.find_bin import find_elf_bin
 from assemblage.worker.profile import AWSProfile
 from assemblage.worker.build_method import DefaultBuildStrategy, WindowsDefaultStrategy
 from assemblage.config import BuilderSettings
+from assemblage.mq.messages import BuilderRegIn
 
 logger = logging.getLogger(__name__)
 
@@ -60,8 +61,7 @@ class Builder(BasicWorker):
         self.platform = settings.build_os # 
         
         self.opt_id = None
-        self.compiler = settings.compiler
-        self.library = settings.library # what is this?
+        self.library = settings.library # x64 vs x86. architecture might be better name
         
         # self.opt_id = self._register_builder() register with cooridnator and get 
         self.build_mode = build_mode #
@@ -91,9 +91,9 @@ class Builder(BasicWorker):
 
         
         if self.platform == "linux": 
-            self.build_strategy = DefaultBuildStrategy(self.compiler,settings.SAVE_ASSEMBLY) # rename to linux build strat?
+            self.build_strategy = DefaultBuildStrategy(compiler=settings.compiler, language= settings.language, save_assembly=settings.SAVE_ASSEMBLY) # rename to linux build strat?
         elif self.platform == "windows":
-            self.build_strategy = WindowsDefaultStrategy(self.compiler,settings.SAVE_ASSEMBLY)
+            self.build_strategy = WindowsDefaultStrategy(compiler=settings.compiler,langauge = settings.language, save_assembly=settings.SAVE_ASSEMBLY)
         else:
             logger.error("Running on invalid platform: {self.platform}. Options are Linux or Windows")
             sys.exit(1)
@@ -248,50 +248,75 @@ class Builder(BasicWorker):
     def send_msg(self, kind, repo, **kwarg):
         '''
         send message into the queue with name `kind`
+        Remember input is from the perspective of the coordinator so input == output in builder and output == input
         '''
         ret = {}
-        if kind == 'clone':
-            ret = {
-                'url': kwarg['url'],
-                'opt_id': self.opt_id,
-                'status': kwarg['status'],
-                'msg': kwarg['msg'][-1000:],
-                'task_id': repo['task_id']
-            }
-        elif kind == 'build':
-            ret = {
-                'url': kwarg['url'],
-                'opt_id': self.opt_id,
-                'status': kwarg['status'],
-                'msg': kwarg['msg'][-1000:],
-                'task_id': repo['task_id'],
-                'build_time': kwarg['build_time'],
-                'commit_hexsha': kwarg['commit_hexsha']
-            }
-        elif kind == "setup": 
-            pass # send build option configuation
-        elif kind == 'binary':
-            ret = {
-                'task_id': kwarg['task_id'],
-                'file_name': kwarg['file_name']
-            }
-        elif kind == 'post_analysis':
-            ret = {
-                'file_name': kwarg['file_name'],
-                'platform': self.platform
-            }
-            kind = f"post_analysis.{self.opt_id}"
-            # self.mq_client.send_kind_msg(f"post_analysis.{self.opt_id}", json.dumps(ret))
-            logger.info("Send to post analysis channel %s \n data: \n %s",
-                         f"post_analysis.{self.opt_id}", json.dumps(ret))
+        
+        match kind:
+            case InputQueue.BUILD_REG:
+                ret = BuilderRegIn(
+                    name = self.name,
+                    uuid = self.uuid,
+                    compiler=self.build_strategy.compiler,
+                    compiler_version=self.build_strategy.compiler_version,
+                    language=self.build_strategy.language,
+                    save_assembly=self.build_strategy.save_assembly
+                    ).to_json()
+                self.mq_client.send_kind_msg(kind, ret) #temp while the others dont have the type class
+                return
+            case InputQueue.CLONE:
+                ret = {
+                    'url': kwarg['url'],
+                    'opt_id': self.opt_id,
+                    'status': kwarg['status'],
+                    'msg': kwarg['msg'][-1000:],
+                    'task_id': repo['task_id']
+                }
+            case InputQueue.BUILD:
+                ret = {
+                    'url': kwarg['url'],
+                    'opt_id': self.opt_id,
+                    'status': kwarg['status'],
+                    'msg': kwarg['msg'][-1000:], 
+                    'task_id': repo['task_id'],
+                    'build_time': kwarg['build_time'],
+                    'commit_hexsha': kwarg['commit_hexsha']
+                }
+            case InputQueue.BINARY:
+                ret = {
+                    'task_id': kwarg['task_id'],
+                    'file_name': kwarg['file_name']
+                }
+            case InputQueue.POST_ANALYSIS:
+                ret = {
+                    'file_name': kwarg['file_name'],
+                    'platform': self.platform
+                }
+                kind = f"post_analysis.{self.opt_id}"
+                # self.mq_client.send_kind_msg(f"post_analysis.{self.opt_id}", json.dumps(ret))
+                logger.info("Send to post analysis channel %s \n data: \n %s",
+                            f"post_analysis.{self.opt_id}", json.dumps(ret))
+            case _: 
+                logger.warning("Unknown type of message %s, not sending... ", kind)
+                return
+                
         self.mq_client.send_kind_msg(kind, json.dumps(ret))
 
 
-    def job_handler(self, ch, method, _props, body):
+    def registration_callback(self,ch,method,_props, body):
+        '''
+        Callback for recieving reply for registration for builder
+        
+        Will tell the builder which channel to listen to for build instructions. 
+                
+        '''
+        pass
+
+    def build_callback(self, ch, method, _props, body):
         """
-        Callback for when we get a task request from a coordinator.
+        Callback for when we get a task request from a coordinator to build a project.
         """
-        task = json.loads(body)
+        task = json.loads(body) # TODO: create type for this 
         url = task['url']
         ch.basic_ack(method.delivery_tag)
         # check if this is an duplicate task

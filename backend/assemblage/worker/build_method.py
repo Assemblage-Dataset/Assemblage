@@ -87,9 +87,10 @@ def clean(folders):
 
 
 class BuildStrategy:
-    def __init__(self, compiler, save_assembly: bool = False):
+    def __init__(self, compiler: str, language: str, save_assembly: bool = False):
         self.save_assembly = save_assembly
-        self.compiler = compiler
+        self.compiler: str = compiler
+        self.language: str = language
         self.compiler_version = self._get_compiler_version()
         
     @abstractmethod
