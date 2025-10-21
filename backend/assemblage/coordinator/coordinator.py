@@ -398,7 +398,7 @@ class Coordinator:
             status_id=recv_msg['task_id']
         )
         ch.basic_ack(delivery_tag=method.delivery_tag)
-
+        
     def recv_build_info(self, ch, method, _props, body):
         """ collect and update build status of a task """
         db_man = DBManager(self.db_addr)

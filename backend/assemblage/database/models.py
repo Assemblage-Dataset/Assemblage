@@ -34,6 +34,7 @@ class BuildOpt(SQLModel, table=True):
     save_assemblage: bool = False
     enable: bool = False
     statuses: list["Status"] = Relationship(back_populates="build_opt")
+    
 
     def __repr__(self) -> str:
         return f'BuildOpt(platform={self.platform}, ,platform={self.platform}, ' \
@@ -83,6 +84,7 @@ class BuildDO(SQLModel, table=True):
         return f'Repo(File name={self.file_name})'
     class Config:
         use_enum_values = True
+        
 
 class RepoDO(SQLModel, table=True):
     """
