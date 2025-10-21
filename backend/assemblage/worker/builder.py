@@ -132,6 +132,7 @@ class Builder(BasicWorker):
                 'durable': True
             }
         }]
+        # change this to build_opt_queue ... 
         self.input_queue_name = f"queue_{self.opt_id}"
         # self.input_queue_args = {
         #     'x-max-length': MAX_MQ_SIZE,
