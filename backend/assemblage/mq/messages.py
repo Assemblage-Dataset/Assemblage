@@ -37,7 +37,10 @@ class BuilderRegIn(MQMsg):
         self.language: str = language
         self.save_assembly: bool = save_assembly
 
-class BuilderRegResponse(MQMsg):
+class BuilderRegOut(MQMsg):
+    '''
+    Messages that the cooridnator sends to the builder worker
+    '''
     def __init__(self, build_opt_queue: str):
         super().__init__()
         self.build_opt_queue: str = build_opt_queue # what build option queue to listen to for the worker

@@ -24,7 +24,7 @@ from assemblage.consts import (AWS_AUTO_REBOOT_PREFIX,
     )
 
 from assemblage.config import CoordinatorSettings
-from .mq.messages import BuilderRegIn
+from assemblage.mq.messages import BuilderRegIn, BuilderRegOut
 
 
 # TODO move to config?
