@@ -16,7 +16,7 @@ import time
 import uuid
 from assemblage.consts import PING_INTERVAL
 
-from assemblage.worker.mq import MessageClient
+from assemblage.worker.mq import InputQueueSetup, MessageClient
 
 
 class BasicWorker:
@@ -33,12 +33,22 @@ class BasicWorker:
         self.input_queue_name = None
         self.input_queue_args = None
         self.output_message_queue = []
+        self.input_message_queue: list[InputQueueSetup] = []
+
         self.route_key = ""
         self.topic_exchange = None
         self.mq_client = None
         self.t_daemon = None
         self.t_job = None
         self.platform = ""
+    def setup_input_queues(self)->None:
+        '''
+        Configure input queues 
+        '''
+    def setup_output_queues(self)->None:
+        '''
+        Configure output queues 
+        '''
 
     def setup_job_queue_info(self):
         """
@@ -57,19 +67,22 @@ class BasicWorker:
         """ a handler to connect all hook and real job function """
         logging.info("empty job handler....")
 
-    def control_message_handler(self, msg):
-        """ control message from coordinator """
-
     def setup_mq_client(self):
         """ setup mq connection based on the infomation provided in `setup_job_queue_info` """
         self.mq_client = MessageClient(self.rabbitmq_host, self.rabbitmq_port,
-                                       self.route_key, self.uuid)
+                                       self.route_key)
         if self.topic_exchange:
             self.mq_client.add_topic_exchange(self.topic_exchange)
         if self.output_message_queue != []:
             self.mq_client.add_output_queues(self.output_message_queue)
+        if self.input_message_queue != []:
+            logging.info("add input queue")
+            self.mq_client.add_input_queues(qs=self.input_message_queue)
+            pass    
+        
         if self.input_queue_name:
             logging.info("add input queue")
+            
             self.mq_client.add_input_queue(self.input_queue_name, self.input_queue_args,
                                            self.job_handler)
 
@@ -95,7 +108,7 @@ class BasicWorker:
         self.setup_mq_client()
         logging.info("MQ started...")
         logging.info("Job queue started ...")
-        self.t_job = threading.Thread(target=self.job_thread)
+        self.t_job = threading.Thread(target=self.job_thread) # iterate and add input job queues to thread on
         self.t_job.start()
         logging.info(f"Worker {self.name}:{self.uuid} inited") # add healthcheck function here 
         self.t_job.join()

@@ -139,13 +139,14 @@ class InputQueue(str, Enum):
     SCRAPE = 'scrape'
     BUILD = 'build'
     BINARY = 'binary'
+    POST_ANALYSIS = 'post_analysis'
     BUILD_REG = 'builder_registration'
     def __str__(self):
         # to ensure compatibility with the areas where I haven't replaced channels with enums yet
         return self.value 
 
 class OutputQueue(str, Enum):
-    BUILDER_CTRL = "builder_ctrl.{}"
+    BUILDER_CTRL = "builder_ctrl"
     SCRAPER_CTRL = "scraper_ctrl"
     BUILD_OPT = "build_opt" 
     def __str__(self):

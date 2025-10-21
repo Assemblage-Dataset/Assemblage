@@ -33,7 +33,6 @@ class BuilderRegIn(MQMsg):
         self.uuid: str = uuid
         self.compiler: str = compiler
         self.compiler_version: str = compiler_version
-        self.reply_to_queue: str = reply_to_queue
         self.language: str = language
         self.save_assembly: bool = save_assembly
 

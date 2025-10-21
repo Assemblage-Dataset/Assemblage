@@ -5,6 +5,7 @@ Yihao Sun
 """
 
 import os
+from sqlite3 import connect
 import sys
 import threading
 import time
@@ -84,6 +85,8 @@ def create_channel(host, port, heartbeat=CHANNEL_HEARTBEAT, timeout=CHANNEL_TIME
                                             heartbeat=heartbeat, blocked_connection_timeout=timeout)
     conn = pika.BlockingConnection(conn_params)
     return conn.channel()
+
+
 
 
 class Coordinator:
