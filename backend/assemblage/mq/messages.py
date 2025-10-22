@@ -16,6 +16,12 @@ class MQMsg:
         Create JSON string for rabbit mq to send
         '''
         return json.dumps(self.__dict__)
+
+    def __str__(self):
+        '''
+        Maybe do a better print?
+        '''
+        return f'{type(self)}:{self.to_json()}'
     
     
 

@@ -13,7 +13,7 @@ class RuntimeEnv(str,Enum):
 class WorkerType(str, Enum):
     Coordinator = "coordinator"
     Builder = "builder"
-    Scraper = "Scraper"
+    Scraper = "scraper"
     
 
 class BuildStatus(str, Enum):
