@@ -104,7 +104,9 @@ class Coordinator:
         # Do not use round-robin scheduling.
         self.channel.basic_qos(prefetch_count=1)
 
-        # To receive results about cloning
+        #to recieve results about builder registration
+        self.channel.queue_declare(queue=InputQueue.BUILD_REG, durable=True)
+        # To receive results about cloning     
         self.channel.queue_declare(queue=InputQueue.CLONE, durable=True)
         # To receive results about building
         self.channel.queue_declare(queue=InputQueue.BUILD, durable=True)
@@ -298,6 +300,7 @@ class Coordinator:
     #             logger.critical(err)
 
     def __consume_from_queue(self, queue):
+        logger.info(f"consuming from {queue}")
         match queue:
             case InputQueue.SCRAPE:
                 callback = self.recv_scrape_info
@@ -310,7 +313,7 @@ class Coordinator:
             case InputQueue.BUILD_REG:
                 callback = self.recv_builder_registration
             case _:
-                logger.error("Error: queue type '%s' is not defined in __consume_from_queue", queue)
+                logger.error(f"Error: queue type '%s' is not defined in __consume_from_queue", queue)
                 callback = None
                 return
         
@@ -443,7 +446,7 @@ class Coordinator:
                          recv_msg['opt_id'], task.clone_status, recv_msg['msg'])
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
-    def recv_builder_registration(self,ch,method,_props,body):
+    def recv_builder_registration(self,ch,method,props,body):
         '''
         This function receives a registration from the builder. 
         On first connection to the coordinator, the builder sends a message containing what buildoptions it is using
@@ -454,8 +457,18 @@ class Coordinator:
 
         reg_info: BuilderRegIn = BuilderRegIn.from_json(body)
         
+        logger.info(f"Receieved builder registration: {reg_info}. should be replying to {props.reply_to}. correlation id: {props.correlation_id}")
         
-        return
+        ch.basic_publish(
+            exchange='',
+            routing_key=props.reply_to,
+            properties=pika.BasicProperties(
+                correlation_id=props.correlation_id  # echo back
+            ),
+            body=BuilderRegOut("build_opt_1").to_json()
+        )
+
+        ch.basic_ack(delivery_tag=method.delivery_tag)
 
     def __daemon(self):
         while True:
@@ -510,6 +523,8 @@ class Coordinator:
         t_consume_build = threading.Thread(target=self.__consume_from_queue, args=(InputQueue.BUILD,))
         t_consume_binary = threading.Thread(target=self.__consume_from_queue, args=(InputQueue.BINARY,))
         t_scrape = threading.Thread(target=self.__consume_from_queue, args=(InputQueue.SCRAPE,))
+        t_consume_build_reg = threading.Thread(target=self.__consume_from_queue, args=(InputQueue.BUILD_REG,))
+
         t_clean_task = threading.Thread(target=self.__clean_overtime)
         t_recycle_worker = threading.Thread(target=self.__recycle_clone)
         t_reboot_worker = threading.Thread(target=self.__reboot_worker)
@@ -525,6 +540,7 @@ class Coordinator:
         t_consume_build.start()
         t_consume_binary.start()
         t_scrape.start()
+        t_consume_build_reg.start()
         t_reboot_worker.start()
         logger.info("Threads joining")
         t_clean_task.join()
