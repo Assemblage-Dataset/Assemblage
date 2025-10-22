@@ -4,24 +4,20 @@ Yihao Sun
 '''
 
 from dataclasses import dataclass
-from enum import Enum
 import logging
 from typing import Callable
 import pika
 from pika.adapters.blocking_connection import BlockingChannel, BlockingConnection
 from pika.exchange_type import ExchangeType
+from pika.spec import PERSISTENT_DELIVERY_MODE
 
 
 logger = logging.getLogger(__name__)
 
 
-class ConnectionType(str, Enum):
-    PRODUCER = 'producer'
-    CONSUMER = 'consumer'
-
-
 @dataclass
 class MQQueue:
+    
     name: str
     callback: Callable | None = None
     exchange_name: str | None = None
@@ -29,7 +25,6 @@ class MQQueue:
     durable: bool = True
     exclusive: bool = False
     auto_delete: bool = False
-
     def __repr__(self) -> str:
         return self.name
 
@@ -52,7 +47,7 @@ class Connection:
 
     '''
 
-    def __init__(self, mq_host: str, mq_port: int, conn_type: ConnectionType, connection_name: str,
+    def __init__(self, mq_host: str, mq_port: int, conn_name: str,
                  channel_name: str,
                  heartbeat: int = 300, timeout: int = 300,
                  connection_attempts: int = 35,
@@ -68,16 +63,14 @@ class Connection:
         self.retry_delay = retry_delay
         self.username = username
         self.password = password
-        self.conn_name = connection_name
+        self.conn_name = conn_name
         self.chan_name = channel_name
         self.conn: BlockingConnection | None = None
         self.chan: BlockingChannel | None = None  #  actually stores the MQ shcnanel
         # is this connection producing or consuming ( could be useful to differentiate)
-        self.conn_type = conn_type
-        self.queues: dict[str: MQQueue] = {}
-
+        self.queues: dict[str,MQQueue] = {}
     def __str__(self):
-        return f"{self.conn_name}:{self.chan_name}"
+        return f"Connection: {self.conn_name}" # channel/connection named the same typically
 
     def connect(self):
 
@@ -94,12 +87,12 @@ class Connection:
 
     def create_channel(self):
         '''
-        Create the channel on the given channel
-        If it already exists, then it closes the existing channel and reopens it
+        Create the channel on the given connection
+        If it already exists and is open, then it returns that channel
 
         '''
         if self.chan and self.chan.is_open:
-            self.chan.close()
+            return self.chan
         self.chan = self.conn.channel()
         self.chan.confirm_delivery()
         self.chan.basic_qos(prefetch_count=1)
@@ -112,6 +105,8 @@ class Connection:
         try:
             self.chan.queue_declare(queue=queue.name, durable=True)
             self.queues[queue.name] = queue
+            logger.info(f"Created queue: {queue} on {self}")
+            return queue
         except Exception as e:
             logger.error(f"Failed to create queue {queue} on {self} ")
 
@@ -125,21 +120,16 @@ class Connection:
     def add_topic_exchange(self, exchange_name):
         ''' add a topic exchanger to channel '''
         self.exchange_name = exchange_name
-        self.channel.exchange_declare(exchange=exchange_name,
+        self.chann.exchange_declare(exchange=exchange_name,
                                       exchange_type=ExchangeType.topic)
 
-    def send_msg(self, queue_name, msg, exchange=''):
+    def send_msg(self, queue_name, msg, exchange='', reply_to: str | None = None, corr_id: str | None = None):
         '''
         send message into the queue, should only be used on Producer connections
         '''
         logging.debug("MQ queued length %s", len(msg))
 
-        if self.conn_type is ConnectionType.CONSUMER:
-            raise Exception(
-                f"This connection :{self} is a consumer, should not be sending messages")
-
         queue = self.queues.get(queue_name)
-
         if not queue:
             raise ValueError(
                 f"Queue is not in this connection's queue map: {self}. Please create queue before sending message")
@@ -155,34 +145,31 @@ class Connection:
             self.chan.basic_publish(exchange=exchange,
                                     routing_key=queue.name,
                                     body=msg,
-                                    properties=pika.BasicProperties(delivery_mode=pika.DeliveryMode.Persistent))
+                                    properties=pika.BasicProperties(delivery_mode=PERSISTENT_DELIVERY_MODE,
+                                                                    reply_to=reply_to,
+                                                                    correlation_id=corr_id,
+                                                                    ))
+            
         except Exception as err:
-            logging.error(err)
+            logging.error(f"failed to send message: {err}")
 
-    def consume(self, queue_name):
+    def consume(self, queue: MQQueue, auto_ack = False):
         '''
-        Consume, only valid if connection type is consumer
+        Consume, on speicifed queue
         '''
-        if self.conn_type is ConnectionType.PRODUCER:
-            raise Exception(
-                f"This connection :{self} is a producer, should not be consuming")
-        queue = self.queues.get(queue_name)
-
-        if not queue:
+        if queue.name not in self.queues:
             raise ValueError(
                 f"Queue is not in this connection's queue map: {self}. Please create queue before consuming message")
-        while True:
-            try:
-                if self.hang_flag:
-                    continue
+        try:
 
-                self.consume_tag = self.chan.basic_consume(queue=queue,
-                                                           on_message_callback=queue.callback)
-                self.chan.start_consuming()
-            except Exception as e:
-                logger.critical(
-                    f"__consume_from_queue from queue {queue} connection {self} failed!")
-                logger.critical(e)
+
+            self.consume_tag = self.chan.basic_consume(queue=queue.name,
+                                                        on_message_callback=queue.callback, auto_ack=auto_ack)
+            self.chan.start_consuming()
+        except Exception as e:
+            logger.critical(
+                f"__consume_from_queue from queue {queue} connection {self} failed!")
+            logger.critical(e)
 
     def close(self):
         if self.conn and self.conn.is_open:
@@ -215,36 +202,24 @@ class MessageClient:
         # self.routing_key = input_routing_key
         # default exchange name
         # self.consume_tag = ''
-        self.hang_flag = False
-        self.connections: dict[str | Connection] = {}
+        self.connections: dict[str, Connection] = {}
 
-    def create_connection(self, conn_name: str, conn_type: ConnectionType, channel_name: str, heartbeat: int = 300, timeout: int = 300,
+    def create_connection(self, conn_name: str, channel_name: str, heartbeat: int = 300, timeout: int = 300,
                           connection_attempts: int = 35,
-                          retry_delay: int = 3, auto_connect: bool = True):
+                          retry_delay: int = 3, auto_connect: bool = True)-> Connection:
         '''
         Create a new connection, 
         Defaults to auto connect
         
         if auto connect, then the connection is automatically opened 
         '''
-        connection: Connection | None = self.connections.get(conn_name)
-
-        if connection:
-            if connection.ConnectionType == conn_type:
-                # If the connection is in the dict + the conn object exists there
-                if connection.conn:
-                    # return the connection exists already, otherwise create it now
-                    return connection
-            else:
-                # raise an exception if the connection exists, but is not the desired type already
-                # or do we want to just change the connection type?
-                raise Exception(
-                    f"Connection of that name already exists, but is not a {conn_type}")
+        connection: Connection | None
+        connection = self.connections.get(conn_name)
 
         connection = Connection(
             self.mq_host,
             mq_port=self.mq_port,
-            conn_type=conn_type,
+            conn_name=conn_name,
             channel_name=channel_name,
             heartbeat=heartbeat,
             timeout=timeout,
@@ -268,4 +243,6 @@ class MessageClient:
         except Exception as e: 
             logger.error(f"Failed to delete {connection}, exec={e}")
             
+    def get_connection(self, conn_name):
+        return self.connections.get(conn_name)
         

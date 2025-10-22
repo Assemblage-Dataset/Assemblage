@@ -26,7 +26,7 @@ class BuilderRegIn(MQMsg):
     Sent from Builder worker to Coordinator on first start up
     '''
     def __init__(self, name: str, uuid: str, compiler: str,
-                 compiler_version: str, reply_to_queue: str, 
+                 compiler_version: str, 
                  language: str, save_assembly):
         super().__init__()
         self.name: str = name

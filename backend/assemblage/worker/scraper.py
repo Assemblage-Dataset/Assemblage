@@ -32,7 +32,7 @@ import random
 import requests
 
 from assemblage.worker.base_worker import BasicWorker
-from assemblage.worker.mq import MessageClient
+from assemblage.mq.client import MessageClient
 from assemblage.analyze.tokenchecker import TokenChecker
 from assemblage.analyze.analyze import get_build_system
 from assemblage.consts import (
@@ -102,7 +102,6 @@ class DataSource(object):
     def update_time_record(self, interval):
         """ Updates SCRAPER_TIMESTAMP_RECORDFILE_PATH with how far back the scraper has looked on its data source (i.e. GitHub)"""
         # TODO: replace with database query
-
         while os.path.exists(self.record_file+'.lock'):
             time.sleep(0.25)
             logger.debug("Scraper waiting for lock to be released (if there is only one scraper, this will never happen)")
