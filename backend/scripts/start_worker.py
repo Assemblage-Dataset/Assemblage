@@ -34,20 +34,16 @@ if __name__ == "__main__":
     
     match worker_type: 
         case WorkerType.Coordinator:
-            print("Starting Coordinator")
             settings = CoordinatorSettings()
             coordinator = Coordinator(settings)
             coordinator.run()
             # call start coordinator
         case WorkerType.Builder:
-            print("Starting Builder")
             settings = BuilderSettings()
-            print(settings.runtime_env)
             builder = Builder(settings=settings, opt_id=0)
             builder.run()
             # call start builder
         case WorkerType.Scraper:
-            print("Starting Scraper")
             settings = ScraperSettings()
             print(settings.mq_host)
             # scraper = Scraper()

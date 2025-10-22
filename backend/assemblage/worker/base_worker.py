@@ -9,102 +9,64 @@ please at least impl following thing
 
 """
 
+from abc import ABC
 import logging
 import threading
 import uuid
-from assemblage.mq.client import InputQueueSetup, MessageClient
+from assemblage.mq.client import MQQueue, MessageClient
 
 
-class BasicWorker:
+logger = logging.getLogger(__name__)
+class BasicWorker(ABC):
     """
     Worker base class
     """
-
-    def __init__(self, name, rabbitmq_host, rabbitmq_port, worker_type):
+    mq_client: MessageClient 
+    uuid: str
+    def __init__(self, name, rabbitmq_host, rabbitmq_port):
         self.name = name
         self.rabbitmq_host = rabbitmq_host
         self.rabbitmq_port = rabbitmq_port
         self.uuid = str(uuid.uuid1())
-
-        self.input_queue_name = None
-        self.input_queue_args = None
-        self.output_message_queue = []
-        self.input_message_queue: list[InputQueueSetup] = []
-
-        self.route_key = ""
-        self.topic_exchange = None
-        self.mq_client = None
-        self.t_daemon = None
-        self.t_job = None
-        self.platform = ""
-    def setup_input_queues(self)->None:
-        '''
-        Configure input queues 
-        '''
-    def setup_output_queues(self)->None:
-        '''
-        Configure output queues 
-        '''
-
-    def setup_job_queue_info(self):
-        """
-        setup following mq connection infomation to get job from coordinator
-
-        input message queue name (plz check python pika doc)
-        input message queue arguments
-        output message queue (a list of output queue)
-        route_key
-        topic exchanger
-
-        if no need for pull job from coodinator leave input_message_queue None
-        """
-
-    def job_handler(self, ch, method, _props, body):
-        """ a handler to connect all hook and real job function """
-        logging.info("empty job handler....")
-
-    def setup_mq_client(self):
-        """ setup mq connection based on the infomation provided in `setup_job_queue_info` """
-        self.mq_client = MessageClient(self.rabbitmq_host, self.rabbitmq_port,
-                                       self.route_key)
-        if self.topic_exchange:
-            self.mq_client.add_topic_exchange(self.topic_exchange)
-        if self.output_message_queue != []:
-            self.mq_client.add_output_queues(self.output_message_queue)
-        if self.input_message_queue != []:
-            logging.info("add input queue")
-            self.mq_client.add_input_queues(qs=self.input_message_queue)
-            pass    
         
-        if self.input_queue_name:
-            logging.info("add input queue")
-            
-            self.mq_client.add_input_queue(self.input_queue_name, self.input_queue_args,
-                                           self.job_handler)
+        self.sleep_job_event = threading.Event()
 
-    def change_input(self, input_queue_name, input_queue_args):
-        """ reset the input queue """
-        if input_queue_name:
-            self.mq_client.change_input_queue(input_queue_name, input_queue_args,
-                                              self.job_handler)
-    def job_thread(self):
-        """ the job thread """
-        if self.input_queue_name:
-            logging.info("start consuming")
-            self.mq_client.consume()
-            logging.info("finish consuming")
-        else:
-            self.job_handler(None, None, None, None)
+        # self.route_key = ""
+        # self.topic_exchange = None 
+        self.mq_client = MessageClient(self.rabbitmq_host, self.rabbitmq_port,
+                                       username='guest', password='guest') # config later to do dynamically / better auth
+        self.t_ctrl: threading.Thread | None = None
+        self.t_job: threading.Thread | None = None
+        
+        self.control_queue_in = MQQueue(f'{self.name}-ctrl', callback=self.control_message_handler) # also include a correlationID
+        # of the uuid in case two wokrers of same name exist
 
+    
+    def control_message_handler(self, ch, method, _props, body):
+        """
+        Handler for the control queue to callback to
+        """
+        logger.info("Empty control message handler called")
 
+    def job_handler(self, ch, method, _props, body): 
+        """ handler to pass to the queues to listen on """
+        logging.info("empty job handler called ")
+        
+    def run_job(self):
+        pass
+    
+    def run_ctrl(self):
+        pass
+        
+        
     def run(self):
         """ run the worker """
-        logging.info("starting worker ...")
-        self.setup_job_queue_info()
-        self.setup_mq_client()
-        logging.info("MQ started...")
-        logging.info("Job queue started ...")
-        self.t_job = threading.Thread(target=self.job_thread) # iterate and add input job queues to thread on
-        self.t_job.start()
-        logging.info(f"Worker {self.name}:{self.uuid} inited") # add healthcheck function here 
-        self.t_job.join()
+        logging.info(f"Starting worker {self.name}...")
+
+        # setup consumer functions     
+        self.t_ctrl = threading.Thread(target=self.run_ctrl)
+        self.t_ctrl.start()
+        self.t_job = threading.Thread(target=self.run_job)
+        self.t_job.start() # to start with. just one control thread, and one job thread per worker. can expand later
+
+        logging.info(f"Worker {self.name}:{self.uuid} running") # add healthcheck function here 
