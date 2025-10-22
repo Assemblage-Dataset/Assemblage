@@ -10,13 +10,9 @@ please at least impl following thing
 """
 
 import logging
-from pydoc_data.topics import topics
 import threading
-import time
 import uuid
-from assemblage.consts import PING_INTERVAL
-
-from assemblage.worker.mq import InputQueueSetup, MessageClient
+from assemblage.mq.client import InputQueueSetup, MessageClient
 
 
 class BasicWorker:
