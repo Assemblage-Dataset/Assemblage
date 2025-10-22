@@ -6,13 +6,10 @@ Yihao Sun
 from dataclasses import dataclass
 from enum import Enum
 import logging
-from shutil import ExecError
-from sqlite3 import connect
 from typing import Callable
 import pika
 from pika.adapters.blocking_connection import BlockingChannel, BlockingConnection
 from pika.exchange_type import ExchangeType
-from pika.frame import Method
 
 
 logger = logging.getLogger(__name__)
@@ -112,7 +109,6 @@ class Connection:
         '''
         Declare queue and add it to queue map if successful
         '''
-
         try:
             self.chan.queue_declare(queue=queue.name, durable=True)
             self.queues[queue.name] = queue
@@ -188,6 +184,10 @@ class Connection:
                     f"__consume_from_queue from queue {queue} connection {self} failed!")
                 logger.critical(e)
 
+    def close(self):
+        if self.conn and self.conn.is_open:
+            self.conn.close()
+        self.conn = None
 
 class MessageClient:
     ''' a rabbit mq wrapper for all different worker 
@@ -225,7 +225,7 @@ class MessageClient:
         Create a new connection, 
         Defaults to auto connect
         
-        if auto connect, then the connection and channel are automatically 
+        if auto connect, then the connection is automatically opened 
         '''
         connection: Connection | None = self.connections.get(conn_name)
 
@@ -255,6 +255,17 @@ class MessageClient:
         )
         if auto_connect: 
             connection.connect()
-            connection.create_channel()
         self.connections[conn_name] = connection
         return connection
+
+    def delete_connection(self, conn_name):
+        connection: Connection | None = self.connections.get(conn_name)
+        if not connection: 
+            raise ValueError(f"Connection does not exist in this client, cannot delete")
+        try: 
+             connection.close()
+             self.connections.pop(conn_name)
+        except Exception as e: 
+            logger.error(f"Failed to delete {connection}, exec={e}")
+            
+        
