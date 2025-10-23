@@ -27,7 +27,7 @@ from assemblage.worker.base_worker import BasicWorker
 from assemblage.worker import build_method
 from assemblage.worker.find_bin import find_elf_bin
 from assemblage.worker.profile import AWSProfile
-from assemblage.worker.build_method import DefaultBuildStrategy, WindowsDefaultStrategy
+from assemblage.worker.build_method import LinuxBuildStrategy, WindowsDefaultStrategy
 from assemblage.config import BuilderSettings
 from assemblage.mq.messages import BuilderRegIn, BuilderRegOut
 from assemblage.mq.client import Connection, MQQueue
@@ -96,16 +96,22 @@ class Builder(BasicWorker):
         self.clone_proxy_servers = proxy_clone_servers  # what?
         self.clone_proxy_token = proxy_token  # what?
         # self.build_callback = build_method.default_build_command_generator
-        self.compiler_flag = ""  # not sure on this. for now not doing anything in practice
+        
+        # these are set in the build_opt tables. not sure what these should be so settign empty for now
+        self.compiler_flag = None  
+        self.build_system = "all" # i think this is the default?
+        self.build_command = None # 
+
 
         if self.platform == "linux":
             # maybe filter by language here too
-            self.build_strategy = DefaultBuildStrategy(
+            self.build_strategy = LinuxBuildStrategy(
                 # rename to linux build strat?
-                compiler=settings.compiler, language=settings.language, save_assembly=settings.save_assembly)
+                
+                compiler=settings.compiler, language = settings.language, save_assembly=settings.save_assembly)
         elif self.platform == "windows":
             self.build_strategy = WindowsDefaultStrategy(
-                compiler=settings.compiler, save_assembly=settings.save_assembly)
+                compiler=settings.compiler, language = settings.language, save_assembly=settings.save_assembly)
         else:
             logger.error(
                 f"Running on invalid platform: {self.platform}. Options are Linux or Windows")
@@ -368,9 +374,15 @@ class Builder(BasicWorker):
                     name=self.name,
                     uuid=self.uuid,
                     compiler=self.build_strategy.compiler,
+                    library = self.library,
                     compiler_version=self.build_strategy.compiler_version,
                     language=self.build_strategy.language,
-                    save_assembly=self.build_strategy.save_assembly
+                    save_assembly=self.build_strategy.save_assembly,
+                    platform=self.platform,
+                    compiler_flag=self.compiler_flag,
+                    build_command=self.build_command,
+                    build_system=self.build_system,
+                    
                 ).to_json()                
                 ctrl_conn = self.mq_client.get_connection(f'{self.name}-ctrl')
                 if ctrl_conn:
@@ -427,33 +439,33 @@ class Builder(BasicWorker):
 
 
 
-class StandaloneBuilder:
+# class StandaloneBuilder:
 
-    def __init__(self, project, build_mode, optimization, cpuarch, compiler_version, build_strategy=DefaultBuildStrategy):
-        assert "url" in project
-        assert build_mode.lower() in ['debug', 'release']
-        assert optimization.lower() in ['o1', 'o2', 'o3', 'od', 'os', 'ox']
-        self.project = project
-        self.build_strategy = DefaultBuildStrategy()
-        self.cpuarch = cpuarch
-        self.build_mode = build_mode
-        self.optimization = optimization
-        self.compiler_version = compiler_version
+#     def __init__(self, project, build_mode, optimization, cpuarch, compiler_version, build_strategy=DefaultBuildStrategy):
+#         assert "url" in project
+#         assert build_mode.lower() in ['debug', 'release']
+#         assert optimization.lower() in ['o1', 'o2', 'o3', 'od', 'os', 'ox']
+#         self.project = project
+#         self.build_strategy = DefaultBuildStrategy()
+#         self.cpuarch = cpuarch
+#         self.build_mode = build_mode
+#         self.optimization = optimization
+#         self.compiler_version = compiler_version
 
-    def boot(self):
-        clone_dir = self.build_strategy.get_clone_dir(self.project)
-        self.build_strategy.clone_data(self.project)
-        self.build_strategy.pre_build(self.cpuarch,
-                                      self.build_mode,
-                                      clone_dir,
-                                      self.optimization,
-                                      os.urandom(4).hex(),
-                                      self.compiler_version)
-        self.build_strategy.run_build(self.project,
-                                      clone_dir,
-                                      self.build_mode,
-                                      self.library,
-                                      self.optimization,
-                                      slnfile=None,
-                                      platform='windows',
-                                      compiler_version='v142')
+#     def boot(self):
+#         clone_dir = self.build_strategy.get_clone_dir(self.project)
+#         self.build_strategy.clone_data(self.project)
+#         self.build_strategy.pre_build(self.cpuarch,
+#                                       self.build_mode,
+#                                       clone_dir,
+#                                       self.optimization,
+#                                       os.urandom(4).hex(),
+#                                       self.compiler_version)
+#         self.build_strategy.run_build(self.project,
+#                                       clone_dir,
+#                                       self.build_mode,
+#                                       self.library,
+#                                       self.optimization,
+#                                       slnfile=None,
+#                                       platform='windows',
+#                                       compiler_version='v142')

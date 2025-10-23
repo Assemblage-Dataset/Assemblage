@@ -76,5 +76,5 @@ class BuilderSettings(AssemblageSettings):
     # detect what platform ( linux, windows, darwin) teh builder is running on. for now just needed in builder 
     library: str = Field(default_factory=lambda: "x64" if '64' in machine() else 'x86') # not quite perfect but should do for now    platform: str = Field(default_factory=lambda: platform.system().lower()) 
     build_os: str = Field(default_factory=lambda: system().lower()) 
-    compiler:str = Field(os.getenv("COMPILER")) # what compiler the image is using # could enum thishow 
-    language:str = Field(os.getenv("LANGUAGE")) # what langauge ie c++  # could also enum this...
+    compiler:str 
+    language:str

@@ -26,6 +26,7 @@ from assemblage.consts import (AWS_AUTO_REBOOT_PREFIX,
 
 from assemblage.config import CoordinatorSettings
 from assemblage.mq.messages import BuilderRegIn, BuilderRegOut
+from ..database.models import BuildOpt
 
 
 # TODO move to config?
@@ -115,7 +116,7 @@ class Coordinator:
         # To receive results about binaries
         self.channel.queue_declare(queue=InputQueue.BINARY, durable=True)
         self.db_addr = settings.databaseURL
-        
+        self.db_man = DBManager(self.db_addr) # to do create better session management        
         self.cluster_name = settings.cluster_name  # Appears to be used only in AWS mode for reboots
         self.reproduce_mode = settings.reproduce_mode
         self.aws_flag = settings.aws_mode
@@ -136,8 +137,7 @@ class Coordinator:
             # we use topics to control which worker gets which jobs.
             thread_channel.exchange_declare(exchange='build_opt', exchange_type='topic')
             thread_channel.confirm_delivery()
-            db_man = DBManager(self.db_addr)
-            tasks = db_man.find_status_by_status_code(
+            tasks = self.db_man.find_status_by_status_code(
                 build_opt_id=build_opt_id,
                 clone_status=CloneStatus.NOT_STARTED,
                 build_status=BuildStatus.INIT,
@@ -151,7 +151,7 @@ class Coordinator:
             try:
                 # find an unstarted task
                 time_before_query = time.time()
-                tasks = db_man.find_status_by_status_code(
+                tasks = self.db_man.find_status_by_status_code(
                     build_opt_id=build_opt_id,
                     clone_status=CloneStatus.NOT_STARTED,
                     build_status=BuildStatus.INIT,
@@ -163,12 +163,12 @@ class Coordinator:
                 # extract task
                 task = tasks[0]
                 # get the rest of the necessary information from the other tables in database
-                uncloned_repo = db_man.find_repo_by_id(task.repo_id)
+                uncloned_repo = self.db_man.find_repo_by_id(task.repo_id)
                 # if uncloned_repo.size < REPO_SIZƒE_THRESHOLD:
                 #     logger.info("Discard task %s size %s", task.repo_id, uncloned_repo.size)
                 #     continue
-                build_opt = db_man.find_build_opt_by_id(task.build_opt_id)
-                db_man.update_repo_status(status_id=task.id, clone_status=CloneStatus.PROCESSING)
+                build_opt = self.db_man.find_build_opt_by_id(task.build_opt_id)
+                self.db_man.update_repo_status(status_id=task.id, clone_status=CloneStatus.PROCESSING)
                 time_after_query = time.time()
                 repo_url = patch_url(uncloned_repo.url)
                 out_dir = f'{BIN_DIR}/{task.id}'
@@ -216,18 +216,17 @@ class Coordinator:
         # TODO: is the count+= 1 code unreachable? (checks for clone status is both success then failure?)
         try:
             logger.info("Recycle thread starting")
-            db_man = DBManager(self.db_addr)
         except:
             logger.info("Recycle start fail")
         while True:
             count = 0
             try:
-                for repo in db_man.find_repo_by_status(build_status=BuildStatus.SUCCESS,
+                for repo in self.db_man.find_repo_by_status(build_status=BuildStatus.SUCCESS,
                                                        clone_status=CloneStatus.SUCCESS,
                                                        build_opt_id=None):
-                    for b_status in db_man.find_status_by_repoid(repo.id):
+                    for b_status in self.db_man.find_status_by_repoid(repo.id):
                         if b_status.clone_status == CloneStatus.FAILED and b_status.build_status == BuildStatus.INIT:
-                            db_man.update_repo_status(
+                            self.db_man.update_repo_status(
                                 status_id=b_status.id,
                                 clone_status=CloneStatus.NOT_STARTED)
                             count += 1
@@ -335,10 +334,10 @@ class Coordinator:
     # TODO: another candidate for cutting?
     def __clean_overtime(self):
         ''' restore all overtime repo every 2 build circle '''
-        db_man = DBManager(self.db_addr)
+        self.db_man = DBManager(self.db_addr)
         while True:
             time.sleep(CLEAN_OVERTIME_INTERVAL)
-            db_man.reset_timeout_status(CLEAN_OVERTIME_INTERVAL)
+            self.db_man.reset_timeout_status(CLEAN_OVERTIME_INTERVAL)
             logger.info(">>>>>>>>>>>>>>>>>>>>>> cleanning overtime"
                          " tasks ......")
 
@@ -379,15 +378,13 @@ class Coordinator:
         ch.basic_ack(delivery_tag=method.delivery_tag)
         prev_time = time.time()
         recv_msg = json.loads(body.decode())
-        db_man = DBManager(self.db_addr)
         successes = 0
         result = 0
         for onerepo in recv_msg:
-            result = db_man.insert_repos(onerepo)
+            result = self.db_man.insert_repos(onerepo)
             successes += result
         if result == 0:
             logger.debug("%s inserted err", recv_msg[-1]['url'])
-        db_man.shutdown()
         after_time = time.time()
         logger.info("Build system counter %s", Counter(x['build_system'] for x in recv_msg))
         logger.info("Saved %s/%s in %ss", successes,
@@ -395,10 +392,9 @@ class Coordinator:
 
     def recv_binary(self, ch, method, _props, body):
         """ collect binary metadata from worker"""
-        db_man = DBManager(self.db_addr)
         recv_msg = json.loads(body.decode())
         
-        db_man.insert_binary(
+        self.db_man.insert_binary(
             file_name=recv_msg['file_name'],
             description='',
             status_id=recv_msg['task_id']
@@ -407,17 +403,16 @@ class Coordinator:
         
     def recv_build_info(self, ch, method, _props, body):
         """ collect and update build status of a task """
-        db_man = DBManager(self.db_addr)
         recv_msg = json.loads(body.decode())
         # task = db_man.find_status_by_id(recv_msg['task_id'])
         if BuildStatus(recv_msg['status']) == BuildStatus.OUTDATED_MSG:
             logger.info("discarding an timeout build msg %s", body.decode())
             ch.basic_ack(delivery_tag=method.delivery_tag)
             return
-        task = db_man.find_status_by_id(recv_msg['task_id'])
+        task = self.db_man.find_status_by_id(recv_msg['task_id'])
         if task.clone_status != BuildStatus.SUCCESS:
             print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> Clone failed but still built!")
-        db_man.update_repo_status(
+        self.db_man.update_repo_status(
             status_id=recv_msg['task_id'],
             build_time=recv_msg['build_time'],
             build_status=BuildStatus(recv_msg['status']),
@@ -429,18 +424,18 @@ class Coordinator:
 
     def recv_clone_info(self, ch, method, _props, body):
         """ collect and update clone stsatus of a task """
-        db_man = DBManager(self.db_addr)
+        self.db_man = DBManager(self.db_addr)
         recv_msg = json.loads(body.decode())
         # if the status code is timeout discard it
         if recv_msg['status'] == BuildStatus.OUTDATED_MSG:
             logger.info("discarding an timeout clone msg %s", body.decode())
             ch.basic_ack(delivery_tag=method.delivery_tag)
             return
-        db_man.update_repo_status(
+        self.db_man.update_repo_status(
             status_id=recv_msg['task_id'],
             clone_status=BuildStatus(recv_msg['status']),
             clone_msg=recv_msg['msg'][-200:])
-        task = db_man.find_status_by_id(recv_msg['task_id'])
+        task = self.db_man.find_status_by_id(recv_msg['task_id'])
         if task.clone_status != BuildStatus.SUCCESS:
             logger.info("CLONE task on buildopt %s updated to %s: %s",
                          recv_msg['opt_id'], task.clone_status, recv_msg['msg'])
@@ -457,7 +452,10 @@ class Coordinator:
 
         reg_info: BuilderRegIn = BuilderRegIn.from_json(body)
         
-        logger.info(f"Receieved builder registration: {reg_info}. should be replying to {props.reply_to}. correlation id: {props.correlation_id}")
+        
+        # search for build opt 
+       
+        build_opt_id = self.db_man.register_build_opt(reg_info)
         
         ch.basic_publish(
             exchange='',
@@ -465,7 +463,7 @@ class Coordinator:
             properties=pika.BasicProperties(
                 correlation_id=props.correlation_id  # echo back
             ),
-            body=BuilderRegOut("build_opt_1").to_json()
+            body=BuilderRegOut(f"build_opt_{build_opt_id}").to_json()
         )
 
         ch.basic_ack(delivery_tag=method.delivery_tag)
@@ -483,11 +481,10 @@ class Coordinator:
         except OSError:
             pass
         
-        db_man = DBManager(self.db_addr) # to do create better session management        
         while True:
             try: 
                 logger.info("Checking if tables exist")
-                if db_man.tables_exist(): 
+                if self.db_man.tables_exist(): 
                     break
                 else: 
                     logger.warning('''No tables in database.
@@ -503,10 +500,10 @@ class Coordinator:
         
         t_dispatch_list = []
         logger.info("%s dispatching thread starts", len(
-            [x for x in db_man.all_enabled_build_options()]))
+            [x for x in self.db_man.all_enabled_build_options()]))
         
         # Create a dispatch thread for each build option configuration
-        for build_opt in db_man.all_enabled_build_options():
+        for build_opt in self.db_man.all_enabled_build_options():
             logger.info("boot dispatching thread for %d ...", build_opt.id)
             t_dispatch_list.append(threading.Thread(
                 target=self.__dispatch_task, args=(build_opt.id, True)))
