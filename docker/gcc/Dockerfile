@@ -61,3 +61,5 @@ ENV LANGUAGE="c++"
 
 
 RUN echo '1:gcc' >> /conf
+
+ENTRYPOINT ["python3", "/app/scripts/start_worker.py"]
