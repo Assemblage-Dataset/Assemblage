@@ -34,3 +34,6 @@ RUN echo '2:clang' >> /conf
 
 RUN cp /usr/bin/clang /usr/bin/cc && cp /usr/bin/clang++ /usr/bin/cc1plus && \
     cp -f /usr/bin/clang /usr/bin/gcc && cp -f /usr/bin/clang++ /usr/bin/g++
+
+
+ENTRYPOINT ["python3", "/app/scripts/start_worker.py"]
