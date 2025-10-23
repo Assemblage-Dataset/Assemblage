@@ -121,8 +121,9 @@ class Coordinator:
         self.reproduce_mode = settings.reproduce_mode
         self.aws_flag = settings.aws_mode
         
-        
-        self.t_dispatch_list = [] # list of dispatched job threads
+        self.t_dispatch_map_lock = threading.Lock()  
+
+        self.t_dispatch_map: dict[int, threading.Thread] = {} # list of dispatched job threads
         # setup rpc service
         
 
@@ -301,6 +302,8 @@ class Coordinator:
     #             logger.critical("Saving scraped repo failed!")
     #             logger.critical(err)
 
+
+
     def __consume_from_queue(self, queue):
         logger.info(f"consuming from {queue}")
         match queue:
@@ -470,14 +473,19 @@ class Coordinator:
         )
 
         ch.basic_ack(delivery_tag=method.delivery_tag)
-        
-        logger.info("boot dispatching thread for %d ...", build_opt_id)
-        new_build_opt_t = threading.Thread(
-                target=self.__dispatch_task, args=(build_opt_id, True))
-        new_build_opt_t.start()
-        self.t_dispatch_list.append(new_build_opt_t) # add to list for management. maybe ( do we need some mutex on this...)
-        
-        
+        with self.t_dispatch_map_lock:
+            alive_count = sum(t.is_alive() for t in self.t_dispatch_map.values())
+            existing = self.t_dispatch_map.get(build_opt_id)
+            if existing and existing.is_alive():
+                logger.info(f"New builder registered, build opt thread {build_opt_id} already running. Currently running {alive_count} build opt threads")
+                return
+
+            logger.info("boot dispatching thread for %d ...", build_opt_id)
+            new_build_opt_t = threading.Thread(
+                    target=self.__dispatch_task, args=(build_opt_id, True))
+            new_build_opt_t.start()
+            self.t_dispatch_map[build_opt_id] = new_build_opt_t # add to list for management. maybe ( do we need some mutex on this...)
+            logger.info(f"Now running {alive_count} build opt threads")
 
     def __daemon(self):
         while True:
@@ -509,15 +517,16 @@ class Coordinator:
                 
             
         
+        # we only want to create threads when a builder is actually registered. so the builder has to register,
+        # and the thread will be created when it registers 
+        # logger.info("%s dispatching thread starts", len(
+        #     [x for x in self.db_man.all_enabled_build_options()]))
         
-        logger.info("%s dispatching thread starts", len(
-            [x for x in self.db_man.all_enabled_build_options()]))
-        
-        # Create a dispatch thread for each build option configuration
-        for build_opt in self.db_man.all_enabled_build_options():
-            logger.info("boot dispatching thread for %d ...", build_opt.id)
-            self.t_dispatch_list.append(threading.Thread(
-                target=self.__dispatch_task, args=(build_opt.id, True)))
+        # # Create a dispatch thread for each build option configuration
+        # for build_opt in self.db_man.all_enabled_build_options():
+        #     logger.info("boot dispatching thread for %d ...", build_opt.id)
+        #     self.t_dispatch_map.append(threading.Thread(
+        #         target=self.__dispatch_task, args=(build_opt.id, True)))
 
 
         # t_ddisasm = threading.Thread(target=self.__disasm_task)
@@ -541,7 +550,7 @@ class Coordinator:
         with open("/tmp/setup_complete.txt", "w") as f:
             f.write("done")
         t_clean_task.start()
-        for t_dispatch in self.t_dispatch_list:
+        for t_dispatch in self.t_dispatch_map:
             t_dispatch.start()
         t_recycle_worker.start()
         t_consume_clone.start()
@@ -552,7 +561,7 @@ class Coordinator:
         t_reboot_worker.start()
         logger.info("Threads joining")
         t_clean_task.join()
-        for t_dispatch in t_dispatch_list:
+        for t_dispatch in t_dispatch_map:
             t_dispatch.join()
         t_scrape.join()
         t_consume_binary.join()
