@@ -47,7 +47,6 @@ class Builder(BasicWorker):
     def __init__(self,
                  settings: BuilderSettings,  # generic builder settings class,
                  # keep for now i thik this sets the build opt from the table?  - change to be included in message from coordinator...
-                 opt_id: int,
                  build_mode="Debug",  # change to enum / string literal
                  library="",
                  compiler_flag="",
@@ -61,14 +60,14 @@ class Builder(BasicWorker):
                  #  send_binary_method="s3"
                  aws_profile=None
                  ):
-        super().__init__(settings.name, settings.mq_host, settings.mq_port)
+        super().__init__(settings.name, settings.mq_host, settings.mq_port, worker_type=WorkerType.Builder)
         self.platform = settings.build_os
 
         self.library = settings.library  # x64 vs x86. architecture might be better name
 
-        # self.opt_id = self._register_builder() register with cooridnator and get
         self.build_mode = build_mode
         self.build_opt_queue = None
+        self.opt_id = None
         self.build_opt_queue_args = {
                         'arguments': {
                             'x-max-length': MAX_MQ_SIZE,
@@ -128,7 +127,8 @@ class Builder(BasicWorker):
 
     def run_ctrl(self):
         '''
-
+        At the moment, all this does is send a registering message to the coordinator.
+        Then it waits for a response and then sets the build option queue to listen on.
         '''
         try:
             conn: Connection = self.mq_client.create_connection(conn_name=f'{self.name}-ctrl',
@@ -154,21 +154,22 @@ class Builder(BasicWorker):
 
     def run_job(self):
         ''' 
-        Run the job. 
+        Run the build job. 
 
         '''
-        logger.info(f"setting up mq channel for {self.name}")        
+        logger.info(f"setting up Build option channel for channel for {self}")        
    
         # create input connection and channel
         # create input queue 
         # start consuming
         
-        if not self.build_opt_queue:
-            logger.info("Waiting for build_opt_thread to be set")
-            self.sleep_job_event.wait()
+        # if not self.build_opt_queue:
+        #     logger.info("Waiting for build_opt_thread to be set")
+        self.sleep_job_event.wait()
+            
         logger.info(f"Build option queue set to {self.build_opt_queue} initialising job")
-        conn: Connection = self.mq_client.create_connection(conn_name=f'{self.name}-builder',
-                                                                channel_name=f'{self.name}-builder')
+        conn: Connection = self.mq_client.create_connection(conn_name=f'{self}',
+                                                                channel_name=f'{self}')
         conn.create_channel()
         
         conn.add_queue(self.build_opt_queue)
@@ -188,6 +189,7 @@ class Builder(BasicWorker):
         """
 
         msg = BuilderRegOut.from_json(body)
+        self.opt_id = msg.build_opt_id
         self.build_opt_queue = MQQueue(msg.build_opt_queue, callback=self.job_handler)
         
         logger.info(f"Build {self.name} registered, waking job thread")

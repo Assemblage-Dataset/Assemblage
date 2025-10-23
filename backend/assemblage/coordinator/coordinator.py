@@ -471,7 +471,7 @@ class Coordinator:
             properties=pika.BasicProperties(
                 correlation_id=props.correlation_id  # echo back
             ),
-            body=BuilderRegOut(f"build_opt_{build_opt_id}").to_json()
+            body=BuilderRegOut(build_opt_id).to_json()
         )
 
         ch.basic_ack(delivery_tag=method.delivery_tag)

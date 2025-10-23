@@ -130,12 +130,14 @@ class Connection:
         Declare queue and add it to queue map if successful
         '''
         try:
+            if not self.chan or self.chan.is_closed:
+                raise Exception(f"Channel is closed, cannot create queue on {self}")
             self.chan.queue_declare(queue=queue.name, durable=True)
             self.queues[queue.name] = queue
             logger.info(f"Created queue: {queue} on {self}")
             return queue
         except Exception as e:
-            logger.error(f"Failed to create queue {queue} on {self} ")
+            logger.error(f"Failed to create queue {queue} on {self} - {e} ")
 
     def delete_queue(self, queue: MQQueue):
         try:
@@ -156,7 +158,7 @@ class Connection:
         '''
         logging.debug("MQ queued length %s", len(msg))
 
-        queue = self.queues.get(queue_name)
+        queue = self.queues.get(queue_name) # woudl it be better to just pass in mqqueue type and deal with exception later?
         if not queue:
             raise ValueError(
                 f"Queue is not in this connection's queue map: {self}. Please create queue before sending message")
