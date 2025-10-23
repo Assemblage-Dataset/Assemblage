@@ -202,8 +202,10 @@ class Connection:
 
     def close(self):
         if self.conn and self.conn.is_open:
+            self.chan.close()
             self.conn.close()
         self.conn = None
+        self.chan = None
 
 class MessageClient:
     ''' a rabbit mq wrapper for all different worker 
