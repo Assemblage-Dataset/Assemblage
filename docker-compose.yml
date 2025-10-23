@@ -26,28 +26,31 @@ services:
       start_period: 10s
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
+    ports:
+      - 5672:5672
 
   coordinator:
     image: assemblage-gcc:default
     build:
       context: .
       dockerfile: docker/gcc/Dockerfile
-    command: python3 /app/scripts/start_worker.py --type coordinator
-    #command: python3 /app/scripts/workers/example_cluster.py --type coordinator
+    command: python3 /app/scripts/start_worker.py
     environment: # do not remove!!
-      TYPE: coordinator
       PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
+      PYTHONUNBUFFERED: 1
+      TYPE: coordinator
+      name: coordinator
     env_file:
       - secrets.env
     healthcheck:
       test: [ "CMD", "bash", "-c", "pgrep -f example_cluster.py > /dev/null && test -f /tmp/setup_complete.txt" ]
       interval: 10s
       start_period: 5s
-    depends_on:
-      database:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
+    # depends_on:
+    #   database:
+    #     condition: service_healthy
+    #   rabbitmq:
+    #     condition: service_healthy
     deploy:
       restart_policy:
         condition: on-failure
@@ -58,7 +61,7 @@ services:
     build:
       context: .
       dockerfile: docker/gcc/Dockerfile
-    command: python3 /app/scripts/start_worker.py --type scraper --id 0
+    command: python3 /app/scripts/start_worker.py
     healthcheck:
       test: [ "CMD", "bash", "-c", "pgrep -f start_worker.py > /dev/null" ]
       interval: 10s
@@ -93,12 +96,12 @@ services:
       start_period: 5s
     environment:
       PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
-      name: builder_0
+      TYPE: builder
+      compiler: clang
+      language: c++
+      name: clang-builder
     env_file:
       - secrets.env
-    depends_on:
-      coordinator: 
-        condition: service_healthy
     deploy:
       restart_policy:
         condition: on-failure
