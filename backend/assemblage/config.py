@@ -11,6 +11,7 @@ from assemblage.consts import RuntimeEnv
 # set pika to only log warnings. otherwise it gets noisy - maybe this can be removed with better try except on all pika ops
 logging.getLogger("pika").setLevel(logging.WARNING)
 
+# dotenv.load_dotenv()
 
 class AssemblageSettings(BaseSettings):
     """
@@ -56,7 +57,12 @@ class ScraperSettings(AssemblageSettings):
     """
     Scraper specific settings
     """
-    git_token: str = Field(..., env="GITHUB_TOKEN")
+    #git_token: str = Field(..., env="GITHUB_TOKEN")   # ideal, with dotenv
+    git_token: str = Field(os.getenv("GITHUB_TOKEN"))   # not lovin' this, but it DOES prevent dotenv dependency
+    start_time: int = Field(os.getenv("SCRAPE_START_TIME"))
+    end_time: int = Field(os.getenv("SCRAPE_END_TIME"))
+    interval: int = Field(os.getenv("SCRAPE_INTERVAL"))
+    source: str = Field(os.getenv("SCRAPE_DATASOURCE"))
 
 
 class BuilderSettings(AssemblageSettings):
