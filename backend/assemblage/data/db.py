@@ -17,6 +17,8 @@ from assemblage.mq.messages import BuilderRegIn
 from sqlalchemy import select, update, create_engine, func, or_, inspect
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.expression import desc, true
+from sqlalchemy.exc import IntegrityError
+
 # from sqlalchemy.sql import Insert
 
 from assemblage.database.models import BuildDO, BuildOpt, RepoDO, Status
@@ -116,7 +118,7 @@ class DBManager:
                     compiler_name=regInfo.compiler,
                     compiler_flag=regInfo.compiler_flag,
                     compiler_version=regInfo.compiler_version,
-                    build_system=regInfo.build_system,
+                    build_system=regInfo.build_system, # 100% make this an enum
                     build_command=regInfo.build_command,
                     library=regInfo.library,
                     save_assembly=regInfo.save_assembly,
@@ -125,6 +127,23 @@ class DBManager:
                 )
                 session.add(res)
                 session.flush()
+                
+            query_repo = select(RepoDO)
+            repos: list[RepoDO] = session.execute(query_repo)
+            status_ = []
+            for repo in repos:
+                repo: RepoDO
+                # logging.info("Adding buildopt %s, repo is %s", build_system, repo[0].build_system)
+                if regInfo.build_system in repo[0].build_system or regInfo.build_system == "all":
+                    new_status = Status(
+                        repo_id=repo[0].id,
+                        build_opt_id=res.id
+                    )
+                    status_.append(new_status)
+            session.bulk_save_objects(status_)
+            session.commit()    
+                
+            
             if not res.id:
                 raise ValueError("Failed to create build opt ")
             return res.id
@@ -399,6 +418,8 @@ class DBManager:
         with Session(self.engine) as session:
             # looking for if a repo exists
             try:
+                
+                
                 repo = RepoDO(**repos_msg)
                 # t_prev = time.time()
                 session.add(repo)
@@ -421,9 +442,11 @@ class DBManager:
                             _s.repo_id = repo.id
                             session.add(_s)
                 session.commit()
-            except:
-                logger.warning(
-                    "Something went wrong. This should be fixed. Likely a duplicate key")
+            except IntegrityError as e:
+                logger.error("Duplicate Key Error in insert project. Known and need to be fixed. project skipped for now")
+            except Exception as e:
+                logger.error(
+                    f"Something else when wrong inserting project: {e}")
         return 1
 
     # Used in coordinator

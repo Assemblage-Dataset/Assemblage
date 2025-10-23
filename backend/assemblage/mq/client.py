@@ -85,10 +85,7 @@ class Connection:
         conn_params = pika.ConnectionParameters(
             host=self.mq_host, port=self.mq_port,
             connection_attempts=self.connection_attempts, retry_delay=self.retry_delay,
-            heartbeat=self.heartbeat, blocked_connection_timeout=self.timeout, credentials=credentials)
-        
-        self.conn = pika.BlockingConnection(conn_params)
-        
+            heartbeat=self.heartbeat, blocked_connection_timeout=self.timeout, credentials=credentials)        
         attempt = 0
         while auto_retry: 
             try:
@@ -133,8 +130,12 @@ class Connection:
             if not self.chan or self.chan.is_closed:
                 raise Exception(f"Channel is closed, cannot create queue on {self}")
             self.chan.queue_declare(queue=queue.name, durable=True)
-            self.queues[queue.name] = queue
             logger.info(f"Created queue: {queue} on {self}")
+            if queue.exchange_name and queue.routing_key:
+                logger.debug(f"Binding routing key {queue.routing_key }  and exchagne {queue.exchange_name}")
+                self.chan.queue_bind(queue.name, queue.exchange_name, queue.routing_key)
+            self.queues[queue.name] = queue
+
             return queue
         except Exception as e:
             logger.error(f"Failed to create queue {queue} on {self} - {e} ")
@@ -172,7 +173,7 @@ class Connection:
         # self.ensure_connection()
         try:
             self.chan.basic_publish(exchange=exchange,
-                                    routing_key=queue.name,
+                                    routing_key=queue.routing_key,
                                     body=msg,
                                     properties=pika.BasicProperties(delivery_mode=PERSISTENT_DELIVERY_MODE,
                                                                     reply_to=reply_to,
@@ -201,11 +202,14 @@ class Connection:
             logger.critical(e)
 
     def close(self):
-        if self.conn and self.conn.is_open:
-            self.chan.close()
-            self.conn.close()
-        self.conn = None
-        self.chan = None
+        try:
+            if self.chan and self.chan.is_open:
+                self.chan.close()
+            if self.conn and self.conn.is_open:
+                self.conn.close()
+        finally:
+            self.conn = None
+            self.chan = None
 
 class MessageClient:
     ''' a rabbit mq wrapper for all different worker 

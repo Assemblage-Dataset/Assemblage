@@ -447,6 +447,9 @@ class Scraper(BasicWorker):
         '''Acquires repository information and sends it to coordinator on "scrape" queue until task completed
            Scraper does not listen to instructions from coordindator for this, so do not need to use the handler
            and consume
+           
+           Idea for both scraper ctrl and this. Have coordiantor send message also of when it wants to recieve repos it it has
+           
 
         '''
 
