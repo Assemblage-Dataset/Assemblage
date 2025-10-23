@@ -46,13 +46,14 @@ if __name__ == "__main__":
         case WorkerType.Builder:
             settings = BuilderSettings()
             logging.basicConfig(format="%(asctime)s %(levelname)s:%(message)s", datefmt="%Y-%m-%d %H:%M:%S", level=settings.logLevel)
-            builder = Builder(settings=settings, opt_id=0)
+            builder = Builder(settings=settings)
             builder.run()
             # call start builder
         case WorkerType.Scraper:
             settings = ScraperSettings()
             #print(settings.dict())
             scraper = Scraper(settings=settings, workerid=0)
+            logging.basicConfig(format="%(asctime)s %(levelname)s:%(message)s", datefmt="%Y-%m-%d %H:%M:%S", level=settings.logLevel) # if i could figure out how to set this in the config that would be much better but alas. no
             scraper.run()
             # call start scraper
 

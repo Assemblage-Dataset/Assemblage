@@ -14,7 +14,6 @@ class WorkerType(str, Enum):
     Coordinator = "coordinator"
     Builder = "builder"
     Scraper = "scraper"
-    Scraper = "scraper"
     
 
 class BuildStatus(str, Enum):

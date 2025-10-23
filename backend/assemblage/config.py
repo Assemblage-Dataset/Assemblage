@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import Any, Literal
 from pydantic_settings import BaseSettings
 from pydantic import computed_field, Field
@@ -6,7 +7,7 @@ import os
 import socket
 import logging
 
-from assemblage.consts import RuntimeEnv
+from assemblage.consts import RuntimeEnv, ScrapeSource
 
 # set pika to only log warnings. otherwise it gets noisy - maybe this can be removed with better try except on all pika ops
 logging.getLogger("pika").setLevel(logging.WARNING)
@@ -59,10 +60,10 @@ class ScraperSettings(AssemblageSettings):
     """
     #git_token: str = Field(..., env="GITHUB_TOKEN")   # ideal, with dotenv
     git_token: str = Field(os.getenv("GITHUB_TOKEN"))   # not lovin' this, but it DOES prevent dotenv dependency
-    start_time: int = Field(os.getenv("SCRAPE_START_TIME"))
-    end_time: int = Field(os.getenv("SCRAPE_END_TIME"))
-    interval: int = Field(os.getenv("SCRAPE_INTERVAL"))
-    source: str = Field(os.getenv("SCRAPE_DATASOURCE"))
+    start_time: int = Field(os.getenv("SCRAPE_START_TIME", default=int(datetime.now(timezone.utc).timestamp()))) # default is now
+    end_time: int = Field(os.getenv("SCRAPE_END_TIME", int(datetime.now(timezone.utc).timestamp())-60*60*24*31*12))# default is now - 1 year ish
+    interval: int = Field(os.getenv("SCRAPE_INTERVAL", 14400))
+    source: ScrapeSource = Field(os.getenv("SCRAPE_DATASOURCE", default=ScrapeSource.GITHUB))
 
 
 class BuilderSettings(AssemblageSettings):
