@@ -125,10 +125,6 @@ class DBManager:
                 )
                 session.add(res)
                 session.flush()
-
-            if assign_to_unset: 
-                stmt = update(Status).where(Status.build_opt == None).values(build_opt_id = res.id)
-                session.execute(stmt)
             if not res.id:
                 raise ValueError("Failed to create build opt ")
             return res.id
