@@ -136,10 +136,10 @@ class BuildStrategy:
         """ post process hook  """
         pass
 
-class DefaultBuildStrategy(BuildStrategy):
+class LinuxBuildStrategy(BuildStrategy):
 
-    def __init__(self, compiler, save_assembly: bool, tmp_dir="/tmp", num_p_job=16,):
-        super().__init__(compiler, save_assembly)
+    def __init__(self, compiler, language: str, save_assembly: bool, tmp_dir="/tmp", num_p_job=16,):
+        super().__init__(compiler, language=language, save_assembly=save_assembly)
 
         self.tmp_dir = tmp_dir
         self.num_p_job = num_p_job
@@ -153,7 +153,9 @@ class DefaultBuildStrategy(BuildStrategy):
             self.output_dir_uid = 0
             self.output_dir_gid = 0
 
-
+    def _get_compiler_version(self)->str:
+        return "1.0"   # placeholder
+      
     def parse_github_name(self, url):
         if url.endswith(".git"):
             url = url[:-4]
@@ -299,10 +301,10 @@ class DefaultBuildStrategy(BuildStrategy):
         return out.decode() + err.decode(), return_code
 
 
-class WindowsDefaultStrategy(DefaultBuildStrategy):
-    
-    def __init__(self, compiler, save_assembly: bool, tmp_dir="C:/Windows/Temp", num_p_job=16,):
-        super().__init__(compiler, save_assembly)
+class WindowsDefaultStrategy(BuildStrategy):
+    # compiler should be an enum of supported...
+    def __init__(self, compiler: str, language: str, save_assembly: bool, tmp_dir="C:/Windows/Temp", num_p_job=16,):
+        super().__init__(compiler, language=language, save_assembly=save_assembly)
         self.tmp_dir = tmp_dir
         self.num_p_job = num_p_job
         # this is not great, i dont like it but for now itll have to do

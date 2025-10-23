@@ -5,6 +5,7 @@ Yihao Sun
 
 from dataclasses import dataclass
 import logging
+import time
 from typing import Callable
 import pika
 from pika.adapters.blocking_connection import BlockingChannel, BlockingConnection
@@ -69,10 +70,11 @@ class Connection:
         self.chan: BlockingChannel | None = None  #  actually stores the MQ shcnanel
         # is this connection producing or consuming ( could be useful to differentiate)
         self.queues: dict[str,MQQueue] = {}
+        
     def __str__(self):
         return f"Connection: {self.conn_name}" # channel/connection named the same typically
 
-    def connect(self):
+    def connect(self, auto_retry: bool = True, retry_attempts: int | None = 10):
 
         if self.conn and self.conn.is_open:
             return self.conn
@@ -82,8 +84,29 @@ class Connection:
             host=self.mq_host, port=self.mq_port,
             connection_attempts=self.connection_attempts, retry_delay=self.retry_delay,
             heartbeat=self.heartbeat, blocked_connection_timeout=self.timeout, credentials=credentials)
+        
         self.conn = pika.BlockingConnection(conn_params)
-        return self.conn
+        
+        attempt = 0
+        while auto_retry: 
+            try:
+                self.conn = pika.BlockingConnection(conn_params)
+                if self.conn.is_open:
+                    return self.conn
+            except pika.exceptions.AMQPConnectionError as e:
+                logger.error(f"Failed to create connection {self}. RabbitMQ connection error: {e}")
+            except Exception as e:
+                print(f"Failed to create connection: {self}. Unexpected error: {e}")
+            attempt += 1
+            if not auto_retry:
+                break
+            if retry_attempts is not None and attempt >= retry_attempts:
+                logger.error(f"Connection {self} failed. Maximum retry attempts ({retry_attempts}) reached.")
+                break
+            else: 
+                break
+        raise ConnectionError(f"Failed to connect on {self} to RabbitMQ {self.host}")
+
 
     def create_channel(self):
         '''

@@ -4,21 +4,24 @@ Database access management
 Yihao Sun
 """
 
-#import datetime
+# import datetime
+from contextlib import contextmanager
 import inspect
-#import random
+# import random
 import time
 import logging
+from typing import Any, Generator
 
-#import sqlalchemy.exc
+# import sqlalchemy.exc
+from assemblage.mq.messages import BuilderRegIn
 from sqlalchemy import select, update, create_engine, func, or_, inspect
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.expression import desc, true
-#from sqlalchemy.sql import Insert
+# from sqlalchemy.sql import Insert
 
 from assemblage.database.models import BuildDO, BuildOpt, RepoDO, Status
 from assemblage.consts import BuildStatus, SUPPORTED_LANGUAGE, CloneStatus
-#from typing import Tuple
+# from typing import Tuple
 
 
 logger = logging.getLogger(__name__)
@@ -29,16 +32,16 @@ class DBManager:
         TODO: Depreciate this
     """
 
-    def __init__(self, db_addr): 
+    def __init__(self, db_addr):
         # create the DB manager, init called when Coordinator first __init__ to start the db
         self.engine = create_engine(db_addr, echo=False,
                                     pool_pre_ping=True,
                                     connect_args={'connect_timeout': 100})
         # if init and not self._check_db_exists():
         #     init_clean_database(db_addr)
- 
+
     # Only used in bootstrap.py
-    def tables_exist(self)->bool:
+    def tables_exist(self) -> bool:
         '''
         only of use on first start up when the database has not been initialised
 
@@ -50,7 +53,87 @@ class DBManager:
             inspector = inspect(conn)
             tables = inspector.get_table_names()
             return len(tables) > 0
-            
+
+    @contextmanager
+    def get_session(self) -> Generator[Session, Any, None]:# -> Generator[Any, Any, None]:
+        '''
+        Creates an interator. Dont need to call commit on every session now. this handles it
+        '''
+        with Session(self.engine) as session:
+            try:
+                yield session
+                session.commit()
+            except Exception as e:
+                logger.error(f"Something went wrong in the session. Rolling back... exec={e}")
+                session.rollback()
+            finally:
+                session.close()
+
+    def register_build_opt(self, regInfo: BuilderRegIn, assign_to_unset: bool = True) -> int:
+        '''
+        Retrive or create a build option from a builder registering
+        will match exactly every field or a new one is created
+        If it matches an exisitng one that is disabled, then it enables it
+        Setting the bool assign_to_unset will also then apply this build option to every project scraped without a 
+        build option assigned yet ( defaults to true)
+
+        self.name: str = name
+        self.uuid: str = uuid
+        self.compiler: str = compiler
+        self.compiler_version: str = compiler_version
+        self.language: str = language
+        self.save_assembly: bool = save_assembly
+        self.platform: str = platform
+        '''
+        with self.get_session() as session:
+            filters = []
+            attrs = [
+                ('platform', BuildOpt.platform),
+                ('language', BuildOpt.language),
+                ('compiler', BuildOpt.compiler_name),
+                ('compiler_flag', BuildOpt.compiler_flag),
+                ('compiler_version', BuildOpt.compiler_version),
+                ('build_system', BuildOpt.build_system),
+                ('build_command', BuildOpt.build_command),
+                ('library', BuildOpt.library),
+                ('save_assembly', BuildOpt.save_assembly),
+            ]
+            # sql alchemy gets funny with none values so creating filters now
+            for attr_name, column in attrs:
+                value = getattr(regInfo, attr_name)
+                if value is not None:
+                    filters.append(column == value)
+            query = select(BuildOpt).where(*filters)
+
+            res  = session.execute(query).scalar_one_or_none()
+            if res:
+                if not res.enable:
+                    res.enable = True
+            else:
+                res = BuildOpt(
+                    platform=regInfo.platform,
+                    language=regInfo.language,
+                    compiler_name=regInfo.compiler,
+                    compiler_flag=regInfo.compiler_flag,
+                    compiler_version=regInfo.compiler_version,
+                    build_system=regInfo.build_system,
+                    build_command=regInfo.build_command,
+                    library=regInfo.library,
+                    save_assembly=regInfo.save_assembly,
+                    enable=True
+
+                )
+                session.add(res)
+                session.flush()
+
+            if assign_to_unset: 
+                stmt = update(Status).where(Status.build_opt == None).values(build_opt_id = res.id)
+                session.execute(stmt)
+            if not res.id:
+                raise ValueError("Failed to create build opt ")
+            return res.id
+
+# new code. above to be copied out of this dir eventually into ../database
     def shutdown(self):
         """ Close DB connection """
         self.engine.dispose()
@@ -72,7 +155,8 @@ class DBManager:
     def find_one_undisasmed_bin(self):
         """ pop first binary haven't run ddisasm """
         with Session(self.engine) as session:
-            query = select(BuildDO).where(BuildDO.disassembled == False).limit(1)
+            query = select(BuildDO).where(
+                BuildDO.disassembled == False).limit(1)
             result = session.execute(query)
             return result[0][0]
 
@@ -210,8 +294,8 @@ class DBManager:
     #             for _r in result:
     #                 yield _r
 
-
     # Used in coordinator
+
     def update_repo_status(self, url=None, opt_id=None, status_id=None, build_time=-1,
                            build_status=None, build_msg='', clone_status=None,
                            clone_msg='', commit_hexsha=''):
@@ -304,8 +388,8 @@ class DBManager:
     #         session.commit()
     #     return 1
 
-
     # Used in bootstrap and coordinator
+
     def insert_repos(self, repos_msg, cascade=True, repoonly=False):
         """
         Query repo to build on command
@@ -318,7 +402,7 @@ class DBManager:
         """
         with Session(self.engine) as session:
             # looking for if a repo exists
-            try: 
+            try:
                 repo = RepoDO(**repos_msg)
                 # t_prev = time.time()
                 session.add(repo)
@@ -341,8 +425,9 @@ class DBManager:
                             _s.repo_id = repo.id
                             session.add(_s)
                 session.commit()
-            except: 
-                logger.warning("Something went wrong. This should be fixed. Likely a duplicate key")
+            except:
+                logger.warning(
+                    "Something went wrong. This should be fixed. Likely a duplicate key")
         return 1
 
     # Used in coordinator
@@ -372,11 +457,12 @@ class DBManager:
         insert build option into BuildOpt table for repo contain certain build system&language
         """
         with Session(self.engine) as session:
-            stmt = select(BuildOpt).where(BuildOpt.compiler_name == compiler_name)  # Adjust field as needed
+            stmt = select(BuildOpt).where(BuildOpt.compiler_name ==
+                                          compiler_name)  # Adjust field as needed
             opt = session.execute(stmt).scalar_one_or_none()
-            
-            if not opt: 
-                opt  = BuildOpt()
+
+            if not opt:
+                opt = BuildOpt()
                 opt.id = id
                 opt.platform = platform
                 opt.language = language
@@ -387,7 +473,7 @@ class DBManager:
                 opt.library = library
                 opt.enable = enable
                 session.add(opt)
-                
+
             query_repo = select(RepoDO)
             repos = session.execute(query_repo)
             status_ = []

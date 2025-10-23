@@ -31,7 +31,7 @@ class BuildOpt(SQLModel, table=True):
     build_system: str = Field(max_length=255, default="")
     build_command: str = Field(max_length=255, default="")
     library: str = Field(max_length=255, default="")
-    save_assemblage: bool = False
+    save_assembly: bool = False
     enable: bool = False
     statuses: list["Status"] = Relationship(back_populates="build_opt")
     

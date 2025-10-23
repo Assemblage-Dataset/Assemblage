@@ -1,4 +1,5 @@
 import json
+import platform
 
 class MQMsg:
     def __init__(self):
@@ -32,15 +33,20 @@ class BuilderRegIn(MQMsg):
     Sent from Builder worker to Coordinator on first start up
     '''
     def __init__(self, name: str, uuid: str, compiler: str,
-                 compiler_version: str, 
-                 language: str, save_assembly):
+                 compiler_version: str, library: str,
+                 language: str, save_assembly: bool, platform: str, compiler_flag: str, build_command: str, build_system: str):
         super().__init__()
         self.name: str = name
         self.uuid: str = uuid
         self.compiler: str = compiler
         self.compiler_version: str = compiler_version
+        self.library = library
         self.language: str = language
         self.save_assembly: bool = save_assembly
+        self.platform: str = platform
+        self.compiler_flag = compiler_flag
+        self.build_command: str = build_command
+        self.build_system: str = build_system
 
 class BuilderRegOut(MQMsg):
     '''
