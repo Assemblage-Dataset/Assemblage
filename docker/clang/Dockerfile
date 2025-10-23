@@ -27,6 +27,8 @@ RUN export AWS_SHARED_CREDENTIALS_FILE=/root/.aws/credentials
 
 ENV CC='clang'
 ENV CXX='clang++'
+ENV COMPILER="clang"
+ENV LANGUAGE="c++"
 
 RUN echo '2:clang' >> /conf
 

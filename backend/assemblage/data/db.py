@@ -44,7 +44,7 @@ class DBManager:
     def tables_exist(self) -> bool:
         '''
         only of use on first start up when the database has not been initialised
-
+        do we want them auto creating if the len == 0?
         Returns:
             bool: returns true if any tables exist
         '''

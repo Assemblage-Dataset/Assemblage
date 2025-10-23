@@ -26,17 +26,9 @@ from assemblage.consts import (AWS_AUTO_REBOOT_PREFIX,
 
 from assemblage.config import CoordinatorSettings
 from assemblage.mq.messages import BuilderRegIn, BuilderRegOut
-from ..database.models import BuildOpt
 
 
-# TODO move to config?
-logging.basicConfig(
-    format="%(asctime)s %(levelname)s:%(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-    level=logging.INFO
-)
 logger = logging.getLogger(__name__)
-
 
 def stop_the_world_excepthook(args):
     """ 
