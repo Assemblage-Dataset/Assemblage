@@ -56,5 +56,8 @@ RUN export AWS_SHARED_CREDENTIALS_FILE=/root/.aws/credentials
 
 ENV CC 'gcc'
 ENV CXX 'g++'
+ENV COMPILER="gcc"
+ENV LANGUAGE="c++"
+
 
 RUN echo '1:gcc' >> /conf

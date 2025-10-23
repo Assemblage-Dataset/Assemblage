@@ -13,8 +13,10 @@ from pika.exchange_type import ExchangeType
 from pika.spec import PERSISTENT_DELIVERY_MODE
 
 
-logger = logging.getLogger(__name__)
 
+
+# this reduces a lot of errors
+logger = logging.getLogger(__name__)
 
 @dataclass
 class MQQueue:
@@ -96,7 +98,7 @@ class Connection:
             except pika.exceptions.AMQPConnectionError as e:
                 logger.error(f"Failed to create connection {self}. RabbitMQ connection error: {e}")
             except Exception as e:
-                print(f"Failed to create connection: {self}. Unexpected error: {e}")
+                logger.error(f"Failed to create connection: {self}. Unexpected error: {e}")
             attempt += 1
             if not auto_retry:
                 break
@@ -104,6 +106,8 @@ class Connection:
                 logger.error(f"Connection {self} failed. Maximum retry attempts ({retry_attempts}) reached.")
                 break
             else: 
+                logger.info(f"Retrying to connect on {self} in {self.retry_delay}s")
+                time.sleep(self.retry_delay)
                 break
         raise ConnectionError(f"Failed to connect on {self} to RabbitMQ {self.host}")
 
