@@ -105,8 +105,7 @@ class Builder(BasicWorker):
         if self.platform == "linux":
             # maybe filter by language here too
             self.build_strategy = LinuxBuildStrategy(
-                # rename to linux build strat?
-                
+                # rename to linux build strat? and add compilier flags but eh for now
                 compiler=settings.compiler, language = settings.language, save_assembly=settings.save_assembly)
         elif self.platform == "windows":
             self.build_strategy = WindowsDefaultStrategy(
@@ -131,8 +130,8 @@ class Builder(BasicWorker):
         Then it waits for a response and then sets the build option queue to listen on.
         '''
         try:
-            conn: Connection = self.mq_client.create_connection(conn_name=f'{self.name}-ctrl',
-                                                                channel_name=f'{self.name}-ctrl',
+            conn: Connection = self.mq_client.create_connection(conn_name=f'{self}-ctrl',
+                                                                channel_name=f'{self}-ctrl',
                                                         )
             conn.create_channel()
             coordinator_queue = MQQueue(
@@ -188,10 +187,11 @@ class Builder(BasicWorker):
             Also todo: figure out other commands/how to differentiate if necessary
         """
 
-        msg = BuilderRegOut.from_json(body)
-        self.opt_id = msg.build_opt_id
-        self.build_opt_queue = MQQueue(msg.build_opt_queue, callback=self.job_handler)
-        
+        msg = BuilderRegOut.from_json(body) # modifiy to include routing key + exhange name?
+        self.opt_id = msg.build_opt_id 
+        self.build_opt_queue = MQQueue(msg.build_opt_queue, callback=self.job_handler, exchange_name='build_opt', routing_key=f'builder.{self.opt_id}')
+        ch.basic_ack(delivery_tag=method.delivery_tag)
+
         logger.info(f"Build {self.name} registered, waking job thread")
         self.sleep_job_event.set()
         
@@ -224,8 +224,8 @@ class Builder(BasicWorker):
         original_files = []
         for filename in glob.iglob(clone_dir + '**/**', recursive=True):
             original_files.append(filename)
-        # respond to events before we pause to build
-        self.mq_client.conn.process_data_events()
+        # respond to events before we pause to build - not sure we need this so removed. better to process with ctrl and pause
+        # ch.connection.process_data_events() 
         self.send_msg(repo=task,
                       kind='clone',
                       url=task['url'],
@@ -235,7 +235,7 @@ class Builder(BasicWorker):
             logger.info("Clone SUCCESS, Attempting to build `%s`", url)
             compiler_flag = self.compiler_flag
             build_mode = self.build_mode
-            compiler_version = self.compiler_version
+            compiler_version = self.build_strategy.compiler_version
             platform = self.library
             if 'commit_hexsha' in task:
                 commit_hexsha = task['commit_hexsha']
@@ -296,7 +296,7 @@ class Builder(BasicWorker):
 
         if self.platform == 'linux':
             bin_found = {
-                f for f in find_elf_bin(clone_dir, self.save_assembly)
+                f for f in find_elf_bin(clone_dir, self.build_strategy.save_assembly)
                 if (os.path.exists(f))
             }
             if not bin_found:
@@ -386,7 +386,7 @@ class Builder(BasicWorker):
                     build_system=self.build_system,
                     
                 ).to_json()                
-                ctrl_conn = self.mq_client.get_connection(f'{self.name}-ctrl')
+                ctrl_conn = self.mq_client.get_connection(f'{self}-ctrl')
                 if ctrl_conn:
                     ctrl_conn.send_msg(queue_name=kind, msg=ret,
                                                                 #    exchange='builder.register',
@@ -395,7 +395,7 @@ class Builder(BasicWorker):
                     return
                 else:
                     # do we want to create if does not exist then send message?
-                    raise Exception(f"Connection {self.name}-ctrl does not exist")
+                    raise Exception(f"Connection {self}-ctrl does not exist")
                 
             case InputQueue.CLONE:
                 ret = {
@@ -433,7 +433,7 @@ class Builder(BasicWorker):
                 logger.warning(
                     "Unknown type of message %s, not sending... ", kind)
                 return
-        job_conn = self.mq_client.get_connection(f'{self.name}-builder')
+        job_conn = self.mq_client.get_connection(f'{self}')
         if job_conn: 
             job_conn.send_msg(kind, json.dumps(ret))
         else: 

@@ -14,6 +14,7 @@ import json
 # from concurrent.futures import ThreadPoolExecutor
 import pika
 import boto3  # Only used in AWS mode
+from pika.exchange_type import ExchangeType
 
 from assemblage.data.db import DBManager
 from collections import Counter
@@ -136,7 +137,7 @@ class Coordinator:
                 self.rabbitmq_host, self.rabbitmq_port)
             # we use topics to control which worker gets which jobs.
             thread_channel.exchange_declare(
-                exchange='build_opt', exchange_type='topic')
+                exchange='build_opt', exchange_type=ExchangeType.topic)
             thread_channel.confirm_delivery()
             tasks = self.db_man.find_status_by_status_code(
                 build_opt_id=build_opt_id,
@@ -191,7 +192,7 @@ class Coordinator:
 
                 # Publish this task, to be picked up by a worker with the appropriate build option settings
                 thread_channel.basic_publish(
-                    exchange='build_opt', routing_key=f'worker.{build_opt.id}',
+                    exchange='build_opt', routing_key=f'builder.{build_opt.id}',
                     body=json.dumps(clone_req),
                     properties=pika.BasicProperties(delivery_mode=2))
 
@@ -209,7 +210,7 @@ class Coordinator:
                 thread_channel = create_channel(
                     self.rabbitmq_host, self.rabbitmq_port)
                 thread_channel.exchange_declare(
-                    exchange='build_opt', exchange_type='topic')
+                    exchange='build_opt', exchange_type=ExchangeType.topic)
                 thread_channel.confirm_delivery()
                 # db_man = DBManager(self.db_addr)
 
@@ -395,7 +396,7 @@ class Coordinator:
         after_time = time.time()
         logger.info("Build system counter %s", Counter(
             x['build_system'] for x in recv_msg))
-        logger.info("Saved %s/%s in %ss", successes,
+        logger.info("Saved %s/%s repos in %ss", successes,
                     len(recv_msg), int(after_time-prev_time))
 
     def recv_binary(self, ch, method, _props, body):
@@ -490,7 +491,7 @@ class Coordinator:
             new_build_opt_t.start()
             # add to list for management. maybe ( do we need some mutex on this...)
             self.t_dispatch_map[build_opt_id] = new_build_opt_t
-            logger.info(f"Now running {alive_count} build opt threads")
+            logger.info(f"Now running {alive_count+1} build opt threads")
 
     def __daemon(self):
         while True:
@@ -507,7 +508,6 @@ class Coordinator:
 
         while True:
             try:
-                logger.info("Checking if tables exist")
                 if self.db_man.tables_exist():
                     break
                 else:
