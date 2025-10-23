@@ -120,6 +120,9 @@ class Coordinator:
         self.cluster_name = settings.cluster_name  # Appears to be used only in AWS mode for reboots
         self.reproduce_mode = settings.reproduce_mode
         self.aws_flag = settings.aws_mode
+        
+        
+        self.t_dispatch_list = [] # list of dispatched job threads
         # setup rpc service
         
 
@@ -467,6 +470,14 @@ class Coordinator:
         )
 
         ch.basic_ack(delivery_tag=method.delivery_tag)
+        
+        logger.info("boot dispatching thread for %d ...", build_opt_id)
+        new_build_opt_t = threading.Thread(
+                target=self.__dispatch_task, args=(build_opt_id, True))
+        new_build_opt_t.start()
+        self.t_dispatch_list.append(new_build_opt_t) # add to list for management. maybe ( do we need some mutex on this...)
+        
+        
 
     def __daemon(self):
         while True:
@@ -498,14 +509,14 @@ class Coordinator:
                 
             
         
-        t_dispatch_list = []
+        
         logger.info("%s dispatching thread starts", len(
             [x for x in self.db_man.all_enabled_build_options()]))
         
         # Create a dispatch thread for each build option configuration
         for build_opt in self.db_man.all_enabled_build_options():
             logger.info("boot dispatching thread for %d ...", build_opt.id)
-            t_dispatch_list.append(threading.Thread(
+            self.t_dispatch_list.append(threading.Thread(
                 target=self.__dispatch_task, args=(build_opt.id, True)))
 
 
@@ -530,7 +541,7 @@ class Coordinator:
         with open("/tmp/setup_complete.txt", "w") as f:
             f.write("done")
         t_clean_task.start()
-        for t_dispatch in t_dispatch_list:
+        for t_dispatch in self.t_dispatch_list:
             t_dispatch.start()
         t_recycle_worker.start()
         t_consume_clone.start()
