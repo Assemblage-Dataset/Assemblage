@@ -14,7 +14,7 @@ class RuntimeEnv(str,Enum):
 class WorkerType(str, Enum):
     Coordinator = "coordinator"
     Builder = "builder"
-    Scraper = "Scraper"
+    Scraper = "scraper"
     
 
 class BuildStatus(str, Enum):
@@ -101,7 +101,7 @@ SCRAPER_REPO_BUNDLESIZE = 10
 SCRAPER_PAGE_SIZE = 100 
 # how many repos per page of search results for the crawler. Unlikely to require changing
 
-OLDEST_PERMITTED_DATA_TIMESTAMP = 1262322000 # (Jan 1 2010) crawler terminates when it's reached this timestamp
+#OLDEST_PERMITTED_DATA_TIMESTAMP = 1262322000 # (Jan 1 2010) crawler terminates when it's reached this timestamp
 GITHUB_REPO_URL = "https://api.github.com/search/repositories"
 SCRAPER_REQUEST_TIMEOUT_S = 10 # timeout when waiting for HTTP request reply in seconds
 
@@ -138,3 +138,8 @@ class QueueName(str, Enum):
     def __str__(self):
         # to ensure compatibility with the areas where I haven't replaced channels with enums yet
         return self.value 
+# Used by the scraper to name a valid source of data (currently just from GitHub)
+class ScrapeSource(str, Enum):
+    GITHUB = "github"
+    def __str__(self):
+        return self.name

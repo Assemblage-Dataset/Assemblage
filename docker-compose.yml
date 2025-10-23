@@ -58,8 +58,7 @@ services:
     build:
       context: .
       dockerfile: docker/gcc/Dockerfile
-    command: python3 /app/scripts/workers/example_cluster.py --type scraper --id 0
-    #command: python3 /app/scripts/start_worker.py --type scraper
+    command: python3 /app/scripts/start_worker.py --type scraper --id 0
     healthcheck:
       test: [ "CMD", "bash", "-c", "pgrep -f start_worker.py > /dev/null" ]
       interval: 10s
