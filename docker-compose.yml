@@ -8,7 +8,7 @@ services:
     environment:
       - POSTGRES_USER=assemblage # do not change!
     volumes:
-      - db-data:/var/lib/postgresql/data
+      - db-data:/var/lib/postgresql
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "assemblage"]
       interval: 10s
@@ -43,14 +43,14 @@ services:
     env_file:
       - secrets.env
     healthcheck:
-      test: [ "CMD", "bash", "-c", "pgrep -f example_cluster.py > /dev/null && test -f /tmp/setup_complete.txt" ]
+      test: [ "CMD", "bash", "-c", "pgrep -f start_worker.py > /dev/null && test -f /tmp/setup_complete.txt" ]
       interval: 10s
       start_period: 5s
-    # depends_on:
-    #   database:
-    #     condition: service_healthy
-    #   rabbitmq:
-    #     condition: service_healthy
+    depends_on:
+      database:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     deploy:
       restart_policy:
         condition: on-failure
@@ -67,7 +67,7 @@ services:
       interval: 10s
       start_period: 5s
     depends_on:
-      coordinator:
+      rabbitmq:
         condition: service_healthy
     environment:
       PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
@@ -89,9 +89,9 @@ services:
     build:
       context: .
       dockerfile: docker/clang/Dockerfile
-    command: python3 /app/scripts/workers/example_cluster.py --type builder --id 0
+    command: python3 /app/scripts/start_worker.py
     healthcheck:
-      test: [ "CMD", "bash", "-c", "pgrep -f example_cluster.py > /dev/null" ]
+      test: [ "CMD", "bash", "-c", "pgrep -f start_worker.py > /dev/null" ]
       interval: 10s
       start_period: 5s
     environment:
@@ -102,6 +102,9 @@ services:
       name: clang-builder
     env_file:
       - secrets.env
+    depends_on:
+      rabbitmq: 
+        condition: service_healthy
     deploy:
       restart_policy:
         condition: on-failure
@@ -109,6 +112,8 @@ services:
       - ./backend:/app 
       - builder-data:/binaries
     mem_limit: 250g
+
+
 volumes:
   builder-data:
     driver: local
