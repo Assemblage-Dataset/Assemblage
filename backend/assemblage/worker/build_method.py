@@ -11,6 +11,8 @@ Yihao
 from abc import abstractclassmethod, abstractmethod
 import os
 import glob
+from pathlib import Path
+import platform
 import re
 import logging
 import subprocess
@@ -32,7 +34,7 @@ from botocore.exceptions import ClientError
 from setuptools import msvc
 
 from assemblage.worker.profile import AWSProfile
-from assemblage.consts import BuildStatus, PDBJSONNAME, BINPATH, CloneStatus
+from assemblage.consts import BuildStatus, PDBJSONNAME, BINPATH, CloneStatus, SupportedPlatform
 from assemblage.windows.parsers.proj import Project
 from assemblage.windows.parsers.sln import Solution
 from assemblage.analyze.analyze import get_build_system
@@ -87,74 +89,16 @@ def clean(folders):
 
 
 class BuildStrategy:
-    def __init__(self, compiler: str, language: str, save_assembly: bool = False):
+    def __init__(self, compiler: str, language: str, platform: SupportedPlatform, save_assembly: bool = False):
         self.save_assembly = save_assembly
         self.compiler: str = compiler
         self.language: str = language
         self.compiler_version = self._get_compiler_version()
+        self.platform = platform
         
     @abstractmethod
     def _get_compiler_version(self)->str:
         pass    
-        
-    @abstractclassmethod
-    def clone_data(self, repo) -> Tuple[bytes, int, str]:
-        """
-        callback function of how a repository is cloned to local
-        TODO: add definition of repo here
-        clone_dir: build process later will use data in this dir, please clone to this dir
-        return :
-        (msg, status_code, clone_dir) : (bytes, int, str) 
-        check BuildStatus for status code
-        """
-
-    @abstractclassmethod
-    def run_build(self, repo, target_dir, build_mode, library, optimization, slnfile,
-                  platform, compiler_version) -> Tuple[bytes, bytes, int]:
-        """ callback function to build command, return...."""
-
-    @abstractclassmethod
-    def pre_build(self, Platform,
-                  Buildmode,
-                  Target_dir,
-                  Optimization,
-                  _tmp_dir,
-                  VC_Version,
-                  Favorsizeorspeed="",
-                  Inlinefunctionexpansion="",
-                  Intrinsicfunctions="") -> Tuple[bytes, int, str]:
-        """
-        pre processing hook
-        return:
-        (message, status_code, filename)
-        """
-
-    @abstractclassmethod
-    def post_build_hook(self,
-                        dest_binfolder, build_mode, library, repoinfo, toolset,
-                        optimization, commit_hexsha):
-        """ post process hook  """
-        pass
-
-class LinuxBuildStrategy(BuildStrategy):
-
-    def __init__(self, compiler, language: str, save_assembly: bool, tmp_dir="/tmp", num_p_job=16,):
-        super().__init__(compiler, language=language, save_assembly=save_assembly)
-
-        self.tmp_dir = tmp_dir
-        self.num_p_job = num_p_job
-        # this is not great, i dont like it but for now itll have to do
-        try: 
-            output_dir_perms = os.stat("/binaries")
-            self.output_dir_uid = output_dir_perms.st_uid
-            
-            self.output_dir_gid = output_dir_perms.st_gid
-        except:  # again messy but should be fixable once the extry point is better as cooridnator wont initlise this class
-            self.output_dir_uid = 0
-            self.output_dir_gid = 0
-
-    def _get_compiler_version(self)->str:
-        return "1.0"   # placeholder
       
     def parse_github_name(self, url):
         if url.endswith(".git"):
@@ -172,21 +116,7 @@ class LinuxBuildStrategy(BuildStrategy):
         if len(parts) >= 2:
             return parts[0], parts[1]
         return None, None
-    def own_dir(self, dir: str):
-               # # see above for how i feel about this
-        for root, dirs, files in os.walk(dir):
-            for d in dirs:
-                try: 
-                    os.chown(os.path.join(root, d), self.output_dir_uid, self.output_dir_gid)
-                except:
-                    pass
-            for f in files:
-                try: 
-                    os.chown(os.path.join(root, f), self.output_dir_uid, self.output_dir_gid)
-                except:
-                    pass# this is from a weird edge case where there was a symbolic link pushed to git
-        os.chown(dir, self.output_dir_uid, self.output_dir_gid)
-
+        
     def clone_data(self, repo):
         """ Clone repo """
 
@@ -198,18 +128,18 @@ class LinuxBuildStrategy(BuildStrategy):
         if not project_name:
             project_name = os.urandom(8).hex()
 
-        git_user_dir = f"/binaries/projects/{user_name}"
+        git_user_dir = Path(f"{BINPATH}/projects/{user_name}")
         os.makedirs(f"{git_user_dir}", exist_ok=True)
 
         clone_dir = f'{git_user_dir}/{project_name}'
         
         out, err, exit_code = cmd_with_output(
-            f'git clone --recursive {repo["url"]} {clone_dir}/', 600, "linux")
+            f'git clone --recursive {repo["url"]} {clone_dir}/', 600, self.platform)
 
         logger.info(f"cloned to : git clone --recursive {repo["url"]} {clone_dir}/")
 
         # # see above for how i feel about this
-        self.own_dir(git_user_dir) # ensure all projects 
+        self.own_dir(git_user_dir) # ensure all projects owned 
         # # maybe try add more verbose errors?
         return_code = CloneStatus.SUCCESS if exit_code == 0 else CloneStatus.FAILED
         if return_code == CloneStatus.FAILED:
@@ -225,6 +155,76 @@ class LinuxBuildStrategy(BuildStrategy):
       
 
         return out, return_code, clone_dir
+    @abstractmethod
+    def own_dir(self, dir: str):
+        '''
+        Required when running on linux, as running docker as non root, while container is running as root
+        get errors when trying to access directory of projects
+        '''
+    @abstractmethod
+    def run_build(self, repo, target_dir, build_mode, library, optimization, slnfile,
+                  platform, compiler_version) -> Tuple[bytes, bytes, int]:
+        """ callback function to build command, return...."""
+
+    @abstractmethod
+    def pre_build(self, Platform,
+                  Buildmode,
+                  Target_dir,
+                  Optimization,
+                  _tmp_dir,
+                  VC_Version,
+                  Favorsizeorspeed="",
+                  Inlinefunctionexpansion="",
+                  Intrinsicfunctions="") -> Tuple[bytes, int, str]:
+        """
+        pre processing hook
+        return:
+        (message, status_code, filename)
+        """
+
+    @abstractmethod
+    def post_build_hook(self,
+                        dest_binfolder, build_mode, library, repoinfo, toolset,
+                        optimization, commit_hexsha):
+        """ post process hook  """
+        pass
+
+class LinuxBuildStrategy(BuildStrategy):
+
+    def __init__(self, compiler, language: str, save_assembly: bool, platform: SupportedPlatform, tmp_dir="/tmp", num_p_job=16,):
+        assert platform == SupportedPlatform.LINUX # check this build strat is running on right platform
+        super().__init__(compiler, language=language, save_assembly=save_assembly, platform=platform)
+
+        self.tmp_dir = tmp_dir
+        self.num_p_job = num_p_job
+        # this is not great, i dont like it but for now itll have to do
+        try: 
+            output_dir_perms = os.stat(BINPATH)
+            self.output_dir_uid = output_dir_perms.st_uid
+            
+            self.output_dir_gid = output_dir_perms.st_gid
+        except:  # again messy but should be fixable once the extry point is better as cooridnator wont initlise this class
+            self.output_dir_uid = 0
+            self.output_dir_gid = 0
+
+    def _get_compiler_version(self)->str:
+        return "1.0"   # placeholder
+
+    def own_dir(self, dir: str):
+               # # see above for how i feel about this
+        for root, dirs, files in os.walk(dir):
+            for d in dirs:
+                try: 
+                    os.chown(os.path.join(root, d), self.output_dir_uid, self.output_dir_gid)
+                except:
+                    pass
+            for f in files:
+                try: 
+                    os.chown(os.path.join(root, f), self.output_dir_uid, self.output_dir_gid)
+                except:
+                    pass# this is from a weird edge case where there was a symbolic link pushed to git
+        os.chown(dir, self.output_dir_uid, self.output_dir_gid)
+
 
     def run_build(self,
                   repo,
@@ -303,8 +303,9 @@ class LinuxBuildStrategy(BuildStrategy):
 
 class WindowsDefaultStrategy(BuildStrategy):
     # compiler should be an enum of supported...
-    def __init__(self, compiler: str, language: str, save_assembly: bool, tmp_dir="C:/Windows/Temp", num_p_job=16,):
-        super().__init__(compiler, language=language, save_assembly=save_assembly)
+    def __init__(self, compiler: str, language: str, save_assembly: bool, platform: SupportedPlatform, tmp_dir="C:/Windows/Temp", num_p_job=16):
+        assert platform == SupportedPlatform.WINDOWS 
+        super().__init__(compiler, language=language, save_assembly=save_assembly, platform=platform)
         self.tmp_dir = tmp_dir
         self.num_p_job = num_p_job
         # this is not great, i dont like it but for now itll have to do
