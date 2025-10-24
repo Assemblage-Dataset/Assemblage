@@ -18,6 +18,7 @@ No yield
 
 2025
 Mia Kerchen
+Alex Duly
 '''
 
 from abc import abstractclassmethod
@@ -33,14 +34,14 @@ import requests
 
 from assemblage.config import ScraperSettings
 from assemblage.worker.base_worker import BasicWorker
-from assemblage.worker.mq import MessageClient
-#from assemblage.analyze.tokenchecker import TokenChecker
+from assemblage.mq.client import MQQueue, MessageClient, Connection
+# from assemblage.analyze.tokenchecker import TokenChecker
 from assemblage.analyze.analyze import get_build_system
 from assemblage.consts import (
-    SCRAPER_TIMESTAMP_RECORDFILE_PATH, SCRAPER_PAGE_SIZE, 
+    SCRAPER_TIMESTAMP_RECORDFILE_PATH, SCRAPER_PAGE_SIZE,
     GITHUB_REPO_URL, SCRAPER_REQUEST_TIMEOUT_S, SCRAPER_REPO_BUNDLESIZE,
-    SCRAPER_RATE_INTERVAL, RATE_LIMIT_WAIT, SECONDARY_RATE_LIMIT_WAIT, RATE_LIMIT_UPDATE_INTERVAL,
-    ScrapeSource, GithubTimeOrder
+    SCRAPER_RATE_INTERVAL, RATE_LIMIT_WAIT, SECONDARY_RATE_LIMIT_WAIT, RATE_LIMIT_UPDATE_INTERVAL, InputQueue,
+    ScrapeSource, GithubTimeOrder, WorkerType
 )
 
 logger = logging.getLogger(__name__)
@@ -72,21 +73,24 @@ class DataSource(object):
     def __init__(self, build_sys_callback) -> None:
         self.build_sys_callback = build_sys_callback
         self.record_file = SCRAPER_TIMESTAMP_RECORDFILE_PATH
-        
+
         # TODO: replace with checking that DB has the appropriate data
-        if not os.path.exists(self.record_file):  
+        if not os.path.exists(self.record_file):
             index = SCRAPER_TIMESTAMP_RECORDFILE_PATH.rfind("/")
-            os.makedirs(SCRAPER_TIMESTAMP_RECORDFILE_PATH[:index], exist_ok=True) # TODO: this is a VERY rough fix to ensure that binaries folder exists
+            # TODO: this is a VERY rough fix to ensure that binaries folder exists
+            os.makedirs(
+                SCRAPER_TIMESTAMP_RECORDFILE_PATH[:index], exist_ok=True)
             with open(self.record_file, "w") as record_file:
                 now = int(time.time())
-                json.dump({"latest_crawled":now}, record_file, indent=4)
-                logger.info("No saved scrape time data found at %s. Starting from (seconds since epoch) %s...", self.record_file, now)
+                json.dump({"latest_crawled": now}, record_file, indent=4)
+                logger.info(
+                    "No saved scrape time data found at %s. Starting from (seconds since epoch) %s...", self.record_file, now)
 
-    # TODO: I want to remove this but ONLY once we know that won't break anything else for sure. 
+    # TODO: I want to remove this but ONLY once we know that won't break anything else for sure.
     def init():
         '''Deprecated'''
-        logger.warning("DataSource.init() should not be called: init() functionality has been rolled into __init__, delete the line of code that uses this")
-
+        logger.warning(
+            "DataSource.init() should not be called: init() functionality has been rolled into __init__, delete the line of code that uses this")
 
     @abstractclassmethod
     def fetch_data(self):
@@ -96,7 +100,7 @@ class DataSource(object):
     def data_filter(self, repo,  files):
         """ take a repo and files in repo, check if its valid or need to be discarded"""
         return True
-    
+
     @abstractclassmethod
     def get_request(self, query, payload=None, headers=None, proxy=None):
         '''Gets the requested query, handling rate limits as necessary.'''
@@ -105,10 +109,10 @@ class DataSource(object):
     # NOTE: Currently unused.
     def update_time_record(self, interval):
         """ Updates SCRAPER_TIMESTAMP_RECORDFILE_PATH with how far back the scraper has looked on its data source (i.e. GitHub)"""
-
         while os.path.exists(self.record_file+'.lock'):
             time.sleep(0.25)
-            logger.debug("Scraper waiting for lock to be released (if there is only one scraper, this will never happen)")
+            logger.debug(
+                "Scraper waiting for lock to be released (if there is only one scraper, this will never happen)")
         f = open(self.record_file+'.lock', 'w')
         f.close()
 
@@ -118,36 +122,36 @@ class DataSource(object):
                 crawled = json.load(record_file)
                 oldtime = int(crawled["latest_crawled"])
         except:
-            logger.info("Scraper record file not found or incorrect format, resetting it to defaults...")
+            logger.info(
+                "Scraper record file not found or incorrect format, resetting it to defaults...")
             oldtime = int(time.time())
-        
+
         # Update the timestamp to search earlier (default is querylap, which is 4 hours)
-        newtime = oldtime - interval 
+        newtime = oldtime - interval
         with open(self.record_file, "w") as record_file:
-            json.dump({"latest_crawled":newtime}, record_file, indent=4)
+            json.dump({"latest_crawled": newtime}, record_file, indent=4)
         try:
             os.remove(self.record_file+'.lock')
         except:
             pass
         return oldtime
 
-    def __iter__(self): # iterate over self data
+    def __iter__(self):  # iterate over self data
         for r, fs in self.fetch_data():
             if self.data_filter(r, fs):
                 yield r
-
-
 
 
 class GithubRepositories(DataSource):
     """A data generator which uses the GitHub REST API to scrape repository data."""
 
     # TODO: crawl_time_interval can be replaced with const
-    def __init__(self, parent_id:int, git_token:str, qualifiers:set, crawl_time_start:int, crawl_time_end:int, crawl_time_interval:int,
-                 proxies:list, sort=GithubTimeOrder.CREATED, build_sys_callback=get_build_system) -> None:
+    def __init__(self, parent_id: int, git_token: str, qualifiers: set, crawl_time_start: int, crawl_time_end: int, crawl_time_interval: int,
+                 proxies: list, sort=GithubTimeOrder.CREATED, build_sys_callback=get_build_system) -> None:
         super().__init__(build_sys_callback)
-        
-        self.parent_workerid = parent_id # allows the logger to note that this data generator belongs to the parent crawler
+
+        # allows the logger to note that this data generator belongs to the parent crawler
+        self.parent_workerid = parent_id
 
         # github authentication configuration
         self.set_token(git_token)
@@ -161,9 +165,9 @@ class GithubRepositories(DataSource):
         self.crawl_time_end = crawl_time_end
 
         # Determine format of query
-        self.qualifiers = qualifiers # a set containing the qualifiers to be used in the query
-        self.sort = sort # sort-by method
-
+        # a set containing the qualifiers to be used in the query
+        self.qualifiers = qualifiers
+        self.sort = sort  # sort-by method
 
     def random_proxy(self):
         '''Returns a random proxy from the data source's defined proxies.'''
@@ -174,10 +178,10 @@ class GithubRepositories(DataSource):
                 'https': random.choice(self.proxies),
             }
 
-
     def _process_repo_message(self, repo):
         '''Given a single entry in the GitHub search results, requests the repository page, extracts the files, and returns select metadata with the files.'''
-        time.sleep(SCRAPER_RATE_INTERVAL) # prevents scraper from monopolizing resources
+        time.sleep(
+            SCRAPER_RATE_INTERVAL)  # prevents scraper from monopolizing resources
         url = repo["url"]
         default_branch = repo["default_branch"]
         # Accesses the repository itself in order to extract files
@@ -186,22 +190,23 @@ class GithubRepositories(DataSource):
         except Exception as err:
             logger.info(err)
             return None, None
-        repo_page = json.loads(page.text) # Contains the actual structure of the code within this repository
-        files_list = [] # used for breaking the repo page into files
-        files = [] # will be returned
+        # Contains the actual structure of the code within this repository
+        repo_page = json.loads(page.text)
+        files_list = []  # used for breaking the repo page into files
+        files = []  # will be returned
 
-        if "tree" in repo_page.keys(): # Ensure that a tree was found
+        if "tree" in repo_page.keys():  # Ensure that a tree was found
             files_list = repo_page["tree"]
         else:
             return None, None
-        
+
         # Break the repository down into files
         for record in files_list:
             if "path" in record.keys():
                 files.append(record["path"])
         build_tool = self.build_sys_callback(files)
         name = repo["name"]
-        #url = repo["url"]
+        # url = repo["url"]
         language = repo["language"]
         owner_id = repo["owner"]["id"]
         description = repo["description"] or ""
@@ -223,39 +228,46 @@ class GithubRepositories(DataSource):
 
     def fetch_data(self):
         '''Requests search result pages from GitHub's Search API, then extracts the repository information from each result on each search page.'''
-        if self.crawl_time_start < self.crawl_time_end: # if the crawltime is older than permitted
-            logger.error("Warning: start crawl time %s is earlier than the oldest permitted timestamp %s.")
+        if self.crawl_time_start < self.crawl_time_end:  # if the crawltime is older than permitted
+            logger.error(
+                "Warning: start crawl time %s is earlier than the oldest permitted timestamp %s.")
         crawl_time = self.crawl_time_start
 
-        while crawl_time > self.crawl_time_end: # continue until oldest files have been read
-            #crawl_time = self.update_time_record(self.crawl_time_interval) # Update the cache so it's now QUERYLAP ms earlier 
+        while crawl_time > self.crawl_time_end:  # continue until oldest files have been read
+            # crawl_time = self.update_time_record(self.crawl_time_interval) # Update the cache so it's now QUERYLAP ms earlier
             # TODO: still working on properly setting up the crawl time. for now it restarts from the env variable every time
 
             # Build the query to GitHub's servers, according to the last visited data as stored in SCRAPER_TIMESTAMP_RECORDFILE_PATH
-            query_time_start = datetime.utcfromtimestamp(crawl_time).isoformat()
-            query_time_end = datetime.utcfromtimestamp(crawl_time + self.crawl_time_interval).isoformat()
+            query_time_start = datetime.utcfromtimestamp(
+                crawl_time).isoformat()
+            query_time_end = datetime.utcfromtimestamp(
+                crawl_time + self.crawl_time_interval).isoformat()
             qualifier_str = " ".join(self.qualifiers)
             query_s = f'{self.sort.value}:{query_time_start}+08:00..{query_time_end}+08:00 {qualifier_str}'
 
             logger.debug("Crawler query is ' %s ' (GitHub)", query_s)
-            total_query_results_count = 999 # needs to be big enough to run the while loop once
+            total_query_results_count = 999  # needs to be big enough to run the while loop once
             payload = {'q': query_s,
                        'per_page': SCRAPER_PAGE_SIZE, 'page': -1}
-            # The payload contains the query plus some metadata. Metadata is needed because a separate request will be made 
+            # The payload contains the query plus some metadata. Metadata is needed because a separate request will be made
             # for each page of GitHub search results (page1, page2, etc.), and we keep this payload persistent so we can
-            # get a new page but maintain the rest of the query. 
+            # get a new page but maintain the rest of the query.
             while payload['page'] * SCRAPER_PAGE_SIZE < total_query_results_count:
                 try:
                     payload['page'] += 1
-                    
-                    r, request_response_time = self.get_request(GITHUB_REPO_URL, payload=payload)
-                    logger.info("Crawler request respond in %ss", request_response_time)
+
+                    r, request_response_time = self.get_request(
+                        GITHUB_REPO_URL, payload=payload)
+                    logger.info("Crawler request respond in %ss",
+                                request_response_time)
 
                     rdict = json.loads(r.text)
                     # Break down the search query
                     if 'items' in rdict.keys():
-                        total_query_results_count = min(rdict["total_count"], total_query_results_count) # update total query results count in case it has changed
-                        logger.info("Successful search result obtained by crawler %s. GitHub responded with %s repos", 
+                        # update total query results count in case it has changed
+                        total_query_results_count = min(
+                            rdict["total_count"], total_query_results_count)
+                        logger.info("Successful search result obtained by crawler %s. GitHub responded with %s repos",
                                     self.parent_workerid, total_query_results_count)
                         # logger.info("Crawler query: %s ... ; page: %s; GitHub responded with %s repos",
                         #             query_time_start[:-7], payload['page'], total_query_results_count) # not sure about the query_time_start[:-7] line
@@ -264,37 +276,38 @@ class GithubRepositories(DataSource):
                             dt, fs = self._process_repo_message(repo)
                             # dt is metadata, fs is all files in repo
                             if dt and fs:
-                                logger.info("Crawler %s got %s", self.parent_workerid, repo["name"])
+                                logger.info("Crawler %s got %s",
+                                            self.parent_workerid, repo["name"])
                                 # logger.info("Obtained metadata: %s", str(dt))
                                 # logger.info("Obtained files %s", str(fs))
                                 yield dt, fs
                 except Exception as err:
                     logger.info(err)
-            
+
             # Once all pages are exhausted, move the crawl time earlier
             crawl_time -= self.crawl_time_interval
             crawl_time = int(crawl_time)
         logger.info("scraping finished!")
 
-
-
-    def get_request(self, query:str, payload:set=None, headers="default", proxy:str="random"):
+    def get_request(self, query: str, payload: set = None, headers="default", proxy: str = "random"):
         '''Gets the requested query, handling rate limits as necessary.
         query:str, payload:set, headers:set, proxy:str
         returns request, time_elapsed.
         Default behavior is to send the query with an empty payload, self.auth_headers as headers, and a random proxy.'''
 
-        # There are two separate rate limits, for search api (from GITHUB_REPO_URL) and standard api (in process_repo_message). 
+        # There are two separate rate limits, for search api (from GITHUB_REPO_URL) and standard api (in process_repo_message).
         # Unauthenticated: 10/minute for search api, 60/hour for standard api
         # Authenticated: 60/minute for search api, 5000/hour for standard api (~8 req/min)
 
-        use_headers:set = self.auth_headers if (headers=="default") else headers
-        use_proxy:str = self.random_proxy() if (proxy=="random") else proxy
+        use_headers: set = self.auth_headers if (
+            headers == "default") else headers
+        use_proxy: str = self.random_proxy() if (proxy == "random") else proxy
 
         start_request_time = float(time.time())
-        r = requests.get(query, payload, headers=use_headers, proxies=use_proxy, timeout=SCRAPER_REQUEST_TIMEOUT_S)
+        r = requests.get(query, payload, headers=use_headers,
+                         proxies=use_proxy, timeout=SCRAPER_REQUEST_TIMEOUT_S)
         receipt_time = float(time.time())
-        
+
         # The rest of the function checks for rate limits and other potential issues.
 
         try:
@@ -302,57 +315,64 @@ class GithubRepositories(DataSource):
             remaining_rate_limit = int(r.headers["X-RateLimit-Remaining"])
             rate_limit_reset_time = float(r.headers["X-RateLimit-Reset"])
         except:
-            logger.warning("Error when converting rate limit headers into values.")
+            logger.warning(
+                "Error when converting rate limit headers into values.")
             # something has gone quite wrong, so don't bother giving fallback values
-            
-        #logger.info("Rate limit is %s, %s remaining: resets in %ss", total_rate_limit, remaining_rate_limit, round(rate_limit_reset_time-float(time.time()),2 ))
+
+        # logger.info("Rate limit is %s, %s remaining: resets in %ss", total_rate_limit, remaining_rate_limit, round(rate_limit_reset_time-float(time.time()),2 ))
 
         # Send an error if the response is generally bad.
-        if not r.ok: 
-            logger.error("Crawler request was UNSUCCESSFUL (status code %s). Query: %s", r.status_code, query)
+        if not r.ok:
+            logger.error(
+                "Crawler request was UNSUCCESSFUL (status code %s). Query: %s", r.status_code, query)
             if remaining_rate_limit == 0:  # Provides a hint for a common cause of bad requests.
-                logger.error("No requests remaining on rate limit.") 
-            
+                logger.error("No requests remaining on rate limit.")
+
             return None, start_request_time-receipt_time
-        
-        ## Check for important messages and warn the user. These need to be handled manually. 
+
+        # Check for important messages and warn the user. These need to be handled manually.
         rdict = json.loads(r.text)
         if "message" in rdict.keys():
             if "rate limit" in rdict["message"]:
                 if "secondary" in rdict["message"]:
-                    logger.warning("Secondary rate limit hit -- this indicates that GitHub has identified unusual scraper activity. Scraping should be paused.")
-                    self.sleep_and_update(SECONDARY_RATE_LIMIT_WAIT, reason="Secondary rate limit reached")
+                    logger.warning(
+                        "Secondary rate limit hit -- this indicates that GitHub has identified unusual scraper activity. Scraping should be paused.")
+                    self.sleep_and_update(
+                        SECONDARY_RATE_LIMIT_WAIT, reason="Secondary rate limit reached")
 
             if "Bad credentials" in rdict["message"]:
-                logger.warning("Bad credentials: the authentication token provided is not valid. Please provide a valid token.")
+                logger.warning(
+                    "Bad credentials: the authentication token provided is not valid. Please provide a valid token.")
                 logger.info("Scraping will proceed unauthenticated.")
                 self.set_token(None)
                 return self.get_request(query=query, payload=payload, headers=headers, proxy=proxy)
 
-        
         # Check rate limits, handle according to https://docs.github.com/en/rest/using-the-rest-api/
         if remaining_rate_limit == 0:
             time_to_reset = rate_limit_reset_time - float(time.time())
-            logger.info("Rate limit (%s) reached. Crawler %s will sleep for %ss. ", 
+            logger.info("Rate limit (%s) reached. Crawler %s will sleep for %ss. ",
                         total_rate_limit, self.parent_workerid, round(time_to_reset, 2))
             self.sleep_and_update(time_to_reset, reason="Rate limit reached")
             # TODO: swap tokens or proxies?
 
-        if "Retry-After" in r.headers:  
+        if "Retry-After" in r.headers:
             # handles circumstances where rate limit has not been respected: wait for Retry-After seconds
             retry_time = 0
             try:
                 retry_time = int(r.headers["Retry-After"])
             except:
-                logger.warning("Warning: was not able to extract Retry-After time from headers (text is '%s')", r.headers["Retry-After"])
+                logger.warning(
+                    "Warning: was not able to extract Retry-After time from headers (text is '%s')", r.headers["Retry-After"])
                 retry_time = RATE_LIMIT_WAIT
 
             # just in case the scraper has already slept for remaining_rate_limit time
             time_since_response = int(time.time()) - receipt_time
             time_to_sleep = max(0, retry_time - time_since_response)
             if time_to_sleep > 0:
-                logger.info("Github refused connection due to rate limit, sleeping for %ss", round(time_to_sleep, 2))
-                self.sleep_and_update(time_to_sleep, reason="Rate limit reached (2)")
+                logger.info("Github refused connection due to rate limit, sleeping for %ss", round(
+                    time_to_sleep, 2))
+                self.sleep_and_update(
+                    time_to_sleep, reason="Rate limit reached (2)")
                 return self.get_request(query, payload=payload, headers=headers, proxy=proxy)
 
         elapsed_time = round(float(time.time()) - start_request_time, 2)
@@ -367,8 +387,10 @@ class GithubRepositories(DataSource):
         while (time_left > 0):
             time.sleep(min(RATE_LIMIT_UPDATE_INTERVAL, duration))
             time_left -= RATE_LIMIT_UPDATE_INTERVAL
-            logger.info("Crawler %s will wake up in %ss (%sh). Reason for sleep: %s", self.parent_workerid, round(time_left, 2), round(time_left/60, 1), reason)
-        logger.info("Crawler %s done sleeping, resuming activity...", self.parent_workerid)
+            logger.info("Crawler %s will wake up in %ss (%sh). Reason for sleep: %s",
+                        self.parent_workerid, round(time_left, 2), round(time_left/60, 1), reason)
+        logger.info("Crawler %s done sleeping, resuming activity...",
+                    self.parent_workerid)
 
     def set_token(self, token):
         ''' Sets the token and updates headers accordingly. '''
@@ -381,9 +403,7 @@ class GithubRepositories(DataSource):
             self.auth_headers = {
                 "Authorization": f"Bearer {self.token}",
             }
-        #self.token_checker = TokenChecker(self.auth_headers)
-
-
+        # self.token_checker = TokenChecker(self.auth_headers)
 
 
 class Scraper(BasicWorker):
@@ -391,14 +411,15 @@ class Scraper(BasicWorker):
     scraper class, wrap all github operation
     '''
 
-    #def __init__(self, rabbitmq_port, rabbitmq_host, workerid, data_source: DataSource):
+    # def __init__(self, rabbitmq_port, rabbitmq_host, workerid, data_source: DataSource):
     def __init__(self, settings: ScraperSettings, workerid: int):
         # TODO: refactor here make scraper connect to gRPC control port
         logger.info("Booting crawler %s", workerid)
-        super().__init__(settings.mq_host, settings.mq_port, "scraper",
-                         -1)
+        super().__init__(settings.name, settings.mq_host,
+                         settings.mq_port, worker_type=WorkerType.Scraper)
         if settings.source != ScrapeSource.GITHUB:
-            logger.error("Scrape source %s not defined: defaulting to setting up a GitHub source", settings.source)
+            logger.error(
+                "Scrape source %s not defined: defaulting to setting up a GitHub source", settings.source)
 
         # as GitHub is the only valid source right now, we fallback to this in any case.
         # If more sources are added, go ahead and put this into its own if statement.
@@ -408,54 +429,56 @@ class Scraper(BasicWorker):
             qualifiers={
                 "language:c++"
             },   # TODO extract somewhere
-            crawl_time_start = settings.start_time,
-            crawl_time_end = settings.end_time,
-            crawl_time_interval = settings.interval,
-            proxies = []  # TODO extract somewhere
+            crawl_time_start=settings.start_time,
+            crawl_time_end=settings.end_time,
+            crawl_time_interval=settings.interval,
+            proxies=[]  # TODO extract somewhere
         )
-        self.data_source.parent_workerid = workerid 
-        
+        self.data_source.parent_workerid = workerid
+
         # Set up messaging
         self.rabbitmq_port = settings.mq_port
         self.rabbitmq_host = settings.mq_host
-        self.mq_client = MessageClient(settings.mq_host, settings.mq_port, 'scraper')
-        self.mq_client.add_output_queues([{
-            'name': 'scrape',
-            'params': {
-                'durable': True
-            }
-        }])
         self.repocache = []
         self.workerid = workerid
         self.total_repos_sent = 0
 
-    def run(self):
-        '''Acquires repository information and sends it to coordinator on "scrape" queue until task completed'''
-        logger.info("Scraper %s start", self.workerid)
-        self.repocache = [] 
-        for repo in iter(self.data_source):
-            self.repocache.append(repo)
-            
-            # once enough repositories have been collected, send a message to the coordinator
-            if len(self.repocache) >= SCRAPER_REPO_BUNDLESIZE:
-                try:
-                    self.mq_client.send_kind_msg(
-                        'scrape', json.dumps(self.repocache))
+    def run_job(self):
+        '''Acquires repository information and sends it to coordinator on "scrape" queue until task completed
+           Scraper does not listen to instructions from coordindator for this, so do not need to use the handler
+           and consume
+           
+           Idea for both scraper ctrl and this. Have coordiantor send message also of when it wants to recieve repos it it has
+           
+
+        '''
+
+        try:
+            logger.info("Scraper %s start", self.workerid)
+            conn: Connection = self.mq_client.create_connection(conn_name=f'{self}',
+                                                                channel_name=f'{self}')
+            conn.create_channel()
+            scrape_queue = MQQueue(
+                name=InputQueue.SCRAPE)  # should this be a class var?
+
+            conn.add_queue(scrape_queue)
+
+            self.repocache = []
+            for repo in iter(self.data_source):
+                self.repocache.append(repo)
+
+                # once enough repositories have been collected, send a message to the coordinator
+                if len(self.repocache) >= SCRAPER_REPO_BUNDLESIZE:
+                    # need to re add reducancy if message connection fails
+                    conn.send_msg(
+                        scrape_queue.name, json.dumps(self.repocache))
                     self.repocache = []
                     self.total_repos_sent += SCRAPER_REPO_BUNDLESIZE
                     logger.info("Scraper %s bundled and sent %s repos to coordinator. Total repos sent by this scraper: %s",
                                 self.workerid, SCRAPER_REPO_BUNDLESIZE, self.total_repos_sent)
-                except Exception as err:
-                    logger.info("Sending repos errored: %s", str(err))
-                    # Reopens the message queue
-                    self.mq_client = MessageClient(
-                        self.rabbitmq_host, self.rabbitmq_port, 'scraper')
-                    self.mq_client.add_output_queues([{
-                        'name': 'scrape',
-                        'params': {
-                            'durable': True
-                        }
-                    }])
 
-        logger.info("Crawler %s End Task", self.workerid)
-        os.remove(self.record_file) # deletes the last crawled time at conclusion of task
+            logger.info("Crawler %s End Task", self.workerid)
+            # deletes the last crawled time at conclusion of task
+            os.remove(self.record_file)
+        except Exception as e:
+            logger.error(f"Failed to Launch Scraper {self} - {e}")

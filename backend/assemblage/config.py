@@ -1,9 +1,16 @@
-from typing import Any
-from .consts import RuntimeEnv
+from datetime import datetime, timezone
+from typing import Any, Literal
 from pydantic_settings import BaseSettings
 from pydantic import computed_field, Field
-import platform
+from platform import machine, system
 import os
+import socket
+import logging
+
+from assemblage.consts import RuntimeEnv, ScrapeSource
+
+# set pika to only log warnings. otherwise it gets noisy - maybe this can be removed with better try except on all pika ops
+logging.getLogger("pika").setLevel(logging.WARNING)
 
 # dotenv.load_dotenv()
 
@@ -15,27 +22,14 @@ class AssemblageSettings(BaseSettings):
     runtime_env: RuntimeEnv = Field(default=RuntimeEnv.prod, env="ENV")
     mq_host: str = Field(default="rabbitmq", env="MQ_HOST")
     mq_port: int = Field(default=5672, env="MQ_PORT")
+    name: str = Field(default_factory=lambda: os.getenv(
+        "NAME") or socket.gethostname())
 
     @computed_field
     @property
-    def loggingConfig(self) -> dict[str, Any]:
-        log_level = 'DEBUG' if self.runtime_env == RuntimeEnv.dev else 'INFO'
-        return {
-            'version': 1,
-            'formatters': {'default': {
-                'format': '[%(asctime)s] %(levelname)s in %(module)s: %(message)s',
-            }},
-            'handlers': {'wsgi': {
-                'class': 'logging.StreamHandler',
-                'stream': 'ext://flask.logging.wsgi_errors_stream',
-                'formatter': 'default'
-            }},
-            'root': {
-                'level': log_level,
-                'handlers': ['wsgi']
-            }
-        }
-
+    def logLevel(self) -> Literal['DEBUG'] | Literal['INFO']:
+        # i would rather set using 
+        return 'DEBUG' if self.runtime_env == RuntimeEnv.dev else 'INFO'
 
 class CoordinatorSettings(AssemblageSettings):
     """
@@ -50,7 +44,7 @@ class CoordinatorSettings(AssemblageSettings):
     # extracted directly from coordinator
     reproduce_mode: int = Field(0)
     aws_mode: int = Field(0)
-    cluster_name:str = Field("ClusterName")
+    cluster_name: str = Field("ClusterName")
 
     mq_manage_port: int = Field(default=56723)
 
@@ -66,17 +60,24 @@ class ScraperSettings(AssemblageSettings):
     """
     #git_token: str = Field(..., env="GITHUB_TOKEN")   # ideal, with dotenv
     git_token: str = Field(os.getenv("GITHUB_TOKEN"))   # not lovin' this, but it DOES prevent dotenv dependency
-    start_time: int = Field(os.getenv("SCRAPE_START_TIME"))
-    end_time: int = Field(os.getenv("SCRAPE_END_TIME"))
-    interval: int = Field(os.getenv("SCRAPE_INTERVAL"))
-    source: str = Field(os.getenv("SCRAPE_DATASOURCE"))
+    start_time: int = Field(os.getenv("SCRAPE_START_TIME", default=int(datetime.now(timezone.utc).timestamp()))) # default is now
+    end_time: int = Field(os.getenv("SCRAPE_END_TIME", int(datetime.now(timezone.utc).timestamp())-60*60*24*31*12))# default is now - 1 year ish
+    interval: int = Field(os.getenv("SCRAPE_INTERVAL", 14400))
+    source: ScrapeSource = Field(os.getenv("SCRAPE_DATASOURCE", default=ScrapeSource.GITHUB))
 
 
 class BuilderSettings(AssemblageSettings):
     """
     Builder specific settings
+    This populates
     """
-    SAVE_ASSEMBLY: bool = Field(default=True, env="SAVE_ASSEMBLY")
-    # detect what platform ( linux, windows, darwin) teh builder is running on. for now just needed in builder 
-    platform: str = Field(default_factory=lambda: platform.system().lower()) 
-
+    save_assembly: bool = Field(
+        # possibly should be sent via command from coordinator to make it dynamic, but thats later...
+        default=True, env="SAVE_ASSEMBLY")
+    # detect what platform ( linux, windows, darwin) teh builder is running on. for now just needed in builder
+    # not quite perfect but should do for now    platform: str = Field(default_factory=lambda: platform.system().lower())
+    library: str = Field(
+        default_factory=lambda: "x64" if '64' in machine() else 'x86')
+    build_os: str = Field(default_factory=lambda: system().lower())
+    compiler: str
+    language: str

@@ -4,6 +4,8 @@ New Entry Point for Assemblage Functions
 
 '''
 import os
+import logging
+import logging.config
 import sys
 from assemblage.consts import WorkerType
 from assemblage.config import BuilderSettings, CoordinatorSettings, ScraperSettings
@@ -31,27 +33,27 @@ if __name__ == "__main__":
               ERROR: INVALID TYPE ENV VARIABLE SET. Options are {[value.value for value in WorkerType]}
               EXAMPLE: TYPE=coordinator
               ''')
-        sys.exit(1)
-    
+        sys.exit(1)    
+        
     match worker_type: 
         case WorkerType.Coordinator:
-            print("Starting Coordinator")
-            settings = CoordinatorSettings()
+            settings = CoordinatorSettings()         
+            # i dont particularly like this but the dict config isnt working...   
+            logging.basicConfig(format="%(asctime)s %(levelname)s:%(message)s", datefmt="%Y-%m-%d %H:%M:%S", level=settings.logLevel)
             coordinator = Coordinator(settings)
             coordinator.run()
             # call start coordinator
         case WorkerType.Builder:
-            print("Starting Builder")
             settings = BuilderSettings()
-            print(settings.runtime_env)
-            builder = Builder(settings=settings, opt_id=0)
+            logging.basicConfig(format="%(asctime)s %(levelname)s:%(message)s", datefmt="%Y-%m-%d %H:%M:%S", level=settings.logLevel)
+            builder = Builder(settings=settings)
             builder.run()
             # call start builder
         case WorkerType.Scraper:
-            print("Starting Scraper")
             settings = ScraperSettings()
             #print(settings.dict())
             scraper = Scraper(settings=settings, workerid=0)
+            logging.basicConfig(format="%(asctime)s %(levelname)s:%(message)s", datefmt="%Y-%m-%d %H:%M:%S", level=settings.logLevel) # if i could figure out how to set this in the config that would be much better but alas. no
             scraper.run()
             # call start scraper
 

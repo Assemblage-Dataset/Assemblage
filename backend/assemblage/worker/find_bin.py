@@ -8,13 +8,10 @@ import os
 from elftools.elf.elffile import ELFFile
 from elftools.common.exceptions import ELFError
 
-from assemblage.config import BuilderSettings
-
 logger = logging.getLogger(__name__)
 
 
-settings = BuilderSettings()
-def find_elf_bin(path: str) -> set:
+def find_elf_bin(path: str, save_assembly: bool) -> set:
     """ Find elf files and executables """
     logger.info(f"Finding elf files and executables in {path}")
     file_paths = set()
@@ -27,7 +24,7 @@ def find_elf_bin(path: str) -> set:
             if not os.path.exists(location):
                 continue
             try:
-                if location.endswith(('.s', '.ii', '.bc', '.S', '.obj')) and settings.SAVE_ASSEMBLY:
+                if location.endswith(('.s', '.ii', '.bc', '.S', '.obj')) and save_assembly:
                     file_paths.add(location)
                     continue
                 with open(location, 'rb') as f:

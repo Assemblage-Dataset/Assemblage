@@ -9,14 +9,14 @@ import logging
 
 
 # Logging configs
-logging.basicConfig(
-    level=logging.DEBUG,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.FileHandler("Assemblage_loader.log"),
-        logging.StreamHandler()
-    ]
-)
+# logging.basicConfig(
+#     level=logging.DEBUG,
+#     format="%(asctime)s [%(levelname)s] %(message)s",
+#     handlers=[
+#         logging.FileHandler("Assemblage_loader.log"),
+#         logging.StreamHandler()
+#     ]
+# )
 
 
 class DisposableLoader:

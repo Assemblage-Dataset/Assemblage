@@ -17,12 +17,12 @@ from tqdm import tqdm
 BUILD_FOLDER = "Builds"
 
 import logging
-logging.basicConfig(
-    format="%(asctime)s %(levelname)s:%(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-    level=logging.INFO
-)
-logging.getLogger().setLevel(logging.DEBUG)
+# logging.basicConfig(
+#     format="%(asctime)s %(levelname)s:%(message)s",
+#     datefmt="%Y-%m-%d %H:%M:%S",
+#     level=logging.INFO
+# )
+# logging.getLogger().setLevel(logging.DEBUG)
 
 def vcpkg_git_treverse(vcpkgpath, packagename, version):
     packagename = packagename.lower()

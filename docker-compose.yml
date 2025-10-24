@@ -8,7 +8,7 @@ services:
     environment:
       - POSTGRES_USER=assemblage # do not change!
     volumes:
-      - db-data:/var/lib/postgresql/data
+      - db-data:/var/lib/postgresql
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "assemblage"]
       interval: 10s
@@ -19,28 +19,30 @@ services:
     environment:
       RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: -rabbit consumer_timeout 900000
     healthcheck:
-      test: [ "CMD", "rabbitmq-diagnostics", "ping" ]
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 10s
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
+    ports:
+      - 5672:5672
 
   coordinator:
     image: assemblage-gcc:default
     build:
       context: .
       dockerfile: docker/gcc/Dockerfile
-    command: python3 /app/scripts/start_worker.py --type coordinator
-    #command: python3 /app/scripts/workers/example_cluster.py --type coordinator
     environment: # do not remove!!
-      TYPE: coordinator
       PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
+      PYTHONUNBUFFERED: 1
+      TYPE: coordinator
+      name: coordinator
     env_file:
       - secrets.env
     healthcheck:
-      test: [ "CMD", "bash", "-c", "pgrep -f example_cluster.py > /dev/null && test -f /tmp/setup_complete.txt" ]
+      test: [ "CMD", "bash", "-c", "pgrep -f start_worker.py > /dev/null && test -f /tmp/setup_complete.txt" ]
       interval: 10s
       start_period: 5s
     depends_on:
@@ -58,13 +60,12 @@ services:
     build:
       context: .
       dockerfile: docker/gcc/Dockerfile
-    command: python3 /app/scripts/start_worker.py --type scraper --id 0
     healthcheck:
       test: [ "CMD", "bash", "-c", "pgrep -f start_worker.py > /dev/null" ]
       interval: 10s
       start_period: 5s
     depends_on:
-      coordinator:
+      rabbitmq:
         condition: service_healthy
     environment:
       PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
@@ -86,18 +87,20 @@ services:
     build:
       context: .
       dockerfile: docker/clang/Dockerfile
-    command: python3 /app/scripts/workers/example_cluster.py --type builder --id 0
     healthcheck:
-      test: [ "CMD", "bash", "-c", "pgrep -f example_cluster.py > /dev/null" ]
+      test: [ "CMD", "bash", "-c", "pgrep -f start_worker.py > /dev/null" ]
       interval: 10s
       start_period: 5s
     environment:
       PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
-      name: builder_0
+      TYPE: builder
+      compiler: clang
+      language: c++
+      name: clang-builder
     env_file:
       - secrets.env
     depends_on:
-      coordinator: 
+      rabbitmq: 
         condition: service_healthy
     deploy:
       restart_policy:
@@ -106,6 +109,8 @@ services:
       - ./backend:/app 
       - builder-data:/binaries
     mem_limit: 250g
+
+
 volumes:
   builder-data:
     driver: local
