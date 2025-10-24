@@ -1,13 +1,14 @@
 # escape=`
 
 # Use the microsoft dotnet framework docker image
+# Use the microsoft dotnet framework docker image
 FROM mcr.microsoft.com/windows/servercore:ltsc2022
 # FROM mcr.microsoft.com/dotnet/framework/sdk:4.8-windowsservercore-ltsc2022
-
-
+WORKDIR C:/tools
 WORKDIR C:/tools
 # Restore the default Windows shell for correct batch processing.
 SHELL ["cmd", "/S", "/C"]
+
 
 ADD https://aka.ms/vs/17/release/vs_BuildTools.exe vs_buildtools.exe 
 # Install Build Tools with the Microsoft.VisualStudio.Workload.AzureBuildTools workload, excluding workloads and components with known issues.
@@ -94,8 +95,18 @@ RUN python.exe -m pip install --prefer-binary -r requirements.txt
 # COPY ./aws C:\Administrator\.aws
 
 # ENV AWS_CONFIG_FILE="C:\\Administrator\\.aws\\config"
-# ENV AWS_SHARED_CREDENTIALS_FILE="C:\\Administrator\\.aws\\credentials"
+# ENV AWS_SHARED_CREDENTIALS_FILE="C:\\Administrator\\.aws\\credentials"E
+ENV PYTHONPATH="C:\\app;"
+ENV COMPILER="MSVC"
+ENV LANGUAGE="c++"
+# maybe need to figure out adding ^^ to path via ps1 script ( so might need to add script in this folder to 
+# add that to path as then run python.exe etc)]
 
+
+ENTRYPOINT ["powershell", "-File", "C:\\app\\scripts\\start_windows_worker.ps1"]
 # Define the entry point for the docker container.
 # This entry point starts the developer command prompt and launches the PowerShell shell.
 # ENTRYPOINT ["C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\Tools\VsDevCmd.bat", "&&", "powershell.exe", "-NoLogo", "-ExecutionPolicy", "Bypass"]
+
+
+

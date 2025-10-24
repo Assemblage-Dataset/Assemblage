@@ -4,11 +4,11 @@ import os
 
 
 from assemblage.api.routers import admin, control
-from assemblage.config import Settings
+from assemblage.config import AssemblageSettings
 
 @lru_cache
 def get_settings():
-    return Settings()
+    return AssemblageSettings()
 
 
 app = FastAPI()

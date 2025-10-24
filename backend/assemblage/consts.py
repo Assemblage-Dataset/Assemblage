@@ -1,6 +1,5 @@
 """
 constants definitions
-
 """
 from enum import Enum
 import os
@@ -76,7 +75,7 @@ RATELIMIT_URL = "https://api.github.com/rate_limit"
 # Windows related constants
 LOG_FILE = "assemblage.log"
 if os.name=="nt":
-    BINPATH = "binaries"
+    BINPATH = "C:/binaries"
 else: 
     BINPATH = "/binaries"
 
@@ -131,14 +130,28 @@ IDLE_DISPATCH_INTERVAL = 5  # when no dispatches are found, how long to wait unt
 CLEAN_OVERTIME_INTERVAL = 600 
 AWS_REBOOT_SLEEP_INTERVAL = 1200
 
-class QueueName(str, Enum):
+'''
+For the context of the direction of queues. It is from the perspective of the coordinator
+i.e inputs for the cooordinator, will be outputs for the workers
+
+'''
+class InputQueue(str, Enum):
     CLONE = 'clone'
     SCRAPE = 'scrape'
     BUILD = 'build'
     BINARY = 'binary'
+    POST_ANALYSIS = 'post_analysis'
+    BUILD_REG = 'builder_registration'
     def __str__(self):
         # to ensure compatibility with the areas where I haven't replaced channels with enums yet
         return self.value 
+
+class OutputQueue(str, Enum):
+    BUILDER_CTRL = "builder_ctrl"
+    SCRAPER_CTRL = "scraper_ctrl"
+    BUILD_OPT = "build_opt" 
+    def __str__(self):
+        return self.value
 # Used by the scraper to name a valid source of data (currently just from GitHub)
 class ScrapeSource(str, Enum):
     GITHUB = "github"
