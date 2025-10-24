@@ -162,3 +162,7 @@ class ScrapeSource(str, Enum):
 class GithubTimeOrder(Enum):
     CREATED = "created"
     PUSHED = "pushed"
+    
+class SupportedPlatform(str,Enum):
+    WINDOWS = 'windows'
+    LINUX = 'linux'

@@ -106,10 +106,10 @@ class Builder(BasicWorker):
             # maybe filter by language here too
             self.build_strategy = LinuxBuildStrategy(
                 # rename to linux build strat? and add compilier flags but eh for now
-                compiler=settings.compiler, language = settings.language, save_assembly=settings.save_assembly)
+                compiler=settings.compiler, language = settings.language, save_assembly=settings.save_assembly, platform=self.platform)
         elif self.platform == "windows":
             self.build_strategy = WindowsDefaultStrategy(
-                compiler=settings.compiler, language = settings.language, save_assembly=settings.save_assembly)
+                compiler=settings.compiler, language = settings.language, save_assembly=settings.save_assembly, platform=self.platform)
         else:
             logger.error(
                 f"Running on invalid platform: {self.platform}. Options are Linux or Windows")
@@ -198,29 +198,30 @@ class Builder(BasicWorker):
         
     def job_handler(self, ch, method, _props, body):
         """
-        Callback for when we get a task request from a coordinator to build a project.
+        Callback for when we get a task request from a coordinator to build and clone/pull a project.
         """
         self.sleep_job_event.wait() # way to get the control thread to block 
-        
         task = json.loads(body)  # TODO: create type for this
+
         url = task['url']
         ch.basic_ack(method.delivery_tag)
         # check if this is an duplicate task
-        if time.time() - task['msg_time'] >= TASK_TIMEOUT_THRESHOLD:
-            logger.info("Found duplicate build (%s, %d)",
-                        task['url'], self.opt_id)
-            self.send_msg(repo=task,
-                          kind='clone',
-                          url=task['url'],
-                          status=BuildStatus.OUTDATED_MSG,
-                          msg="duplicate")
-            return
+        # if time.time() - task['msg_time'] >= TASK_TIMEOUT_THRESHOLD: # not sure on this. is this because of a lag between starting the builder and coordinator??
+        #     logger.info("Found duplicate build (%s, %d)",
+        #                 task['url'], self.opt_id)
+        #     self.send_msg(repo=task,
+        #                   kind='clone',
+        #                   url=task['url'],
+        #                   status=BuildStatus.OUTDATED_MSG,
+        #                   msg="duplicate")
+        #     return
 
         logger.info("Received a task to build %s at %s buildsys: %s",
                     url,
                     datetime.datetime.now().strftime("%H:%M:%S"), task['build_system'])
         clone_msg, clone_status, clone_dir = self.build_strategy.clone_data(
             task)
+        
         original_files = []
         for filename in glob.iglob(clone_dir + '**/**', recursive=True):
             original_files.append(filename)
