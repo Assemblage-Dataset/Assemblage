@@ -199,6 +199,7 @@ class LinuxBuildStrategy(BuildStrategy):
             project_name = os.urandom(8).hex()
 
         git_user_dir = f"/binaries/projects/{user_name}"
+        # if this fails, should catch and then its git pull not git clone as it already exists?(maybe check url too)
         os.makedirs(f"{git_user_dir}", exist_ok=True)
 
         clone_dir = f'{git_user_dir}/{project_name}'

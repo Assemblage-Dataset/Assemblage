@@ -95,7 +95,7 @@ class Coordinator:
         logger.info("Coordinator Init")
         self.rabbitmq_host = settings.mq_host
         self.rabbitmq_port = settings.mq_port
-        self.channel = create_channel(self.rabbitmq_host, self.rabbitmq_port)
+        self.channel = create_channel(self.rabbitmq_host, self.rabbitmq_port) # default channel. 
         # Do not use round-robin scheduling.
         self.channel.basic_qos(prefetch_count=1)
 
@@ -109,6 +109,10 @@ class Coordinator:
         self.channel.queue_declare(queue=InputQueue.SCRAPE, durable=True)
         # To receive results about binaries
         self.channel.queue_declare(queue=InputQueue.BINARY, durable=True)
+        
+        # declare the exchange - is accessible by all 
+        self.channel.exchange_declare(
+                exchange='build_opt', exchange_type=ExchangeType.topic)
         self.db_addr = settings.databaseURL
         # to do create better session management
         self.db_man = DBManager(self.db_addr)
@@ -136,8 +140,7 @@ class Coordinator:
             thread_channel = create_channel(
                 self.rabbitmq_host, self.rabbitmq_port)
             # we use topics to control which worker gets which jobs.
-            thread_channel.exchange_declare(
-                exchange='build_opt', exchange_type=ExchangeType.topic)
+
             thread_channel.confirm_delivery()
             tasks = self.db_man.find_status_by_status_code(
                 build_opt_id=build_opt_id,
@@ -145,7 +148,7 @@ class Coordinator:
                 build_status=BuildStatus.INIT,
                 limit=99999)
             logger.info(
-                "__dispatch_task started successfully, %s tasks are ready to be queued for dispatch", len(tasks))
+                "__dispatch_task started successfully, %s tasks are ready to be queued for dispatch on build_opt_%d", len(tasks), build_opt_id)
         except:
             logger.info("__dispatch_task start fail")
             exit(1)
