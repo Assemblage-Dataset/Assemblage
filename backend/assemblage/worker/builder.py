@@ -106,10 +106,11 @@ class Builder(BasicWorker):
             # maybe filter by language here too
             self.build_strategy = LinuxBuildStrategy(
                 # rename to linux build strat? and add compilier flags but eh for now
-                compiler=settings.compiler, language = settings.language, save_assembly=settings.save_assembly, platform=self.platform)
+                compiler=settings.compiler, language = settings.language, save_assembly=settings.save_assembly, library=self.library)
         elif self.platform == "windows":
+            self.compiler_flag = "o4"
             self.build_strategy = WindowsDefaultStrategy(
-                compiler=settings.compiler, language = settings.language, save_assembly=settings.save_assembly, platform=self.platform)
+                compiler=settings.compiler, language = settings.language, save_assembly=settings.save_assembly, library=self.library)
         else:
             logger.error(
                 f"Running on invalid platform: {self.platform}. Options are Linux or Windows")
@@ -222,6 +223,8 @@ class Builder(BasicWorker):
         clone_msg, clone_status, clone_dir = self.build_strategy.clone_data(
             task)
         
+        logger.debug("Reached here")
+        
         original_files = []
         for filename in glob.iglob(clone_dir + '**/**', recursive=True):
             original_files.append(filename)
@@ -235,7 +238,6 @@ class Builder(BasicWorker):
         if clone_status == CloneStatus.SUCCESS:
             logger.info("Clone SUCCESS, Attempting to build `%s`", url)
             compiler_flag = self.compiler_flag
-            build_mode = self.build_mode
             compiler_version = self.build_strategy.compiler_version
             platform = self.library
             if 'commit_hexsha' in task:
@@ -249,26 +251,29 @@ class Builder(BasicWorker):
                           msg="Received and building",
                           commit_hexsha=commit_hexsha,
                           build_time=0)
+            self.build_strategy.pre_build(
+                build_mode=self.build_mode,
+                clone_dir=clone_dir,
+                optimization=self.compiler_flag        
+            )
             before_build_time = int(time.time())
-
             build_msg, build_status = self.build_strategy.run_build(
                 repo=task,
                 target_dir=clone_dir,
                 compiler_version=compiler_version,
-                library=self.library,
-                build_mode=build_mode,
+                build_mode=self.build_mode,
                 optimization=compiler_flag,
-                platform=self.platform,
                 slnfile=None,
             )
 
             after_build_time = int(time.time())
             # logger.info("Build exit %s", build_msg.replace("\n", " "))
             self.build_strategy.post_build_hook(clone_dir,
-                                                build_mode, platform,
+                                                self.build_mode,
                                                 task, compiler_version,
                                                 compiler_flag, commit_hexsha)
             logger.info(f"Post build hook done, build_status: {build_status}")
+            logger.debug(f"Build message: {build_msg}")
 
             if build_status == BuildStatus.SUCCESS:
                 dest_binfolder = self.save_binaries(
