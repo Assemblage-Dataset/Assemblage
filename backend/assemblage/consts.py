@@ -80,7 +80,7 @@ else:
     BINPATH = "/binaries"
 
 
-PDBPATH = f"{BINPATH}/Pdbs" # is this used
+PDBPATH = f"{BINPATH}/Pdbs" 
 BUILDPATH = "Builds" # is this used
 PDBJSONNAME = "pdbinfo.json"
 
