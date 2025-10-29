@@ -8,6 +8,8 @@ WORKDIR C:/tools
 WORKDIR C:/tools
 # Restore the default Windows shell for correct batch processing.
 SHELL ["cmd", "/S", "/C"]
+# place holder to dynamically do version later?
+ENV VS_VERSION=2022
 
 
 ADD https://aka.ms/vs/17/release/vs_BuildTools.exe vs_buildtools.exe 

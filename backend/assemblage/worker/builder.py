@@ -25,7 +25,6 @@ import ntpath
 from assemblage.consts import BINPATH, PDBPATH, TASK_TIMEOUT_THRESHOLD, BuildStatus, MAX_MQ_SIZE, CloneStatus, InputQueue, WorkerType
 from assemblage.worker.base_worker import BasicWorker
 from assemblage.worker import build_method
-from assemblage.worker.find_bin import find_elf_bin
 from assemblage.worker.profile import AWSProfile
 from assemblage.worker.build_method import LinuxBuildStrategy, WindowsDefaultStrategy
 from assemblage.config import BuilderSettings
@@ -47,11 +46,7 @@ class Builder(BasicWorker):
     def __init__(self,
                  settings: BuilderSettings,  # generic builder settings class,
                  # keep for now i thik this sets the build opt from the table?  - change to be included in message from coordinator...
-                 build_mode="Debug",  # change to enum / string literal
-                 library="",
-                 compiler_flag="",
                  tmp_dir="/tmp/",
-                 compiler="",
                  rand_build=False,
                  random_pick=0,
                  blacklist=None,
@@ -65,7 +60,7 @@ class Builder(BasicWorker):
 
         self.library = settings.library  # x64 vs x86. architecture might be better name
 
-        self.build_mode = build_mode
+        self.build_mode = settings.build_mode
         self.build_opt_queue = None
         self.opt_id = None
         self.build_opt_queue_args = {
@@ -98,16 +93,17 @@ class Builder(BasicWorker):
         
         # these are set in the build_opt tables. not sure what these should be so settign empty for now
         self.compiler_flag = None  
-        self.build_system = "all" # i think this is the default?
         self.build_command = None # 
 
 
         if self.platform == "linux":
+            self.build_system = "all" # i think this is the default?
             # maybe filter by language here too
             self.build_strategy = LinuxBuildStrategy(
                 # rename to linux build strat? and add compilier flags but eh for now
                 compiler=settings.compiler, language = settings.language, save_assembly=settings.save_assembly, library=self.library)
         elif self.platform == "windows":
+            self.build_system = "sln" # i think this is the default?
             self.compiler_flag = "o4"
             self.build_strategy = WindowsDefaultStrategy(
                 compiler=settings.compiler, language = settings.language, save_assembly=settings.save_assembly, library=self.library)
@@ -190,7 +186,7 @@ class Builder(BasicWorker):
 
         msg = BuilderRegOut.from_json(body) # modifiy to include routing key + exhange name?
         self.opt_id = msg.build_opt_id 
-        self.build_opt_queue = MQQueue(msg.build_opt_queue, callback=self.job_handler, exchange_name='build_opt', routing_key=f'builder.{self.opt_id}')
+        self.build_opt_queue = MQQueue(msg.build_opt_queue, callback=self.job_handler, exchange_name='build_opt', routing_key=f'builder.opt.{self.opt_id}')
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
         logger.info(f"Build {self.name} registered, waking job thread")
@@ -217,14 +213,12 @@ class Builder(BasicWorker):
         #                   msg="duplicate")
         #     return
 
-        logger.info("Received a task to build %s at %s buildsys: %s",
+        logger.info("Received a task to build %s. buildsys: %s",
                     url,
-                    datetime.datetime.now().strftime("%H:%M:%S"), task['build_system'])
+                   task['build_system'])
         clone_msg, clone_status, clone_dir = self.build_strategy.clone_data(
             task)
-        
-        logger.debug("Reached here")
-        
+                
         original_files = []
         for filename in glob.iglob(clone_dir + '**/**', recursive=True):
             original_files.append(filename)
@@ -239,7 +233,6 @@ class Builder(BasicWorker):
             logger.info("Clone SUCCESS, Attempting to build `%s`", url)
             compiler_flag = self.compiler_flag
             compiler_version = self.build_strategy.compiler_version
-            platform = self.library
             if 'commit_hexsha' in task:
                 commit_hexsha = task['commit_hexsha']
             else:
@@ -251,11 +244,16 @@ class Builder(BasicWorker):
                           msg="Received and building",
                           commit_hexsha=commit_hexsha,
                           build_time=0)
-            self.build_strategy.pre_build(
+            
+            # this is currently only needed for windows, but linux just reutrns none too, so it wont break
+            # seems cleaner to do it like this , instead of doing if statements here
+            logger.debug("Starting pre build")
+            sln_file = self.build_strategy.pre_build( 
                 build_mode=self.build_mode,
                 clone_dir=clone_dir,
                 optimization=self.compiler_flag        
             )
+            logger.debug(f"Pre Build success, now running build for {url}")
             before_build_time = int(time.time())
             build_msg, build_status = self.build_strategy.run_build(
                 repo=task,
@@ -263,7 +261,7 @@ class Builder(BasicWorker):
                 compiler_version=compiler_version,
                 build_mode=self.build_mode,
                 optimization=compiler_flag,
-                slnfile=None,
+                slnfile=sln_file,
             )
 
             after_build_time = int(time.time())
@@ -289,8 +287,8 @@ class Builder(BasicWorker):
         else:
             logger.info("Clone FAILURE %s: %s", url, clone_msg)
         # build_method.clean(folders)
-        logger.debug("Worker %s finished %s at %s", self.uuid[:5], url,
-                     datetime.datetime.now().strftime("%H:%M:%S"))
+        logger.debug("Worker %s finished %s", self.uuid[:5], url,
+                     )
 
     def save_binaries(self, clone_dir, repo, original_files):
         """ Store the binaries in the specified output directory. 
@@ -299,23 +297,22 @@ class Builder(BasicWorker):
 
         self.build_strategy.own_dir(os.path.dirname(
             clone_dir))  # possibly overkill here
-
+        bin_found = {
+                    f for f in self.build_strategy.find_binaries(clone_dir)
+                    if (os.path.exists(f))
+                }
+        if not bin_found:
+            logger.warning(
+                "no binaries found, build may have not been a success")
+            return None
+        else:
+            logger.info(f"{len(bin_found)} binaries found")
+        dest = f"{BINPATH}/successes/{"/".join(clone_dir.rstrip("/").split("/")[-2:])}"
+        try:
+            os.mkdir(dest)
+        except FileNotFoundError:
+            os.makedirs(dest)
         if self.platform == 'linux':
-            bin_found = {
-                f for f in find_elf_bin(clone_dir, self.build_strategy.save_assembly)
-                if (os.path.exists(f))
-            }
-            if not bin_found:
-                logger.warning(
-                    "no binaries found, build may have not been a success")
-                return None
-            else:
-                logger.info(f"{len(bin_found)} binaries found")
-            dest = f"{BINPATH}/successes/{"/".join(clone_dir.rstrip("/").split("/")[-2:])}"
-            try:
-                os.mkdir(dest)
-            except FileNotFoundError:
-                os.makedirs(dest)
             for fpath in bin_found:
                 base = os.path.basename(fpath)
                 # put some time stamp to avoid duplicate
@@ -331,10 +328,8 @@ class Builder(BasicWorker):
             self.build_strategy.own_dir(os.path.dirname(dest))
             return dest
         elif self.platform == 'windows':
-            dest = os.path.join(self.bin_dir, os.urandom(16).hex())
-            os.makedirs(dest)
-            for filename in glob.glob(clone_dir + '**/**', recursive=True):
-                if os.path.isfile(filename) and self.build_strategy.is_valid_binary(filename):
+            for filename in bin_found:
+                if os.path.isfile(filename):
                     prefix = []
                     if "debug" in filename:
                         prefix.append("debug")

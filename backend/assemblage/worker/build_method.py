@@ -17,58 +17,73 @@ import logging
 import subprocess
 import shutil
 import signal
-from tempfile import tempdir
 from urllib.parse import urlparse
 
+from elftools.elf.elffile import ELFFile
+from elftools.common.exceptions import ELFError
+import pefile
 
 from assemblage.worker.profile import AWSProfile
-from assemblage.consts import BuildStatus, PDBJSONNAME, CloneStatus, PDBPATH, BINPATH
+from assemblage.consts import BuildStatus, PDBJSONNAME, CloneStatus, PDBPATH, BINPATH, RuntimeEnv
 from assemblage.windows.parsers.proj import Project
 from assemblage.windows.parsers.sln import Solution
 from assemblage.analyze.analyze import get_build_system
 from assemblage.worker.ctags_parser import get_functions as ctags_get_functions
 from assemblage.worker.clang_parser import get_functions as clang_get_functions
 from typing import Tuple
+
+
+import traceback
+
 logger = logging.getLogger(__name__)
 
-
+# should this be a class function  change this to debug=False by default
 def cmd_with_output(cmd, timelimit=60, platform='linux', cwd=''):
     """ The cmd execution function """
+
+    
     if isinstance(cmd, list):
         cmd = " ".join(cmd)
-    if not cwd:
-        with subprocess.Popen(cmd,
-                              stdout=subprocess.PIPE,
-                              stderr=subprocess.PIPE,
-                              close_fds=True,
-                              shell=True) as process:
-            try:
-                out, err = process.communicate(timeout=timelimit)
-                exit_code = process.wait()
-                process.kill()
-                return out, err, exit_code
-            except subprocess.TimeoutExpired:
-                if platform == 'linux':
-                    os.killpg(os.getpgid(process.pid), signal.SIGTERM)
-                return b"subprocess.TimeoutExpired", b"subprocess.TimeoutExpired", 1
-    else:
-        with subprocess.Popen(cmd,
-                              stdout=subprocess.PIPE,
-                              stderr=subprocess.PIPE,
-                              close_fds=True,
-                              shell=True,
-                              cwd=cwd) as process:
-            try:
-                out, err = process.communicate(timeout=timelimit)
-                exit_code = process.wait()
-                process.kill()
-                return out, err, exit_code
-            except subprocess.TimeoutExpired:
-                if platform == 'linux':
-                    os.killpg(os.getpgid(process.pid), signal.SIGTERM)
-                return b"subprocess.TimeoutExpired", b"subprocess.TimeoutExpired", 1
+    
+    popen_kwargs = {
+        'stdout': subprocess.PIPE,
+        'stderr': subprocess.PIPE,
+        'shell': True,
+    }
+    
+    if cwd:
+        popen_kwargs['cwd'] = cwd
+    
+    if platform != 'windows':
+        popen_kwargs['close_fds'] = True
+    logger.debug(f"starting process: {cmd}")
 
-
+    with subprocess.Popen(cmd, **popen_kwargs) as process:
+        try:
+            out, err = process.communicate(timeout=timelimit)
+            exit_code = process.returncode
+            
+            logger.debug(f"Command exited with code {exit_code}")
+            
+            try:
+                process.kill()
+            except:
+                pass
+            
+            return out, err, exit_code
+            
+        except subprocess.TimeoutExpired:
+            if platform == 'linux':
+                try:
+                    os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+                except:
+                    process.kill()
+            else:
+                process.kill()
+            logger.debug(f"Timed out: {cmd}")
+            return b"subprocess.TimeoutExpired", b"subprocess.TimeoutExpired", 1
+        
+        
 def clean(folders):
     """ Clean the folders, may not be empty """
     for folder in folders:
@@ -103,7 +118,7 @@ class BuildStrategy:
         os.makedirs(f"{git_user_dir}", exist_ok=True)
 
         clone_dir = f'{git_user_dir}/{project_name}'
-        
+        logger.debug("Starting clone")
         out, err, exit_code = cmd_with_output(
             f'git clone --recursive {repo["url"]} {clone_dir}/', 600, self.platform)
 
@@ -140,6 +155,44 @@ class BuildStrategy:
             if len(parts) >= 2:
                 return parts[0], parts[1]
             return None, None
+        
+    def find_binaries(self, path: str) -> set:
+        """ Find elf files and executables"""
+        logger.info(f"Finding executables in {path}, saving assembly files too: {self.save_assembly}")
+        file_paths = set()
+        for root, dirs, file_names in os.walk(os.path.realpath(path)):
+            if '.git' in dirs: # skip .git files 
+                dirs.remove('.git') 
+
+            for file_name in file_names:
+                location = f'{root}/{file_name}'
+                if not os.path.exists(location):
+                    continue
+                try:
+                    if self.save_assembly and location.endswith(('.s', '.ii', '.bc', '.S', '.obj', '.asm', '.cod')):
+                        file_paths.add(location)
+                        continue
+                    with open(location, 'rb') as f:
+                        
+                        if self.platform == "linux":
+                            try:
+                                ef = ELFFile(f)
+                                if ef.header['e_type'] == 'ET_EXEC' or ef.header['e_type'] == 'ET_DYN':
+                                    file_paths.add(location)
+                            except ELFError:
+                                continue
+                        elif self.platform == "windows": 
+                                try:
+                                        pe = pefile.PE(location)
+                                        file_paths.add(location)
+                                except pefile.PEFormatError:
+                                        continue
+        
+                except OSError:
+                    continue
+
+        logger.debug(f"Found executables: {file_paths}")
+        return file_paths
     @abstractmethod
     def _get_compiler_version(self)->str:
         pass    
@@ -165,6 +218,7 @@ class BuildStrategy:
         return:
         (message, status_code, filename)
         """
+
 
     @abstractmethod
     def post_build_hook(self,dest_binfolder, build_mode, repoinfo, toolset,
@@ -257,6 +311,7 @@ class LinuxBuildStrategy(BuildStrategy):
         self.own_dir(os.path.dirname(target_dir)) 
 
         return out.decode() + err.decode(), return_code
+    
 
 class WindowsDefaultStrategy(BuildStrategy):
     # compiler should be an enum of supported...
@@ -302,18 +357,20 @@ class WindowsDefaultStrategy(BuildStrategy):
         slnfile = ""
         projfiles = []
         for f in files:
-            if f.endswith("sln"):
+            if f.endswith(('.sln')):
                 slnfile = f
             if f.endswith("vcxproj"):
                 projfiles.append(f)
         if slnfile == "":
-            logger.error("No solution file found")
-            return "No SLN file found", BuildStatus.SUCCESS, ""
+            return None
+        logger.debug(f"Creating solution now with slnfile: {slnfile}")
         try:
             sln = Solution(slnfile)
             sln.set_config("Windows", build_mode)
         except:
             logger.info("SLN parsing err, but continue with vcxproj files")
+        
+        logger.debug(f"Now analysing projfiles")
         try:
             for projfile in projfiles:
                 projobj = Project(projfile)
@@ -328,11 +385,8 @@ class WindowsDefaultStrategy(BuildStrategy):
                     projobj.enable_intrinsicfunctions()
                     
                 if self.save_assembly:
-                    projobj.add_additional_options([
-                        "/FAcs",   
-                        "/P",       
-                        "/FC",      
-                    ])    
+                    # this should save the assembly. maybe
+                    projobj.save_assembly()    
                     
                 projobj.write()
                 projobj_saved = Project(projfile)
@@ -348,19 +402,23 @@ class WindowsDefaultStrategy(BuildStrategy):
                 logger.info("Read config: %s, correct: %s",
                             projobj_saved.get_optimization(), optimization_mode)
                 assert optimization_mode == projobj_saved.get_optimization()
+                
+                logger.debug(f"Finished processing projobj file: {projobj}")
         except FileNotFoundError:
             logger.error("Build File not exist")
-            return "Parsing FileNotFoundError", BuildStatus.FAILED, ""
+            return None
         except AttributeError as err:
-            logger.error("Build vcxproj file parsing error %s", str(err))
-            return "Parsing AttributeError", BuildStatus.FAILED, ""
+            logger.error("Build vcxproj file parsing error %s %s", str(err), projfile)
+            logger.debug("Traceback:\n%s", traceback.format_exc())
+
+            return None
         except KeyError:
             logger.error("Build vcxproj file setting error")
-            return "Parsing file key error", BuildStatus.FAILED, ""
+            return None
         except AssertionError:
-            return "Parsing file verification error", BuildStatus.FAILED, ""
+            return None
         logger.info("Parsing success")
-        return "Parsing success", BuildStatus.SUCCESS, slnfile
+        return slnfile
 
     def dia_get_func_funcinfo(self, binfile):
         """ Process the bin to get the info and function"""
@@ -369,7 +427,8 @@ class WindowsDefaultStrategy(BuildStrategy):
             "powershell", "-Command", "Dia2Dump", "-lines", "*", f"'{binfile}'"
         ]
         file_cache = {}
-        out, _err, _exit_code = cmd_with_output(cmd_args, platform='windows')
+        out, _err, exit_code = cmd_with_output(cmd_args, platform='windows')
+    
         try:
             lines_notclean = out.decode().split("\r\n")
         except:
@@ -449,14 +508,18 @@ class WindowsDefaultStrategy(BuildStrategy):
                   target_dir,
                   build_mode,
                   optimization,
-                  slnfile=None,
+                  slnfile,
                   compiler_version='v142',
                   num_p_job=16):
         """ Generate cmd to execute """
+        if not slnfile:
+            logger.error("No sln file provided")
+            return "No SLN File provided", BuildStatus.FAILED
         cmd = ["powershell", "-Command", "msbuild"]
         if build_mode in ["Release", "Debug"]:
+            logger.debug(f"Adding property configuation={build_mode}")
             cmd.append(f"/property:Configuration={build_mode}")
-        if self.library == "x86" or self.library == "x86":
+        if self.library == "x86":
             cmd.append("/property:Platform=x86")
         elif self.library == "x64":
             cmd.append("/property:Platform=x64")
@@ -533,3 +596,4 @@ class WindowsDefaultStrategy(BuildStrategy):
                 json.dump(json_di, outfile, sort_keys=False, indent=4)
         except FileNotFoundError:
             logging.info("Pdbjsonfile not found")
+    
