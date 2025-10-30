@@ -306,15 +306,18 @@ class Builder(BasicWorker):
             else:
                 logger.info(f"{len(bin_found)} binaries found")
             dest = f"{BINPATH}/successes/{"/".join(clone_dir.rstrip("/").split("/")[-2:])}"
-            try:
-                os.mkdir(dest)
-            except FileNotFoundError:
-                os.makedirs(dest)
+            os.makedirs(dest, exist_ok=True) # deliberately uncaught -- if this errors i wanna know about it
             for fpath in bin_found:
                 base = os.path.basename(fpath)
-                # put some time stamp to avoid duplicate
-                shutil.move(fpath, f"{dest}/{base}",
-                            copy_function=shutil.copy2)
+                # if it already exists, put a timestamp
+                dest_path = f"{dest}/{base}"
+                if os.path.exists(dest_path):
+                    logger.info(f"Duplicate binary found for {dest}/{base}. New binary will have timestamp appended")
+                    filename, ext = os.path.splitext(base)
+                    timestamp = int(time.time()) # TODO: put in nicer format?
+                    dest_path = f"{dest}/{filename}_{timestamp}{ext}"
+
+                shutil.move(fpath, dest_path, copy_function=shutil.copy2)
                 os.chmod(f"{dest}/{base}", NON_EXE_MODE)
 
                 self.send_msg(kind='binary',
