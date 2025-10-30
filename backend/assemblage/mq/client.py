@@ -11,6 +11,7 @@ import pika
 from pika.adapters.blocking_connection import BlockingChannel, BlockingConnection
 from pika.exchange_type import ExchangeType
 from pika.spec import PERSISTENT_DELIVERY_MODE
+from assemblage.consts import (CHANNEL_HEARTBEAT, CHANNEL_TIMEOUT, CHANNEL_CONNECTION_ATTEMPTS, CHANNEL_RETRY_DELAY)
 
 
 
@@ -52,9 +53,9 @@ class Connection:
 
     def __init__(self, mq_host: str, mq_port: int, conn_name: str,
                  channel_name: str,
-                 heartbeat: int = 300, timeout: int = 300,
-                 connection_attempts: int = 35,
-                 retry_delay: int = 3,
+                 heartbeat: int = CHANNEL_HEARTBEAT, timeout: int = CHANNEL_TIMEOUT,
+                 connection_attempts: int = CHANNEL_CONNECTION_ATTEMPTS,
+                 retry_delay: int = CHANNEL_RETRY_DELAY,
                  username: str = "guest",
                  password: str = "guest",
                  ):
@@ -150,7 +151,7 @@ class Connection:
     def add_topic_exchange(self, exchange_name):
         ''' add a topic exchanger to channel '''
         self.exchange_name = exchange_name
-        self.chann.exchange_declare(exchange=exchange_name,
+        self.chan.exchange_declare(exchange=exchange_name,
                                       exchange_type=ExchangeType.topic)
 
     def send_msg(self, queue_name, msg, exchange='', reply_to: str | None = None, corr_id: str | None = None):
@@ -239,9 +240,9 @@ class MessageClient:
         # self.consume_tag = ''
         self.connections: dict[str, Connection] = {}
 
-    def create_connection(self, conn_name: str, channel_name: str, heartbeat: int = 300, timeout: int = 300,
-                          connection_attempts: int = 35,
-                          retry_delay: int = 3, auto_connect: bool = True)-> Connection:
+    def create_connection(self, conn_name: str, channel_name: str, heartbeat: int = CHANNEL_HEARTBEAT, timeout: int = CHANNEL_TIMEOUT,
+                          connection_attempts: int = CHANNEL_CONNECTION_ATTEMPTS,
+                          retry_delay: int = CHANNEL_RETRY_DELAY, auto_connect: bool = True)-> Connection:
         '''
         Create a new connection, 
         Defaults to auto connect

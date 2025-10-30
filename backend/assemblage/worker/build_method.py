@@ -199,21 +199,28 @@ class LinuxBuildStrategy(BuildStrategy):
             project_name = os.urandom(8).hex()
 
         git_user_dir = f"/binaries/projects/{user_name}"
-        # if this fails, should catch and then its git pull not git clone as it already exists?(maybe check url too)
-        os.makedirs(f"{git_user_dir}", exist_ok=True)
-
         clone_dir = f'{git_user_dir}/{project_name}'
+        os.makedirs(f"{git_user_dir}", exist_ok=True)  # ensure that user's directory exists
+        cmd = ""
+        cwd = ""
         
-        out, err, exit_code = cmd_with_output(
-            f'git clone --recursive {repo["url"]} {clone_dir}/', 600, "linux")
+        if os.path.isdir(clone_dir):  # clone dir exists -- likely project already has been cloned
+            logger.info(f"Target clone directory '{clone_dir}' already cloned: attempting to pull... ")
+            cmd = 'git pull --recurse-submodules'
+            cwd = clone_dir
+            # TODO: check for errors, more sophisticated git pull behavior?
+        else:  
+            # first access of this project. cwd is set to "" so we can pass clone_dir as a destination
+            cmd = f'git clone --recursive {repo["url"]} {clone_dir}/'
 
-        logger.info(f"cloned to : git clone --recursive {repo["url"]} {clone_dir}/")
+        out, err, exit_code = cmd_with_output(cmd, 600, "linux", cwd=cwd)
 
         # # see above for how i feel about this
         self.own_dir(git_user_dir) # ensure all projects 
         # # maybe try add more verbose errors?
         return_code = CloneStatus.SUCCESS if exit_code == 0 else CloneStatus.FAILED
         if return_code == CloneStatus.FAILED:
+            # clean up after a failed clone
             try:
                 os.removedirs(f"{git_user_dir}") # will fail if not empty, ie the git user has a nother project already cloned
             except:

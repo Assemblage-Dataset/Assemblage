@@ -38,11 +38,12 @@ from assemblage.mq.client import MQQueue, MessageClient, Connection
 # from assemblage.analyze.tokenchecker import TokenChecker
 from assemblage.analyze.analyze import get_build_system
 from assemblage.consts import (
-    SCRAPER_TIMESTAMP_RECORDFILE_PATH, SCRAPER_PAGE_SIZE,
+    SCRAPER_TIMESTAMP_RECORDFILE_PATH, SCRAPER_PAGE_SIZE,  DEBUG_SHOW_ALL_MESSAGES_SCRAPER,
     GITHUB_REPO_URL, SCRAPER_REQUEST_TIMEOUT_S, SCRAPER_REPO_BUNDLESIZE,
     SCRAPER_RATE_INTERVAL, RATE_LIMIT_WAIT, SECONDARY_RATE_LIMIT_WAIT, RATE_LIMIT_UPDATE_INTERVAL, InputQueue,
     ScrapeSource, GithubTimeOrder, WorkerType
 )
+from assemblage.mq.messages import ScraperDataOutSingle, ScraperDataOutBundle
 
 logger = logging.getLogger(__name__)
 
@@ -213,18 +214,18 @@ class GithubRepositories(DataSource):
         created_at = github_time_to_mysql_time(repo["created_at"])
         updated_at = github_time_to_mysql_time(repo["pushed_at"])
         size = int(repo['size'])
-        return {
-            'name': name,
-            'url': url,
-            'language': language,
-            'owner_id': owner_id,
-            'description': description[:200],
-            'created_at': created_at,
-            'updated_at': updated_at,
-            'size': size,
-            'build_system': build_tool,
-            'branch': repo["default_branch"]
-        }, files
+        return ScraperDataOutSingle(
+            name=name,
+            url=url,
+            language=language,
+            owner_id=owner_id,
+            description=description,
+            created_at=created_at,
+            updated_at=updated_at,
+            size=size,
+            build_system=build_tool,
+            branch=repo["default_branch"]
+            ), files
 
     def fetch_data(self):
         '''Requests search result pages from GitHub's Search API, then extracts the repository information from each result on each search page.'''
@@ -267,7 +268,8 @@ class GithubRepositories(DataSource):
                         # update total query results count in case it has changed
                         total_query_results_count = min(
                             rdict["total_count"], total_query_results_count)
-                        logger.info("Successful search result obtained by crawler %s. GitHub responded with %s repos",
+                        if DEBUG_SHOW_ALL_MESSAGES_SCRAPER:
+                            logger.info("Successful search result obtained by crawler %s. GitHub responded with %s repos",
                                     self.parent_workerid, total_query_results_count)
                         # logger.info("Crawler query: %s ... ; page: %s; GitHub responded with %s repos",
                         #             query_time_start[:-7], payload['page'], total_query_results_count) # not sure about the query_time_start[:-7] line
@@ -276,8 +278,9 @@ class GithubRepositories(DataSource):
                             dt, fs = self._process_repo_message(repo)
                             # dt is metadata, fs is all files in repo
                             if dt and fs:
-                                logger.info("Crawler %s got %s",
-                                            self.parent_workerid, repo["name"])
+                                if DEBUG_SHOW_ALL_MESSAGES_SCRAPER:
+                                    logger.info("Crawler %s got %s",
+                                                self.parent_workerid, repo["name"])
                                 # logger.info("Obtained metadata: %s", str(dt))
                                 # logger.info("Obtained files %s", str(fs))
                                 yield dt, fs
@@ -470,8 +473,9 @@ class Scraper(BasicWorker):
                 # once enough repositories have been collected, send a message to the coordinator
                 if len(self.repocache) >= SCRAPER_REPO_BUNDLESIZE:
                     # need to re add reducancy if message connection fails
+                    bundle = ScraperDataOutBundle(self.repocache)
                     conn.send_msg(
-                        scrape_queue.name, json.dumps(self.repocache))
+                        scrape_queue.name, bundle.to_json())
                     self.repocache = []
                     self.total_repos_sent += SCRAPER_REPO_BUNDLESIZE
                     logger.info("Scraper %s bundled and sent %s repos to coordinator. Total repos sent by this scraper: %s",
