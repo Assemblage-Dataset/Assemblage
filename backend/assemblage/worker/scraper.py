@@ -47,8 +47,6 @@ from assemblage.mq.messages import ScraperDataOutSingle, ScraperDataOutBundle
 
 logger = logging.getLogger(__name__)
 
-scrape_queue = MQQueue( name=InputQueue.SCRAPE )  # should this be a class var?
-
 '''
 possible TODO:
 * replace self.record_file with SCRAPER_TIMESTAMP_RECORDFILE_PATH everywhere? Or replace with db
@@ -142,8 +140,7 @@ class DataSource(object):
     def __iter__(self):  # iterate over self data
         for r, fs in self.fetch_data():
             if self.data_filter(r, fs):
-                if r is not None:
-                    yield r
+                yield r
 
 
 class GithubRepositories(DataSource):
@@ -184,27 +181,16 @@ class GithubRepositories(DataSource):
 
     def _process_repo_message(self, repo):
         '''Given a single entry in the GitHub search results, requests the repository page, extracts the files, and returns select metadata with the files.'''
-        if type(repo) is not dict:
-            logger.error(f"_process_repo_message expects dictionary as input, not {str(type(repo))}")
-            return None, None
+        time.sleep(
+            SCRAPER_RATE_INTERVAL)  # prevents scraper from monopolizing resources
         url = repo["url"]
         default_branch = repo["default_branch"]
         # Accesses the repository itself in order to extract files
-        req = f"{url}/git/trees/{default_branch}"
         try:
-
-            page, _ = self.get_request(req)
-            
-            if page is None:
-                logger.info(f"Could not process repo {url}: error getting page {req}")
-                return None, None
-            
+            page, _ = self.get_request(url + f"/git/trees/{default_branch}")
         except Exception as err:
             logger.info(err)
             return None, None
-        
-        time.sleep( SCRAPER_RATE_INTERVAL )  # prevents scraper from monopolizing resources
-        
         # Contains the actual structure of the code within this repository
         repo_page = json.loads(page.text)
         files_list = []  # used for breaking the repo page into files
@@ -316,18 +302,13 @@ class GithubRepositories(DataSource):
         # Unauthenticated: 10/minute for search api, 60/hour for standard api
         # Authenticated: 60/minute for search api, 5000/hour for standard api (~8 req/min)
 
-        use_headers: set = self.auth_headers if (headers == "default") else headers
+        use_headers: set = self.auth_headers if (
+            headers == "default") else headers
         use_proxy: str = self.random_proxy() if (proxy == "random") else proxy
 
         start_request_time = float(time.time())
-        try:
-            r = requests.get(query, payload, headers=use_headers,
-                            proxies=use_proxy, timeout=SCRAPER_REQUEST_TIMEOUT_S)
-        except Exception as err:
-            logger.error(f"An unexpected issue occurred when getting query {query}:")
-            logger.info(err)
-            return None, None
-
+        r = requests.get(query, payload, headers=use_headers,
+                         proxies=use_proxy, timeout=SCRAPER_REQUEST_TIMEOUT_S)
         receipt_time = float(time.time())
 
         # The rest of the function checks for rate limits and other potential issues.
@@ -353,13 +334,7 @@ class GithubRepositories(DataSource):
             return None, start_request_time-receipt_time
 
         # Check for important messages and warn the user. These need to be handled manually.
-        try:
-            rdict = json.loads(r.text)
-        except Exception as err:
-            logger.error(f"Error when parsing query result (format of result may not be as expected).")
-            logger.info(err)
-            return None, start_request_time-receipt_time
-
+        rdict = json.loads(r.text)
         if "message" in rdict.keys():
             if "rate limit" in rdict["message"]:
                 if "secondary" in rdict["message"]:
@@ -471,25 +446,6 @@ class Scraper(BasicWorker):
         self.workerid = workerid
         self.total_repos_sent = 0
 
-    def send_bundle(self):
-        conn: Connection = self.mq_client.get_connection(f'{self}')
-
-        if conn is None:
-            conn: Connection = self.mq_client.create_connection(conn_name=f'{self}',
-                                                                channel_name=f'{self}')
-            conn.create_channel()
-
-            conn.add_queue(scrape_queue)
-        bundle = ScraperDataOutBundle(self.repocache)
-        conn.send_msg(
-            scrape_queue.name, bundle.to_json())
-        self.total_repos_sent += len(self.repocache)
-        logger.info("Scraper %s bundled and sent %s repos to coordinator. Total repos sent by this scraper: %s",
-                    self.workerid, len(self.repocache), self.total_repos_sent)
-        self.repocache = []
-        return 1  # does nothing but indicate successful execution for testing
-
-
     def run_job(self):
         '''Acquires repository information and sends it to coordinator on "scrape" queue until task completed
            Scraper does not listen to instructions from coordindator for this, so do not need to use the handler
@@ -502,14 +458,29 @@ class Scraper(BasicWorker):
 
         try:
             logger.info("Scraper %s start", self.workerid)
+            conn: Connection = self.mq_client.create_connection(conn_name=f'{self}',
+                                                                channel_name=f'{self}')
+            conn.create_channel()
+            scrape_queue = MQQueue(
+                name=InputQueue.SCRAPE)  # should this be a class var?
 
+            conn.add_queue(scrape_queue)
+
+            self.repocache = []
             for repo in iter(self.data_source):
                 self.repocache.append(repo)
 
                 # once enough repositories have been collected, send a message to the coordinator
                 if len(self.repocache) >= SCRAPER_REPO_BUNDLESIZE:
-                    self.send_bundle()
-                    
+                    # need to re add reducancy if message connection fails
+                    bundle = ScraperDataOutBundle(self.repocache)
+                    conn.send_msg(
+                        scrape_queue.name, bundle.to_json())
+                    self.repocache = []
+                    self.total_repos_sent += SCRAPER_REPO_BUNDLESIZE
+                    logger.info("Scraper %s bundled and sent %s repos to coordinator. Total repos sent by this scraper: %s",
+                                self.workerid, SCRAPER_REPO_BUNDLESIZE, self.total_repos_sent)
+
             logger.info("Crawler %s End Task", self.workerid)
             # deletes the last crawled time at conclusion of task
             os.remove(self.record_file)

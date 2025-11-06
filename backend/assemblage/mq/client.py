@@ -90,7 +90,7 @@ class Connection:
         attempt = 0
         while auto_retry: 
             try:
-                self.conn = BlockingConnection(conn_params)
+                self.conn = pika.BlockingConnection(conn_params)
                 if self.conn.is_open:
                     return self.conn
             except pika.exceptions.AMQPConnectionError as e:
@@ -190,7 +190,7 @@ class Connection:
         '''
         if queue.name not in self.queues:
             raise ValueError(
-                f"Queue {queue.name} is not in this connection's queue map: {self}. Please create queue before consuming message")
+                f"Queue is not in this connection's queue map: {self}. Please create queue before consuming message")
         try:
 
 
