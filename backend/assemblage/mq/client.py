@@ -132,7 +132,7 @@ class Connection:
             self.chan.queue_declare(queue=queue.name, durable=True)
             logger.info(f"Created queue: {queue} on {self}")
             if queue.exchange_name and queue.routing_key:
-                logger.debug(f"Binding routing key {queue.routing_key }  and exchagne {queue.exchange_name}")
+                logger.debug(f"Binding routing key {queue.routing_key }  and exchange {queue.exchange_name}")
                 self.chan.queue_bind(queue.name, queue.exchange_name, queue.routing_key)
             self.queues[queue.name] = queue
 
@@ -183,23 +183,29 @@ class Connection:
         except Exception as err:
             logging.error(f"failed to send message: {err}")
 
-    def consume(self, queue: MQQueue, auto_ack = False):
+    def consume(self, queue: MQQueue, auto_ack = False, retries =10):
         '''
         Consume, on speicifed queue
         '''
+        
         if queue.name not in self.queues:
             raise ValueError(
                 f"Queue is not in this connection's queue map: {self}. Please create queue before consuming message")
-        try:
+        count = 0
+        while count <= retries: 
+            try:
+                self.consume_tag = self.chan.basic_consume(queue=queue.name,
+                                                            on_message_callback=queue.callback, auto_ack=auto_ack)
 
-
-            self.consume_tag = self.chan.basic_consume(queue=queue.name,
-                                                        on_message_callback=queue.callback, auto_ack=auto_ack)
-            self.chan.start_consuming()
-        except Exception as e:
-            logger.critical(
-                f"__consume_from_queue from queue {queue} connection {self} failed!")
-            logger.critical(e)
+                self.chan.start_consuming()   
+                count = 10     
+            except Exception as e:
+                logger.critical(
+                    f"__consume_from_queue from queue {queue} connection {self} failed!: {e}")
+                logger.critical(f"Attempting to restart consumption: {self} attempt: {count}/{retries}")
+            self.connect()
+            self.create_channel()
+            count = count + 1
 
     def close(self):
         try:

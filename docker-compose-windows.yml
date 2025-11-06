@@ -7,7 +7,7 @@ services:
       dockerfile: docker/windows/Dockerfile
     command: ["powershell", "-File", "C:\\app\\scripts\\start_windows_worker.ps1"]
     healthcheck:
-      test: [ "CMD", "bash", "-c", "pgrep -f start_worker.py > /dev/null" ] # check if the start worker file is running
+      test: ["CMD", "powershell", "-Command", "Get-Process | Where-Object CommandLine -like '*start_worker.py*' | Select-Object -First 1; if ($$?) { exit 0 } else { exit 1 }"]  
       interval: 10s
       start_period: 5s
     environment:
@@ -24,11 +24,10 @@ services:
         condition: on-failure
     volumes:
       - ./backend:C:\app 
-      - builder-data:C:\binaries
+      - ./binaries:C:\binaries
     mem_limit: 250g
 
 volumes:
   builder-data:
     driver: local
-
-
+ 

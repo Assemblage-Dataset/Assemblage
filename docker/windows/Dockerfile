@@ -8,6 +8,8 @@ WORKDIR C:/tools
 WORKDIR C:/tools
 # Restore the default Windows shell for correct batch processing.
 SHELL ["cmd", "/S", "/C"]
+# place holder to dynamically do version later?
+ENV VS_VERSION=2022
 
 
 ADD https://aka.ms/vs/17/release/vs_BuildTools.exe vs_buildtools.exe 
@@ -31,7 +33,7 @@ RUN (start /w vs_buildtools.exe --wait --quiet --norestart --nocache `
     --remove Microsoft.VisualStudio.Component.Windows81SDK `
     --includeRecommended `
     || IF "%ERRORLEVEL%"=="3010" EXIT 0) 
-    # && del /q vs_buildtools.exe
+# && del /q vs_buildtools.exe
 
 SHELL ["powershell", "-Command"]
 
@@ -102,6 +104,7 @@ ENV LANGUAGE="c++"
 # maybe need to figure out adding ^^ to path via ps1 script ( so might need to add script in this folder to 
 # add that to path as then run python.exe etc)]
 
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 CMD powershell -Command "Get-Process | Where-Object CommandLine -like '*start_worker.py*' | Select-Object -First 1; if ($?) { exit 0 } else { exit 1 }"
 
 ENTRYPOINT ["powershell", "-File", "C:\\app\\scripts\\start_windows_worker.ps1"]
 # Define the entry point for the docker container.

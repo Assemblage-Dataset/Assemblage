@@ -8,7 +8,8 @@ Chang
 Yihao
 """
 
-from abc import abstractclassmethod, abstractmethod
+from abc import abstractmethod
+import json
 import os
 import glob
 import re
@@ -16,69 +17,73 @@ import logging
 import subprocess
 import shutil
 import signal
-import json
-import ftplib
-from tempfile import tempdir
-import time
 from urllib.parse import urlparse
-import yaml
-import random
-import string
-import hashlib
-import boto3
-import requests
 
-from botocore.exceptions import ClientError
-from setuptools import msvc
+from elftools.elf.elffile import ELFFile
+from elftools.common.exceptions import ELFError
+import pefile
 
 from assemblage.worker.profile import AWSProfile
-from assemblage.consts import BuildStatus, PDBJSONNAME, BINPATH, CloneStatus
+from assemblage.consts import BuildStatus, PDBJSONNAME, CloneStatus, PDBPATH, BINPATH, RuntimeEnv
 from assemblage.windows.parsers.proj import Project
 from assemblage.windows.parsers.sln import Solution
 from assemblage.analyze.analyze import get_build_system
 from assemblage.worker.ctags_parser import get_functions as ctags_get_functions
 from assemblage.worker.clang_parser import get_functions as clang_get_functions
 from typing import Tuple
+
+
+import traceback
+
 logger = logging.getLogger(__name__)
 
-
+# should this be a class function  change this to debug=False by default
 def cmd_with_output(cmd, timelimit=60, platform='linux', cwd=''):
     """ The cmd execution function """
+
+    
     if isinstance(cmd, list):
         cmd = " ".join(cmd)
-    if not cwd:
-        with subprocess.Popen(cmd,
-                              stdout=subprocess.PIPE,
-                              stderr=subprocess.PIPE,
-                              close_fds=True,
-                              shell=True) as process:
-            try:
-                out, err = process.communicate(timeout=timelimit)
-                exit_code = process.wait()
-                process.kill()
-                return out, err, exit_code
-            except subprocess.TimeoutExpired:
-                if platform == 'linux':
-                    os.killpg(os.getpgid(process.pid), signal.SIGTERM)
-                return b"subprocess.TimeoutExpired", b"subprocess.TimeoutExpired", 1
-    else:
-        with subprocess.Popen(cmd,
-                              stdout=subprocess.PIPE,
-                              stderr=subprocess.PIPE,
-                              close_fds=True,
-                              shell=True,
-                              cwd=cwd) as process:
-            try:
-                out, err = process.communicate(timeout=timelimit)
-                exit_code = process.wait()
-                process.kill()
-                return out, err, exit_code
-            except subprocess.TimeoutExpired:
-                if platform == 'linux':
-                    os.killpg(os.getpgid(process.pid), signal.SIGTERM)
-                return b"subprocess.TimeoutExpired", b"subprocess.TimeoutExpired", 1
+    
+    popen_kwargs = {
+        'stdout': subprocess.PIPE,
+        'stderr': subprocess.PIPE,
+        'shell': True,
+    }
+    
+    if cwd:
+        popen_kwargs['cwd'] = cwd
+    
+    if platform != 'windows':
+        popen_kwargs['close_fds'] = True
+    logger.debug(f"starting process: {cmd}")
 
-
+    with subprocess.Popen(cmd, **popen_kwargs) as process:
+        try:
+            out, err = process.communicate(timeout=timelimit)
+            exit_code = process.returncode
+            
+            logger.debug(f"Command exited with code {exit_code}")
+            
+            try:
+                process.kill()
+            except:
+                pass
+            
+            return out, err, exit_code
+            
+        except subprocess.TimeoutExpired:
+            if platform == 'linux':
+                try:
+                    os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+                except:
+                    process.kill()
+            else:
+                process.kill()
+            logger.debug(f"Timed out: {cmd}")
+            return b"subprocess.TimeoutExpired", b"subprocess.TimeoutExpired", 1
+        
+        
 def clean(folders):
     """ Clean the folders, may not be empty """
     for folder in folders:
@@ -87,107 +92,17 @@ def clean(folders):
 
 
 class BuildStrategy:
-    def __init__(self, compiler: str, language: str, save_assembly: bool = False):
+    def __init__(self, compiler: str, language: str, library: str,save_assembly: bool = False):
         self.save_assembly = save_assembly
         self.compiler: str = compiler
         self.language: str = language
         self.compiler_version = self._get_compiler_version()
-        
-    @abstractmethod
-    def _get_compiler_version(self)->str:
-        pass    
-        
-    @abstractclassmethod
-    def clone_data(self, repo) -> Tuple[bytes, int, str]:
-        """
-        callback function of how a repository is cloned to local
-        TODO: add definition of repo here
-        clone_dir: build process later will use data in this dir, please clone to this dir
-        return :
-        (msg, status_code, clone_dir) : (bytes, int, str) 
-        check BuildStatus for status code
-        """
+        self.library = library
+        self.platform: str
 
-    @abstractclassmethod
-    def run_build(self, repo, target_dir, build_mode, library, optimization, slnfile,
-                  platform, compiler_version) -> Tuple[bytes, bytes, int]:
-        """ callback function to build command, return...."""
 
-    @abstractclassmethod
-    def pre_build(self, Platform,
-                  Buildmode,
-                  Target_dir,
-                  Optimization,
-                  _tmp_dir,
-                  VC_Version,
-                  Favorsizeorspeed="",
-                  Inlinefunctionexpansion="",
-                  Intrinsicfunctions="") -> Tuple[bytes, int, str]:
-        """
-        pre processing hook
-        return:
-        (message, status_code, filename)
-        """
 
-    @abstractclassmethod
-    def post_build_hook(self,
-                        dest_binfolder, build_mode, library, repoinfo, toolset,
-                        optimization, commit_hexsha):
-        """ post process hook  """
-        pass
-
-class LinuxBuildStrategy(BuildStrategy):
-
-    def __init__(self, compiler, language: str, save_assembly: bool, tmp_dir="/tmp", num_p_job=16,):
-        super().__init__(compiler, language=language, save_assembly=save_assembly)
-
-        self.tmp_dir = tmp_dir
-        self.num_p_job = num_p_job
-        # this is not great, i dont like it but for now itll have to do
-        try: 
-            output_dir_perms = os.stat("/binaries")
-            self.output_dir_uid = output_dir_perms.st_uid
-            
-            self.output_dir_gid = output_dir_perms.st_gid
-        except:  # again messy but should be fixable once the extry point is better as cooridnator wont initlise this class
-            self.output_dir_uid = 0
-            self.output_dir_gid = 0
-
-    def _get_compiler_version(self)->str:
-        return "1.0"   # placeholder
-      
-    def parse_github_name(self, url):
-        if url.endswith(".git"):
-            url = url[:-4]
-
-        # Handle git@github.com style
-        if url.startswith("git@"):
-            # git@github.com:user/repo
-            path = url.split(":", 1)[1]  # get 'user/repo'
-        else:
-            # https://github.com/user/repo
-            path = urlparse(url).path  # '/user/repo'
-
-        parts = path.strip("/").split("/")
-        if len(parts) >= 2:
-            return parts[0], parts[1]
-        return None, None
-    def own_dir(self, dir: str):
-               # # see above for how i feel about this
-        for root, dirs, files in os.walk(dir):
-            for d in dirs:
-                try: 
-                    os.chown(os.path.join(root, d), self.output_dir_uid, self.output_dir_gid)
-                except:
-                    pass
-            for f in files:
-                try: 
-                    os.chown(os.path.join(root, f), self.output_dir_uid, self.output_dir_gid)
-                except:
-                    pass# this is from a weird edge case where there was a symbolic link pushed to git
-        os.chown(dir, self.output_dir_uid, self.output_dir_gid)
-
-    def clone_data(self, repo):
+    def clone_data(self, repo) -> Tuple[bytes | str | CloneStatus | CloneStatus]:
         """ Clone repo """
 
         user_name, project_name = self.parse_github_name(repo["url"])
@@ -198,14 +113,14 @@ class LinuxBuildStrategy(BuildStrategy):
         if not project_name:
             project_name = os.urandom(8).hex()
 
-        git_user_dir = f"/binaries/projects/{user_name}"
+        git_user_dir = f"{BINPATH}/projects/{user_name}"
         # if this fails, should catch and then its git pull not git clone as it already exists?(maybe check url too)
         os.makedirs(f"{git_user_dir}", exist_ok=True)
 
         clone_dir = f'{git_user_dir}/{project_name}'
-        
+        logger.debug("Starting clone")
         out, err, exit_code = cmd_with_output(
-            f'git clone --recursive {repo["url"]} {clone_dir}/', 600, "linux")
+            f'git clone --recursive {repo["url"]} {clone_dir}/', 600, self.platform)
 
         logger.info(f"cloned to : git clone --recursive {repo["url"]} {clone_dir}/")
 
@@ -226,41 +141,138 @@ class LinuxBuildStrategy(BuildStrategy):
       
 
         return out, return_code, clone_dir
+        
+    def parse_github_name(self, url):
+            if url.endswith(".git"):
+                url = url[:-4]
+
+            if url.startswith("git@"):
+                path = url.split(":", 1)[1] 
+            else:
+                path = urlparse(url).path 
+
+            parts = path.strip("/").split("/")
+            if len(parts) >= 2:
+                return parts[0], parts[1]
+            return None, None
+        
+    def find_binaries(self, path: str) -> set:
+        """ Find elf files and executables"""
+        logger.info(f"Finding executables in {path}, saving assembly files too: {self.save_assembly}")
+        file_paths = set()
+        for root, dirs, file_names in os.walk(os.path.realpath(path)):
+            if '.git' in dirs: # skip .git files 
+                dirs.remove('.git') 
+
+            for file_name in file_names:
+                location = f'{root}/{file_name}'
+                if not os.path.exists(location):
+                    continue
+                try:
+                    if self.save_assembly and location.endswith(('.s', '.ii', '.bc', '.S', '.obj', '.asm', '.cod')):
+                        file_paths.add(location)
+                        continue
+                    with open(location, 'rb') as f:
+                        
+                        if self.platform == "linux":
+                            try:
+                                ef = ELFFile(f)
+                                if ef.header['e_type'] == 'ET_EXEC' or ef.header['e_type'] == 'ET_DYN':
+                                    file_paths.add(location)
+                            except ELFError:
+                                continue
+                        elif self.platform == "windows": 
+                                try:
+                                        pe = pefile.PE(location)
+                                        file_paths.add(location)
+                                except pefile.PEFormatError:
+                                        continue
+        
+                except OSError:
+                    continue
+
+        logger.debug(f"Found executables: {file_paths}")
+        return file_paths
+    @abstractmethod
+    def _get_compiler_version(self)->str:
+        pass    
+
+    @abstractmethod
+    def own_dir(self, dir: str):
+        '''' A workaround function to fix ownership of the binaries directory. Owns a particular directory '''
+        
+    @abstractmethod
+    def run_build(self, repo, target_dir, build_mode, optimization, slnfile) -> Tuple[bytes, bytes, int]:
+        """ callback function to build command, return...."""
+
+    @abstractmethod
+    def pre_build(self,
+                  buildmode,
+                  clone_dir,
+                  optimization: str | None = None,
+                  favorsizeorspeed: None | str = None,
+                  inlinefunctionexpansion: None | str = None,
+                  intrinsicfunctions:  bool = False):
+        """
+        pre processing hook
+        return:
+        (message, status_code, filename)
+        """
+
+
+    @abstractmethod
+    def post_build_hook(self,dest_binfolder, build_mode, repoinfo, toolset,
+                        optimization, commit_hexsha):
+        """ post process hook  """
+        pass
+
+class LinuxBuildStrategy(BuildStrategy):
+
+    def __init__(self, compiler, language: str, library: str, save_assembly: bool, tmp_dir="/tmp", num_p_job=16):
+        super().__init__(compiler, language=language, save_assembly=save_assembly, library=library)
+
+        self.tmp_dir = tmp_dir
+        self.num_p_job = num_p_job
+        self.platform = "linux"
+        # this is not great, i dont like it but for now itll have to do
+        try: 
+            output_dir_perms = os.stat(BINPATH)
+            self.output_dir_uid = output_dir_perms.st_uid
+            
+            self.output_dir_gid = output_dir_perms.st_gid
+        except:  # again messy but should be fixable once the extry point is better as cooridnator wont initlise this class
+            self.output_dir_uid = 0
+            self.output_dir_gid = 0
+
+    def _get_compiler_version(self)->str:
+        return "1.0"   # placeholder
+      
+
+    def own_dir(self, dir: str):
+               # # see above for how i feel about this
+        for root, dirs, files in os.walk(dir):
+            for d in dirs:
+                try: 
+                    os.chown(os.path.join(root, d), self.output_dir_uid, self.output_dir_gid)
+                except:
+                    pass
+            for f in files:
+                try: 
+                    os.chown(os.path.join(root, f), self.output_dir_uid, self.output_dir_gid)
+                except:
+                    pass# this is from a weird edge case where there was a symbolic link pushed to git
+        os.chown(dir, self.output_dir_uid, self.output_dir_gid)
+
 
     def run_build(self,
                   repo,
                   target_dir,
                   build_mode,
-                  library,
                   optimization,
                   slnfile=None,
-                  platform='linux',
-                  compiler_version='v142'):
+                  ):
         """ Generate cmd to execute """
-        # if platform.lower() == 'windows':
-        #     cmd = ["powershell", "-Command", "msbuild"]
-        #     if build_mode in ["Release", "Debug"]:
-        #         cmd.append(f"/property:Configuration={build_mode}")
-        #     if library == "x86" or library == "x86":
-        #         cmd.append("/property:Platform=x86")
-        #     elif library == "x64":
-        #         cmd.append("/property:Platform=x64")
-        #     elif library == "Mixed Platforms":
-        #         cmd.append("/property:Platform='Mixed Platforms'")
-        #     elif library == "Any CPU":
-        #         cmd.append("/p:Platform=Any CPU")
-        #     # cmd.append(f"/p:PlatformToolset={compiler_version}")
-        #     if compiler_version in ["v140", "v141"]:
-        #         cmd.append("/p:WindowsTargetPlatformVersion= ")
-        #     cmd.append("/maxcpucount:16")
-        #     cmd.append("/property:PostBuildEvent= ")
-        #     cmd.append("/property:OutDir=assemblage_outdir_bin/")
-        #     cmd.append(f"'{slnfile}'")
-        #     cmd = " ".join(cmd)
-        #     logger.info("Windows cmd generated: %s", cmd)
 
-        # if platform.lower() == 'linux':
-            # this currently isnt being reached
         files = []
         for filename in glob.iglob(target_dir + '**/**', recursive=True):
             files.append(filename.split("/")[-1])
@@ -293,21 +305,21 @@ class LinuxBuildStrategy(BuildStrategy):
             logger.warning("No build command created for linux")
             return "No Build Command Made", BuildStatus.FAILED
 
-        cmd += "&& ls -a"
 
-        out, err, exit_code = cmd_with_output(cmd, 600, platform)
+        out, err, exit_code = cmd_with_output(cmd, 600, 'linux')
         return_code = BuildStatus.SUCCESS if exit_code == 0 else BuildStatus.FAILED
         self.own_dir(os.path.dirname(target_dir)) 
 
         return out.decode() + err.decode(), return_code
-
+    
 
 class WindowsDefaultStrategy(BuildStrategy):
     # compiler should be an enum of supported...
-    def __init__(self, compiler: str, language: str, save_assembly: bool, tmp_dir="C:/Windows/Temp", num_p_job=16,):
-        super().__init__(compiler, language=language, save_assembly=save_assembly)
+    def __init__(self, compiler: str, language: str, library: str,save_assembly: bool, tmp_dir="C:/Windows/Temp", num_p_job=16):
+        super().__init__(compiler, language=language, save_assembly=save_assembly, library=library)
         self.tmp_dir = tmp_dir
         self.num_p_job = num_p_job
+        self.platform = "windows"
         # this is not great, i dont like it but for now itll have to do
     def _get_compiler_version(self)->str | None:
         # currently this will only work for msvc. future can add more options
@@ -330,114 +342,98 @@ class WindowsDefaultStrategy(BuildStrategy):
                 bfiles.append(single_file)
         return bfiles
 
-    def pre_build(self, Platform,
-                  Buildmode,
-                  Target_dir,
-                  Optimization,
-                  _tmp_dir,
-                  VC_Version,
-                  Favorsizeorspeed="",
-                  Inlinefunctionexpansion="",
-                  Intrinsicfunctions=""):
+
+    def pre_build(self,
+                  build_mode,
+                  clone_dir,
+                  optimization: str | None = None,
+                  favorsizeorspeed: None | str = None,
+                  inlinefunctionexpansion: None | str = None,
+                  intrinsicfunctions:  bool = False):
         """ Modifying the build file to save flags """
         files = []
-        for filename in glob.iglob(Target_dir + '**/**', recursive=True):
+        for filename in glob.iglob(clone_dir + '**/**', recursive=True):
             files.append(filename)
         slnfile = ""
         projfiles = []
         for f in files:
-            if f.endswith("sln"):
+            if f.endswith(('.sln')):
                 slnfile = f
             if f.endswith("vcxproj"):
                 projfiles.append(f)
         if slnfile == "":
-            logger.error("No solution file found")
-            return "No SLN file found", BuildStatus.SUCCESS, ""
+            return None
+        logger.debug(f"Creating solution now with slnfile: {slnfile}")
         try:
             sln = Solution(slnfile)
-            sln.set_config(Platform, Buildmode)
+            sln.set_config("Windows", build_mode)
         except:
             logger.info("SLN parsing err, but continue with vcxproj files")
+        
+        logger.debug(f"Now analysing projfiles")
         try:
             for projfile in projfiles:
                 projobj = Project(projfile)
-                projobj.set_toolset_version(VC_Version)
-                projobj.set_optimization(Optimization)
-                if Favorsizeorspeed != "":
-                    projobj.set_favorsizeorspeed(Favorsizeorspeed)
-                if Inlinefunctionexpansion != "":
+                projobj.set_toolset_version(self.compiler_version)
+                projobj.set_optimization(optimization)
+                if favorsizeorspeed:
+                    projobj.set_favorsizeorspeed(favorsizeorspeed)
+                if inlinefunctionexpansion:
                     projobj.set_inlinefunctionexpansion(
-                        Inlinefunctionexpansion)
-                if Intrinsicfunctions != "":
+                        inlinefunctionexpansion)
+                if intrinsicfunctions:
                     projobj.enable_intrinsicfunctions()
+                    
+                if self.save_assembly:
+                    # this should save the assembly. maybe
+                    projobj.save_assembly()    
+                    
                 projobj.write()
                 projobj_saved = Project(projfile)
                 optimization_mode = ""
-                if "O2" in Optimization:
+                if "O2" in optimization:
                     optimization_mode = "MaxSpeed"
-                elif "O1" in Optimization:
+                elif "O1" in optimization:
                     optimization_mode = "MinSpace"
-                elif "Ox" in Optimization:
+                elif "Ox" in optimization:
                     optimization_mode = "Full"
                 else:
                     optimization_mode = "Disabled"
                 logger.info("Read config: %s, correct: %s",
                             projobj_saved.get_optimization(), optimization_mode)
                 assert optimization_mode == projobj_saved.get_optimization()
+                
+                logger.debug(f"Finished processing projobj file: {projobj}")
         except FileNotFoundError:
             logger.error("Build File not exist")
-            return "Parsing FileNotFoundError", BuildStatus.FAILED, ""
+            return None
         except AttributeError as err:
-            logger.error("Build vcxproj file parsing error %s", str(err))
-            return "Parsing AttributeError", BuildStatus.FAILED, ""
+            logger.error("Build vcxproj file parsing error %s %s", str(err), projfile)
+            logger.debug("Traceback:\n%s", traceback.format_exc())
+
+            return None
         except KeyError:
             logger.error("Build vcxproj file setting error")
-            return "Parsing file key error", BuildStatus.FAILED, ""
+            return None
         except AssertionError:
-            return "Parsing file verification error", BuildStatus.FAILED, ""
+            return None
         logger.info("Parsing success")
-        return "Parsing success", BuildStatus.SUCCESS, slnfile
+        return slnfile
 
-    def dia_get_func_funcinfo(self, binfile, source_code_prefix):
+    def dia_get_func_funcinfo(self, binfile):
         """ Process the bin to get the info and function"""
+        binfile = binfile.replace("\\", "/")
+        cmd_args = [
+            "powershell", "-Command", "Dia2Dump", "-lines", "*", f"'{binfile}'"
+        ]
         file_cache = {}
-        if source_code_prefix:
-            for f in glob.glob(source_code_prefix + '/**/*', recursive=True):
-                if os.path.isfile(f) and ".git" not in f and len(os.path.basename(f)) > 3:
-                    try:
-                        with open(f, 'r', encoding="utf-8") as source_f:
-                            assert os.path.basename(
-                                f).lower() not in file_cache.keys()
-                            file_cache[f] = source_f.readlines()
-                    except Exception as e:
-                        try:
-                            with open(f, 'r', encoding="utf-16") as source_f:
-                                assert os.path.basename(
-                                    f).lower() not in file_cache.keys()
-                                file_cache[f] = source_f.readlines()
-                        except Exception as e:
-                            pass
-
-        if len(file_cache.keys()) < 1:
-            return {}, {}, ""
-
-        # binfile = binfile.replace("/", "\\")
-        binfolder = os.path.dirname(binfile)
-        binfile = binfile.split("\\")[-1]
-        logger.info("Processing %s, move to %s", binfile, binfolder)
-        cmd = f"Dia2Dump -lines * {binfile}"
-        out, _err, _exit_code = cmd_with_output(
-            cmd, platform='windows', cwd=binfolder)
-        file_cache = {}
+        out, _err, exit_code = cmd_with_output(cmd_args, platform='windows')
+    
         try:
             lines_notclean = out.decode().split("\r\n")
         except:
-            logger.info("Dia2dump error")
+            logging.info("Dia2dump error")
             lines_notclean = []
-        lines = []
-        for line in lines_notclean:
-            lines.append(line.strip())
-
         lines = []
         for line in lines_notclean:
             lines.append(line.strip())
@@ -446,7 +442,6 @@ class WindowsDefaultStrategy(BuildStrategy):
         dbg_seg_length = 0
         source_file = ""
         lines_infos = {}
-        file_hash_lookup = {}
         for i, line in enumerate(lines):
             lines_dict = {}
             if line.startswith("**"):
@@ -456,51 +451,49 @@ class WindowsDefaultStrategy(BuildStrategy):
                 func_name_infoitem = {}
             if line.startswith("line"):
                 if len(re.split(r"\w:\\", line)) == 2:
-                    source_file = re.findall(r"\w:\\", line)[
-                        0] + re.split(r"\w:\\", line)[1]
-                    if "MD5" in source_file:
-                        source_file_cleaned = source_file.split(" (MD5: ")[0]
-                        source_file_md5 = source_file.split(
-                            " (MD5: ")[1].replace(")", "")
-                        file_hash_lookup[source_file_cleaned.strip()
-                                         ] = source_file_md5
-                    if "0x3" in source_file:
-                        source_file_cleaned = source_file.split(" (0x3: ")[0]
-                        source_file_md5 = source_file.split(
-                            " (0x3: ")[1].replace(")", "")
-                        file_hash_lookup[source_file_cleaned.strip()
-                                         ] = source_file_md5
-                rva = re.findall(
-                    r"at \[\w+\]", line)[0].replace("at ", "").replace("[", "").replace("]", "")
-                length = int(re.findall(r"len \= \w+", line)
-                             [0].replace("len = ", ""), 16)
-                line_number = int(re.findall(r"line \d+", line)
-                                  [0].replace("line ", ""))
+                    source_file = re.findall(r"\w:\\", line)[0] + re.split(
+                        r"\w:\\", line)[1]
+                rva = re.findall(r"at \[\w+\]",
+                                line)[0].replace("at ",
+                                                "").replace("[",
+                                                            "").replace("]", "")
+                length = int(
+                    re.findall(r"len \= \w+", line)[0].replace("len = ", ""), 16)
+                line_number = int(re.findall(r"line \d+", line)[0].replace("line ", ""))
                 lines_dict["line_number"] = line_number
                 lines_dict["rva"] = rva
                 lines_dict["length"] = length
                 lines_dict["source_code"] = ""
+                try:
+                    source_file_cleaned = source_file.split(" (")[0]
+                except Exception:
+                    source_file_cleaned = source_file
                 if source_file_cleaned not in file_cache.keys():
                     try:
-                        file_cache[source_file_cleaned] = open(
-                            source_file_cleaned, 'r', encoding="utf-8", errors="ignore").readlines()
-                    except:
-                        file_cache[source_file_cleaned] = [""]
-                filecontent = file_cache[source_file_cleaned]
-                if len(filecontent) > line_number-1:
-                    lines_dict["source_code"] = filecontent[line_number-1].strip()
-
-                lines_dict["source_file"] = source_file
-
+                        with open(source_file_cleaned, 'r') as source_f:
+                            file_cache[source_file_cleaned] = source_f.readlines()
+                    except Exception as excep:
+                        file_cache[source_file_cleaned] = []
+                try:
+                    lines_dict["source_code"] = file_cache[source_file_cleaned][line_number].strip(
+                    )
+                except Exception as err:
+                    lines_dict["source_code"] = ""
+                lines_dict["source_file"] = source_file_cleaned
                 if "rva_start" not in func_name_infoitem.keys():
                     func_name_infoitem["rva_start"] = rva
                 if line_number > 10000000:
                     dbg_seg_length = dbg_seg_length + length
                 rva_seg_length = rva_seg_length + length
-                if i+1 < len(lines) and (not lines[i + 1].startswith("line")):
+                if not lines[i + 1].startswith("line"):
                     func_name_infoitem["rva_end"] = str(
                         hex(int(rva, 16) + int(length))).replace("0x", "").rjust(
                             len(rva), "0")
+                    if rva_seg_length != 0:
+                        func_name_infoitem["debug_ratio"] = str(
+                            (dbg_seg_length / rva_seg_length) * 100)[:5] + "%"
+                    else:
+                        func_name_infoitem["debug_ratio"] = "0%"
                     if func_name in funcs_infos.keys():
                         funcs_infos[func_name].append(func_name_infoitem)
                     else:
@@ -510,26 +503,56 @@ class WindowsDefaultStrategy(BuildStrategy):
                 else:
                     lines_infos[func_name] = [lines_dict]
         return funcs_infos, lines_infos, source_file
-
-    def post_build_hook(self, dest_binfolder, build_mode, library, repoinfo, toolset,
+    def run_build(self,
+                  repo,
+                  target_dir,
+                  build_mode,
+                  optimization,
+                  slnfile,
+                  compiler_version='v142',
+                  num_p_job=16):
+        """ Generate cmd to execute """
+        if not slnfile:
+            logger.error("No sln file provided")
+            return "No SLN File provided", BuildStatus.FAILED
+        cmd = ["powershell", "-Command", "msbuild"]
+        if build_mode in ["Release", "Debug"]:
+            logger.debug(f"Adding property configuation={build_mode}")
+            cmd.append(f"/property:Configuration={build_mode}")
+        if self.library == "x86":
+            cmd.append("/property:Platform=x86")
+        elif self.library == "x64":
+            cmd.append("/property:Platform=x64")
+        elif self.library == "Mixed Platforms":
+            cmd.append("/property:Platform='Mixed Platforms'")
+        elif self.library == "Any CPU":
+            cmd.append("/p:Platform=Any CPU")
+        # cmd.append(f"/p:PlatformToolset={compiler_version}")
+        if self.compiler_version in ["v140", "v141"]:
+            cmd.append("/p:WindowsTargetPlatformVersion= ")
+        cmd.append("/maxcpucount:16")
+        cmd.append("/property:PostBuildEvent= ")
+        cmd.append("/property:OutDir=assemblage_outdir_bin/")
+        cmd.append(f"'{slnfile}'")
+        cmd = " ".join(cmd)
+        logger.info("Windows cmd generated: %s", cmd)
+        out, err, exit_code = cmd_with_output(cmd, 600, "windows")
+        return_code = BuildStatus.SUCCESS if exit_code == 0 else BuildStatus.FAILED
+        if return_code == BuildStatus.SUCCESS:
+            logger.warning(f"BUILD STATUS FOR {repo} succeeded!!!")
+        return out.decode() + err.decode(), return_code
+    
+    def post_build_hook(self, dest_binfolder, build_mode, repoinfo, toolset,
                         optimization, commit_hexsha):
         """ Postprocess the pdb """
         bin_files = self.dia_list_binaries(dest_binfolder)
         outer_list = []
-        func_cache = {}
-        
-        logger.info(f"This is getting triggered: {dest_binfolder} {repoinfo}")
-        if not os.path.isdir(movedir):
-            os.makedirs(movedir)
         for _, binfile in enumerate(bin_files):
-            logger.info("Moving %s -> %s", binfile,
-                        os.path.join(movedir, os.path.basename(binfile)))
-
-            shutil.copy(binfile, os.path.join(
-                movedir, os.path.basename(binfile)))
-
+            binfile_path = os.path.join(dest_binfolder, binfile)
+            # logging.info("Checking binary info %s: %s", binfile,
+            #              os.path.isfile(binfile))
             funcs_infos, lines_infos, source_file = self.dia_get_func_funcinfo(
-                binfile, source_codedir)
+                binfile_path)
             item_dict = {}
             item_dict["functions"] = []
             item_dict["file"] = binfile
@@ -537,133 +560,40 @@ class WindowsDefaultStrategy(BuildStrategy):
                 functions_val = {}
                 functions_val["function_name"] = func_name
                 functions_val["source_file"] = source_file
+                if len(infos) == 1:
+                    functions_val["intersect_ratio"] = "0%"
+                else:
+                    rva_segs = []
+                    for info_dict in infos:
+                        rva_segs.append(
+                            (info_dict["rva_start"], info_dict["rva_end"]))
+                    rva_segs.sort()
+                    rva_len = int(rva_segs[-1][1], 16) - int(rva_segs[0][0], 16)
+                    rva_gap = 0
+                    for k in range(0, len(rva_segs) - 1):
+                        rva_gap += int(rva_segs[k+1][0], 16) - \
+                            int(rva_segs[k][1], 16)
+                    functions_val["intersect_ratio"] = str(
+                        (rva_gap / rva_len) * 100)[:5] + "%"
                 functions_val["function_info"] = funcs_infos[func_name]
                 functions_val["lines"] = lines_infos[func_name]
-                if len(functions_val["lines"]) > 0:
-                    functions_val["source_file"] = functions_val["lines"][0]["source_file"]
-
-                if "MD5" in functions_val["source_file"]:
-                    source_file_cleaned = functions_val["source_file"].split(" (MD5: ")[
-                        0]
-                elif " (0x3: " in functions_val["source_file"]:
-                    source_file_cleaned = functions_val["source_file"].split(" (0x3: ")[
-                        0]
-                else:
-                    source_file_cleaned = functions_val["source_file"]
-
-                # match priority clangfirst
-                if source_file_cleaned not in func_cache.keys():
-                    try:
-                        func_cache[source_file_cleaned] = clang_get_functions(
-                            source_file_cleaned)
-                    except Exception as e:
-                        logger.info("Clang parser error %s", e)
-                        func_cache[source_file_cleaned] = []
-                    beforetime = time.time()
-                    func_cache[source_file_cleaned] += ctags_get_functions(
-                        source_file_cleaned)
-
-                funcsourceinfo = func_cache[source_file_cleaned]
-                for func in funcsourceinfo:
-                    if "::" in func_name and "::" in func[0]:
-                        pass
-                    elif "::" in func_name:
-                        func_name = func_name.split("::")[-1]
-                    elif "::" in func[0]:
-                        func[0] = func[0].split("::")[-1]
-                    if func[0].lower() == func_name.lower():
-                        functions_val["ctag_definitions"] = func[3]
-                        functions_val["top_comments"] = func[4]
-                        functions_val["body_comments"] = func[6]
-                        functions_val["source_codes_ctags"] = func[5]
-                        functions_val["prototype"] = func[7]
-                        functions_val["source_codes"] = func[9]
-                        for line_info_captured in functions_val["lines"]:
-                            if (not line_info_captured["source_code"]) and (line_info_captured["line_number"] in func[8].keys()):
-                                line_info_captured["source_code"] = func[8][line_info_captured["line_number"]]
-                                break
-                        break
-
                 item_dict["functions"].append(functions_val)
             outer_list.append(item_dict)
         try:
-            assemblage_meta = {}
-            assemblage_meta["Platform"] = library
-            assemblage_meta["Build_mode"] = build_mode
-            assemblage_meta["Toolset_version"] = toolset
-            assemblage_meta["URL"] = repoinfo["url"]
-            assemblage_meta["Binary_info_list"] = outer_list
-            assemblage_meta["Optimization"] = optimization
-            assemblage_meta["Pushed_at"] = repoinfo["updated_at"]
-            assemblage_meta["Commit"] = commit
+            json_di = {}
+            json_di["Platform"] = self.library
+            json_di["Build_mode"] = build_mode
+            json_di["Toolset_version"] = toolset
+            json_di["URL"] = repoinfo["url"]
+            json_di["Binary_info_list"] = outer_list
+            json_di["Optimization"] = optimization
+            json_di["Pushed_at"] = repoinfo["updated_at"]
+            json_di["commit_sha"] = commit_hexsha
             with open(os.path.join(dest_binfolder, PDBJSONNAME), "w") as outfile:
-                json.dump(assemblage_meta, outfile, sort_keys=False, indent=4)
+                json.dump(json_di, outfile, sort_keys=False)
+            repoid = dest_binfolder.split("\\")[-1]
+            with open(os.path.join(PDBPATH, f"{repoid}.json"), "w") as outfile:
+                json.dump(json_di, outfile, sort_keys=False, indent=4)
         except FileNotFoundError:
-            logger.info("Pdbjsonfile not found")
-        if not os.path.isdir(movedir):
-            os.makedirs(movedir)
-        shutil.move(os.path.join(dest_binfolder, PDBJSONNAME), movedir)
-
-    def run_build(self,
-                  repo,
-                  target_dir,
-                  build_mode,
-                  library,
-                  optimization,
-                  slnfile=None,
-                  platform='linux',
-                  compiler_version='v142',
-                  num_p_job=16):
-        """ Generate cmd to execute """
-        if platform.lower() == 'windows':
-            cmd = ["powershell", "-Command", "msbuild"]
-            if build_mode in ["Release", "Debug"]:
-                cmd.append(f"/property:Configuration={build_mode}")
-            if library == "x86" or library == "x86":
-                cmd.append("/property:Platform=x86")
-            elif library == "x64":
-                cmd.append("/property:Platform=x64")
-            elif library == "Mixed Platforms":
-                cmd.append("/property:Platform='Mixed Platforms'")
-            elif library == "Any CPU":
-                cmd.append("/p:Platform=Any CPU")
-            # cmd.append(f"/p:PlatformToolset={compiler_version}")
-            if compiler_version in ["v140", "v141"]:
-                cmd.append("/p:WindowsTargetPlatformVersion= ")
-            cmd.append("/maxcpucount:16")
-            cmd.append("/property:PostBuildEvent= ")
-            cmd.append("/property:OutDir=assemblage_outdir_bin/")
-            cmd.append(f"'{slnfile}'")
-            cmd = " ".join(cmd)
-            logger.info("Windows cmd generated: %s", cmd)
-            return cmd_with_output(cmd, 600, platform)
-        if platform.lower() == 'linux':
-            files = []
-            for filename in glob.iglob(target_dir + '**/**', recursive=True):
-                files.append(filename.split("/")[-1])
-            logger.info("%s files in repo", len(files))
-            build_tool = get_build_system(files)
-            if self.save_assembly:
-                cflags = 'CFLAGS="$CFLAGS -save-temps"'
-                logger.info("Saving .s and .o files as well ")
-            else:
-                cflags = 'CLAGS="$CFLAGS"'
-
-            cmd = ""
-            if 'bootstrap' in build_tool:
-                cmd = f'cd {target_dir} && ./bootstrap && ' \
-                    f'bash ./configure && timeout -m 5000000 make {cflags} -j{self.num_p_job}'
-            elif 'configure' in build_tool:
-                cmd = f'cd {target_dir} && bash ./configure && ' \
-                    f'timeout -m 5000000 -- make {cflags} -j{self.num_p_job}'
-            elif 'cmake' in build_tool:
-                cmd = f'cd {target_dir} && cmake -B build ./ && cd build && ' \
-                    f'timeout -m 5000000 -- make {cflags} -j{self.num_p_job}'
-            elif 'make' in build_tool:
-                cmd = f'cd {target_dir} && timeout -m 5000000 -- make {cflags} -j{self.num_p_job}'
-            logger.info("Linux cmd generated: %s", cmd)
-            out, err, exit_code = cmd_with_output(cmd, 600, platform)
-            return_code = BuildStatus.SUCCESS if exit_code == 0 else BuildStatus.FAILED
-            if return_code == BuildStatus.SUCCESS:
-                logger.warning(f"BUILD STATUS FOR {repo} succeeded!!!")
-            return out.decode() + err.decode(), return_code
+            logging.info("Pdbjsonfile not found")
+    
