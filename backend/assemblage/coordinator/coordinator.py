@@ -179,7 +179,10 @@ class Coordinator:
                     status_id=task.id, clone_status=CloneStatus.PROCESSING)
                 time_after_query = time.time()
                 repo_url = patch_url(uncloned_repo.url)
-                out_dir = f'{BIN_DIR}/{task.id}'
+                out_dir = f'{BIN_DIR}/{task.id}' # dont think this is needed anymore
+                # correction. later. would be good to replace this with the projectid from scrapes
+                # only once the build and clone is fully fixed and reliable 
+                
                 # format a request to be sent to the builder/cloner
                 clone_req = {'name': uncloned_repo.name, 'url': repo_url,
                              'task_id': task.id, 'opt_id': build_opt.id,
@@ -195,7 +198,7 @@ class Coordinator:
 
                 # Publish this task, to be picked up by a worker with the appropriate build option settings
                 thread_channel.basic_publish(
-                    exchange='build_opt', routing_key=f'builder.{build_opt.id}',
+                    exchange='build_opt', routing_key=f'builder.opt.{build_opt.id}',
                     body=json.dumps(clone_req),
                     properties=pika.BasicProperties(delivery_mode=2))
 
