@@ -173,7 +173,7 @@ class Coordinator:
 
                 # Publish this task, to be picked up by a worker with the appropriate build option settings
                 _thread_channel.basic_publish(
-                    exchange='build_opt', routing_key=f'builder.{build_opt.id}',
+                    exchange='build_opt', routing_key=f'builder.opt.{build_opt.id}',
                     body=json.dumps(clone_req),
                     properties=pika.BasicProperties(delivery_mode=2))
                 # TODO: need messageclient function that can publish to exchange w/out queue
