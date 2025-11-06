@@ -38,13 +38,16 @@ from assemblage.mq.client import MQQueue, MessageClient, Connection
 # from assemblage.analyze.tokenchecker import TokenChecker
 from assemblage.analyze.analyze import get_build_system
 from assemblage.consts import (
-    SCRAPER_TIMESTAMP_RECORDFILE_PATH, SCRAPER_PAGE_SIZE,
+    SCRAPER_TIMESTAMP_RECORDFILE_PATH, SCRAPER_PAGE_SIZE,  DEBUG_SHOW_ALL_MESSAGES_SCRAPER,
     GITHUB_REPO_URL, SCRAPER_REQUEST_TIMEOUT_S, SCRAPER_REPO_BUNDLESIZE,
     SCRAPER_RATE_INTERVAL, RATE_LIMIT_WAIT, SECONDARY_RATE_LIMIT_WAIT, RATE_LIMIT_UPDATE_INTERVAL, InputQueue,
     ScrapeSource, GithubTimeOrder, WorkerType
 )
+from assemblage.mq.messages import ScraperDataOutSingle, ScraperDataOutBundle
 
 logger = logging.getLogger(__name__)
+
+scrape_queue = MQQueue( name=InputQueue.SCRAPE )  # should this be a class var?
 
 '''
 possible TODO:
@@ -139,7 +142,8 @@ class DataSource(object):
     def __iter__(self):  # iterate over self data
         for r, fs in self.fetch_data():
             if self.data_filter(r, fs):
-                yield r
+                if r is not None:
+                    yield r
 
 
 class GithubRepositories(DataSource):
@@ -180,16 +184,27 @@ class GithubRepositories(DataSource):
 
     def _process_repo_message(self, repo):
         '''Given a single entry in the GitHub search results, requests the repository page, extracts the files, and returns select metadata with the files.'''
-        time.sleep(
-            SCRAPER_RATE_INTERVAL)  # prevents scraper from monopolizing resources
+        if type(repo) is not dict:
+            logger.error(f"_process_repo_message expects dictionary as input, not {str(type(repo))}")
+            return None, None
         url = repo["url"]
         default_branch = repo["default_branch"]
         # Accesses the repository itself in order to extract files
+        req = f"{url}/git/trees/{default_branch}"
         try:
-            page, _ = self.get_request(url + f"/git/trees/{default_branch}")
+
+            page, _ = self.get_request(req)
+            
+            if page is None:
+                logger.info(f"Could not process repo {url}: error getting page {req}")
+                return None, None
+            
         except Exception as err:
             logger.info(err)
             return None, None
+        
+        time.sleep( SCRAPER_RATE_INTERVAL )  # prevents scraper from monopolizing resources
+        
         # Contains the actual structure of the code within this repository
         repo_page = json.loads(page.text)
         files_list = []  # used for breaking the repo page into files
@@ -213,18 +228,18 @@ class GithubRepositories(DataSource):
         created_at = github_time_to_mysql_time(repo["created_at"])
         updated_at = github_time_to_mysql_time(repo["pushed_at"])
         size = int(repo['size'])
-        return {
-            'name': name,
-            'url': url,
-            'language': language,
-            'owner_id': owner_id,
-            'description': description[:200],
-            'created_at': created_at,
-            'updated_at': updated_at,
-            'size': size,
-            'build_system': build_tool,
-            'branch': repo["default_branch"]
-        }, files
+        return ScraperDataOutSingle(
+            name=name,
+            url=url,
+            language=language,
+            owner_id=owner_id,
+            description=description,
+            created_at=created_at,
+            updated_at=updated_at,
+            size=size,
+            build_system=build_tool,
+            branch=repo["default_branch"]
+            ), files
 
     def fetch_data(self):
         '''Requests search result pages from GitHub's Search API, then extracts the repository information from each result on each search page.'''
@@ -267,7 +282,8 @@ class GithubRepositories(DataSource):
                         # update total query results count in case it has changed
                         total_query_results_count = min(
                             rdict["total_count"], total_query_results_count)
-                        logger.info("Successful search result obtained by crawler %s. GitHub responded with %s repos",
+                        if DEBUG_SHOW_ALL_MESSAGES_SCRAPER:
+                            logger.info("Successful search result obtained by crawler %s. GitHub responded with %s repos",
                                     self.parent_workerid, total_query_results_count)
                         # logger.info("Crawler query: %s ... ; page: %s; GitHub responded with %s repos",
                         #             query_time_start[:-7], payload['page'], total_query_results_count) # not sure about the query_time_start[:-7] line
@@ -276,8 +292,9 @@ class GithubRepositories(DataSource):
                             dt, fs = self._process_repo_message(repo)
                             # dt is metadata, fs is all files in repo
                             if dt and fs:
-                                logger.info("Crawler %s got %s",
-                                            self.parent_workerid, repo["name"])
+                                if DEBUG_SHOW_ALL_MESSAGES_SCRAPER:
+                                    logger.info("Crawler %s got %s",
+                                                self.parent_workerid, repo["name"])
                                 # logger.info("Obtained metadata: %s", str(dt))
                                 # logger.info("Obtained files %s", str(fs))
                                 yield dt, fs
@@ -299,13 +316,18 @@ class GithubRepositories(DataSource):
         # Unauthenticated: 10/minute for search api, 60/hour for standard api
         # Authenticated: 60/minute for search api, 5000/hour for standard api (~8 req/min)
 
-        use_headers: set = self.auth_headers if (
-            headers == "default") else headers
+        use_headers: set = self.auth_headers if (headers == "default") else headers
         use_proxy: str = self.random_proxy() if (proxy == "random") else proxy
 
         start_request_time = float(time.time())
-        r = requests.get(query, payload, headers=use_headers,
-                         proxies=use_proxy, timeout=SCRAPER_REQUEST_TIMEOUT_S)
+        try:
+            r = requests.get(query, payload, headers=use_headers,
+                            proxies=use_proxy, timeout=SCRAPER_REQUEST_TIMEOUT_S)
+        except Exception as err:
+            logger.error(f"An unexpected issue occurred when getting query {query}:")
+            logger.info(err)
+            return None, None
+
         receipt_time = float(time.time())
 
         # The rest of the function checks for rate limits and other potential issues.
@@ -331,7 +353,13 @@ class GithubRepositories(DataSource):
             return None, start_request_time-receipt_time
 
         # Check for important messages and warn the user. These need to be handled manually.
-        rdict = json.loads(r.text)
+        try:
+            rdict = json.loads(r.text)
+        except Exception as err:
+            logger.error(f"Error when parsing query result (format of result may not be as expected).")
+            logger.info(err)
+            return None, start_request_time-receipt_time
+
         if "message" in rdict.keys():
             if "rate limit" in rdict["message"]:
                 if "secondary" in rdict["message"]:
@@ -443,6 +471,25 @@ class Scraper(BasicWorker):
         self.workerid = workerid
         self.total_repos_sent = 0
 
+    def send_bundle(self):
+        conn: Connection = self.mq_client.get_connection(f'{self}')
+
+        if conn is None:
+            conn: Connection = self.mq_client.create_connection(conn_name=f'{self}',
+                                                                channel_name=f'{self}')
+            conn.create_channel()
+
+            conn.add_queue(scrape_queue)
+        bundle = ScraperDataOutBundle(self.repocache)
+        conn.send_msg(
+            scrape_queue.name, bundle.to_json())
+        self.total_repos_sent += len(self.repocache)
+        logger.info("Scraper %s bundled and sent %s repos to coordinator. Total repos sent by this scraper: %s",
+                    self.workerid, len(self.repocache), self.total_repos_sent)
+        self.repocache = []
+        return 1  # does nothing but indicate successful execution for testing
+
+
     def run_job(self):
         '''Acquires repository information and sends it to coordinator on "scrape" queue until task completed
            Scraper does not listen to instructions from coordindator for this, so do not need to use the handler
@@ -455,28 +502,14 @@ class Scraper(BasicWorker):
 
         try:
             logger.info("Scraper %s start", self.workerid)
-            conn: Connection = self.mq_client.create_connection(conn_name=f'{self}',
-                                                                channel_name=f'{self}')
-            conn.create_channel()
-            scrape_queue = MQQueue(
-                name=InputQueue.SCRAPE)  # should this be a class var?
 
-            conn.add_queue(scrape_queue)
-
-            self.repocache = []
             for repo in iter(self.data_source):
                 self.repocache.append(repo)
 
                 # once enough repositories have been collected, send a message to the coordinator
                 if len(self.repocache) >= SCRAPER_REPO_BUNDLESIZE:
-                    # need to re add reducancy if message connection fails
-                    conn.send_msg(
-                        scrape_queue.name, json.dumps(self.repocache))
-                    self.repocache = []
-                    self.total_repos_sent += SCRAPER_REPO_BUNDLESIZE
-                    logger.info("Scraper %s bundled and sent %s repos to coordinator. Total repos sent by this scraper: %s",
-                                self.workerid, SCRAPER_REPO_BUNDLESIZE, self.total_repos_sent)
-
+                    self.send_bundle()
+                    
             logger.info("Crawler %s End Task", self.workerid)
             # deletes the last crawled time at conclusion of task
             os.remove(self.record_file)

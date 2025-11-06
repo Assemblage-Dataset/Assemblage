@@ -87,6 +87,9 @@ PDBJSONNAME = "pdbinfo.json"
 AWS_AUTO_REBOOT_PREFIX = "auto-worker"
 REPO_SIZE_THRESHOLD = 50
 
+# Some debug constants. TODO: use the 'debug' vs 'info' states of the logger instead
+DEBUG_SHOW_ALL_MESSAGES_SCRAPER = False  # set to False to quiet some messages
+
 
 # Scraper constants
 SCRAPER_TIMESTAMP_RECORDFILE_PATH = "/binaries/crawled.json"
@@ -113,13 +116,15 @@ SECONDARY_RATE_LIMIT_WAIT = 120
 RATE_LIMIT_UPDATE_INTERVAL = 60
 
 
+# RabbitMQ / MessageClient consts
 
-# Coordinator constants
-# TODO move to config/settings file? 
 CHANNEL_HEARTBEAT = 500
 CHANNEL_TIMEOUT = 350
 CHANNEL_CONNECTION_ATTEMPTS = 35
-CHANNEL_RETRY_DELAY = 15
+CHANNEL_RETRY_DELAY = 5
+
+
+# Coordinator constants
 
 DISPATCH_INTERVAL = 0.1  # time between attempting dispatchs. 
 # 0 is OK except when there is a large dispatch backlog and all workers are on the same machine,
@@ -129,6 +134,10 @@ IDLE_DISPATCH_INTERVAL = 5  # when no dispatches are found, how long to wait unt
 
 CLEAN_OVERTIME_INTERVAL = 600 
 AWS_REBOOT_SLEEP_INTERVAL = 1200
+
+COORDINATOR_DATABASE_SYNC_TIMEOUT = 10  
+# If the coordinator may be reading an outdated entry in the database (see recv_build_info),
+# wait for these many seconds for the database to update before continuing
 
 '''
 For the context of the direction of queues. It is from the perspective of the coordinator

@@ -31,10 +31,6 @@ from assemblage.analyze.analyze import get_build_system
 from assemblage.worker.ctags_parser import get_functions as ctags_get_functions
 from assemblage.worker.clang_parser import get_functions as clang_get_functions
 from typing import Tuple
-
-
-import traceback
-
 logger = logging.getLogger(__name__)
 
 # should this be a class function  change this to debug=False by default
@@ -111,22 +107,29 @@ class BuildStrategy:
         if not project_name:
             project_name = os.urandom(8).hex()
 
-        git_user_dir = f"{BINPATH}/projects/{user_name}"
-        # if this fails, should catch and then its git pull not git clone as it already exists?(maybe check url too)
-        os.makedirs(f"{git_user_dir}", exist_ok=True)
-
+        git_user_dir = f"/binaries/projects/{user_name}"
         clone_dir = f'{git_user_dir}/{project_name}'
-        logger.debug("Starting clone")
-        out, err, exit_code = self.cmd_with_output(
-            f'git clone --recursive {repo["url"]} {clone_dir}/', 600)
+        os.makedirs(f"{git_user_dir}", exist_ok=True)  # ensure that user's directory exists
+        cmd = ""
+        cwd = ""
+        
+        if os.path.isdir(clone_dir):  # clone dir exists -- likely project already has been cloned
+            logger.info(f"Target clone directory '{clone_dir}' already cloned: attempting to pull... ")
+            cmd = 'git pull --recurse-submodules'
+            cwd = clone_dir
+            # TODO: check for errors, more sophisticated git pull behavior?
+        else:  
+            # first access of this project. cwd is set to "" so we can pass clone_dir as a destination
+            cmd = f'git clone --recursive {repo["url"]} {clone_dir}/'
 
-        logger.info(f"cloned to : git clone --recursive {repo["url"]} {clone_dir}/")
+        out, err, exit_code = self.cmd_with_output(cmd, 600, cwd=cwd)
 
         # # see above for how i feel about this
         self.own_dir(git_user_dir) # ensure all projects 
         # # maybe try add more verbose errors?
         return_code = CloneStatus.SUCCESS if exit_code == 0 else CloneStatus.FAILED
         if return_code == CloneStatus.FAILED:
+            # clean up after a failed clone
             try:
                 os.removedirs(f"{git_user_dir}") # will fail if not empty, ie the git user has a nother project already cloned
             except:
@@ -242,9 +245,27 @@ class LinuxBuildStrategy(BuildStrategy):
             self.output_dir_uid = 0
             self.output_dir_gid = 0
 
-    def _get_compiler_version(self)->str:
-        return "1.0"   # placeholder
-      
+    def _get_compiler_version(self) -> str | None:
+        """
+        Detect compiler version using -dumpfullversion -dumpversion via cmd_with_output().
+        Works for both GCC and Clang.
+        """
+        import re
+
+        try:
+            out, err, code = self.cmd_with_output(f"{self.compiler} -dumpfullversion -dumpversion")
+
+            if code == 0:
+                output = out.decode(errors="ignore").strip()
+                match = re.search(r"\d+(\.\d+)+", output)
+                if match:
+                    return match.group(0)
+
+        except Exception as e:
+            logger.warning(f"Failed to get compiler version: {e}")
+
+        return None
+
 
     def own_dir(self, dir: str):
                # # see above for how i feel about this
@@ -320,16 +341,19 @@ class WindowsDefaultStrategy(BuildStrategy):
         # this is not great, i dont like it but for now itll have to do
     def _get_compiler_version(self)->str | None:
         # currently this will only work for msvc. future can add more options
-        try: 
-            result = subprocess.run(["cl.exe"], capture_output=True, text=True)
+        try:       
+            _, err, code = self.cmd_with_output("cl.exe")
             
-            match = re.search(r'Version ([\d.]+)', result.stderr)
+            match = re.search(r"Version ([\d.]+)", err.decode(errors="ignore"))
+
             if match: 
                 return match.group(1)
-        except subprocess.CalledProcessError as e:
-            logger.warning("failed to get MSVC version")
-            return None
-                
+       
+        except Exception as e:
+                logger.warning(f"Failed to get compiler version: {e}")
+
+        return None
+                        
 
     def dia_list_binaries(self, dest_binfolder):
         """ get binary file under the binfolder """

@@ -11,6 +11,7 @@ Alex Duly
 
 import logging
 import os
+import queue
 import shutil
 import json
 import sys
@@ -32,6 +33,7 @@ logger = logging.getLogger(__name__)
 
 
 NON_EXE_MODE = stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH
+
 
 class Builder(BasicWorker):
     """

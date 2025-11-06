@@ -11,6 +11,7 @@ import pika
 from pika.adapters.blocking_connection import BlockingChannel, BlockingConnection
 from pika.exchange_type import ExchangeType
 from pika.spec import PERSISTENT_DELIVERY_MODE
+from assemblage.consts import (CHANNEL_HEARTBEAT, CHANNEL_TIMEOUT, CHANNEL_CONNECTION_ATTEMPTS, CHANNEL_RETRY_DELAY)
 
 
 
@@ -52,9 +53,9 @@ class Connection:
 
     def __init__(self, mq_host: str, mq_port: int, conn_name: str,
                  channel_name: str,
-                 heartbeat: int = 300, timeout: int = 300,
-                 connection_attempts: int = 35,
-                 retry_delay: int = 3,
+                 heartbeat: int = CHANNEL_HEARTBEAT, timeout: int = CHANNEL_TIMEOUT,
+                 connection_attempts: int = CHANNEL_CONNECTION_ATTEMPTS,
+                 retry_delay: int = CHANNEL_RETRY_DELAY,
                  username: str = "guest",
                  password: str = "guest",
                  ):
@@ -89,7 +90,7 @@ class Connection:
         attempt = 0
         while auto_retry: 
             try:
-                self.conn = pika.BlockingConnection(conn_params)
+                self.conn = BlockingConnection(conn_params)
                 if self.conn.is_open:
                     return self.conn
             except pika.exceptions.AMQPConnectionError as e:
@@ -132,7 +133,7 @@ class Connection:
             self.chan.queue_declare(queue=queue.name, durable=True)
             logger.info(f"Created queue: {queue} on {self}")
             if queue.exchange_name and queue.routing_key:
-                logger.debug(f"Binding routing key {queue.routing_key }  and exchange {queue.exchange_name}")
+                logger.debug(f"Binding routing key {queue.routing_key }  and exchagne {queue.exchange_name}")
                 self.chan.queue_bind(queue.name, queue.exchange_name, queue.routing_key)
             self.queues[queue.name] = queue
 
@@ -150,7 +151,7 @@ class Connection:
     def add_topic_exchange(self, exchange_name):
         ''' add a topic exchanger to channel '''
         self.exchange_name = exchange_name
-        self.chann.exchange_declare(exchange=exchange_name,
+        self.chan.exchange_declare(exchange=exchange_name,
                                       exchange_type=ExchangeType.topic)
 
     def send_msg(self, queue_name, msg, exchange='', reply_to: str | None = None, corr_id: str | None = None):
@@ -183,29 +184,23 @@ class Connection:
         except Exception as err:
             logging.error(f"failed to send message: {err}")
 
-    def consume(self, queue: MQQueue, auto_ack = False, retries =10):
+    def consume(self, queue: MQQueue, auto_ack = False):
         '''
         Consume, on speicifed queue
         '''
-        
         if queue.name not in self.queues:
             raise ValueError(
-                f"Queue is not in this connection's queue map: {self}. Please create queue before consuming message")
-        count = 0
-        while count <= retries: 
-            try:
-                self.consume_tag = self.chan.basic_consume(queue=queue.name,
-                                                            on_message_callback=queue.callback, auto_ack=auto_ack)
+                f"Queue {queue.name} is not in this connection's queue map: {self}. Please create queue before consuming message")
+        try:
 
-                self.chan.start_consuming()   
-                count = 10     
-            except Exception as e:
-                logger.critical(
-                    f"__consume_from_queue from queue {queue} connection {self} failed!: {e}")
-                logger.critical(f"Attempting to restart consumption: {self} attempt: {count}/{retries}")
-            self.connect()
-            self.create_channel()
-            count = count + 1
+
+            self.consume_tag = self.chan.basic_consume(queue=queue.name,
+                                                        on_message_callback=queue.callback, auto_ack=auto_ack)
+            self.chan.start_consuming()
+        except Exception as e:
+            logger.critical(
+                f"__consume_from_queue from queue {queue} connection {self} failed!")
+            logger.critical(e)
 
     def close(self):
         try:
@@ -245,9 +240,9 @@ class MessageClient:
         # self.consume_tag = ''
         self.connections: dict[str, Connection] = {}
 
-    def create_connection(self, conn_name: str, channel_name: str, heartbeat: int = 300, timeout: int = 300,
-                          connection_attempts: int = 35,
-                          retry_delay: int = 3, auto_connect: bool = True)-> Connection:
+    def create_connection(self, conn_name: str, channel_name: str, heartbeat: int = CHANNEL_HEARTBEAT, timeout: int = CHANNEL_TIMEOUT,
+                          connection_attempts: int = CHANNEL_CONNECTION_ATTEMPTS,
+                          retry_delay: int = CHANNEL_RETRY_DELAY, auto_connect: bool = True)-> Connection:
         '''
         Create a new connection, 
         Defaults to auto connect
