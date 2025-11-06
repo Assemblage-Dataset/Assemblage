@@ -13,25 +13,36 @@ For up to date info and download, please visit the [dataset page](https://assemb
 
 <sub>The code in this repository is published under MIT license.</sub>
 
+NOTE. For running builders distrubuted requires the RabbitMQ server to be exposed. Currenlty, the default username/passwords are used, so we reccomend that you set up firewall rules to ensure only your worker host can access the RabbitMQ server.
 
-Use separate ENV variable file for each container. 
+
+You can use one secrets.env, or multiple separate env files, but the following shows what env variables need to be in which container 
 Also, in the compose file, specify the type - Coordinator,Scraper,Builder
 
-## ENVIRONMENT VARIABLES FOR coordinator.secrets.env
-```
+## ENVIRONMENT VARIABLES FOR coordinator
 DB_HOST=assemblage-db (database container name)
 POSTGRES_DATABASE=assemblage
 POSTGRES_USER=assemblage
 POSTGRES_PASSWORD=<password>
 DB_PORT=5432
+MINIO_ROOT_USER=<chosen user>
+MINIO_ROOT_PASSWORD=<chosen password>
 ```
-## ENVIRONMENT VARIABLES FOR scraper.secrets.env
+## ENVIRONMENT VARIABLES FOR scraper
 ```
 GITHUB_TOKEN=<github_pat_token>
 ```
-## ENVIRONEMNT VARIABLES FOR builder.secrets.env
+## ENVIRONEMNT VARIABLES FOR builder
 ```
 SAVE_ASSEMBLY=true
+MINIO_ROOT_USER=<chosen user>
+MINIO_ROOT_PASSWORD=<chosen password>
+```
+
+## Environemnt Variables For MINIO
+```
+MINIO_ROOT_USER=<chosen user>
+MINIO_ROOT_PASSWORD=<chosen password>
 ```
 
 ## If using a builder or scraper on a distributed host also add
