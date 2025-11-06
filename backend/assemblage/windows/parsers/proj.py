@@ -390,7 +390,9 @@ class Project(object):
                                   upper_label)
             for item in items:
                 subitem = item.find("{" + _MS_BUILD_NAMESPACE + "}" + label)
-                return subitem.text
+                if subitem: 
+                    return subitem.text
+        return None
 
     def set_inlinefunctionexpansion(self,
                                     value,
@@ -518,7 +520,7 @@ class Project(object):
                     items = group.findall("{" + _MS_BUILD_NAMESPACE + "}" +
                                           "PlatformToolset")
                     for item in items:
-                        if item is not None:
+                        if item:
                             if 'Condition' not in item.attrib or _matches_platform_configuration(
                                     item.attrib['Condition'],
                                     "All Configurations",
@@ -564,6 +566,18 @@ class Project(object):
         self.__set_property_group_items_for_config(platform, configuration,
                                                    None, 'LinkIncremental',
                                                    string_value)
+    def save_assembly(self, 
+                            platform="All Configurations",
+                            configuration="All Configurations"):
+        """Add additional compiler options to the project."""
+        # Read current AdditionalOptions
+        current_opts = self.general_get("AdditionalOptions", "ClCompile",
+                                        platform, configuration)
+        if current_opts:
+            option_str = current_opts + " " + option_str
+        # Set the flag to save .asm files. If you want .cod instead, using /FA
+        self.general_set("AdditionalOptions", "ClCompile", "/Fa",
+                            platform, configuration)
 
     def write(self, filename=None):
         """Save project file."""

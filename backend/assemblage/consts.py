@@ -80,7 +80,7 @@ else:
     BINPATH = "/binaries"
 
 
-PDBPATH = f"{BINPATH}/Pdbs" # is this used
+PDBPATH = f"{BINPATH}/Pdbs" 
 BUILDPATH = "Builds" # is this used
 PDBJSONNAME = "pdbinfo.json"
 
@@ -162,3 +162,7 @@ class ScrapeSource(str, Enum):
 class GithubTimeOrder(Enum):
     CREATED = "created"
     PUSHED = "pushed"
+    
+class SupportedPlatform(str,Enum):
+    WINDOWS = 'windows'
+    LINUX = 'linux'

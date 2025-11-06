@@ -84,7 +84,7 @@ class Solution(object):
         return result
 
 
-    def set_config(self, platform, buildmode, filename=None):
+    def set_config(self, platform, build_mode, filename=None):
         # Quite hard coded to meet the need
         started = 0
         configs = []
@@ -96,10 +96,10 @@ class Solution(object):
             if started:
                 configs.append(line.split("=")[0].strip())
             started = _REGEX_CONFIG_START.match(line) or started
-        if f"{buildmode}|{platform}" in configs:
+        if f"{build_mode}|{platform}" in configs:
             return
         target_str = configs[0]
-        replace_str = f"{buildmode}|{platform}"
+        replace_str = f"{build_mode}|{platform}"
         f = open(self.filename, "r", encoding="utf-8-sig")
         lines = f.readlines()
         lines = [x.replace(target_str, replace_str) for x in lines]

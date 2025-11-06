@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from email.policy import default
 from typing import Any, Literal
 from pydantic_settings import BaseSettings
 from pydantic import computed_field, Field
@@ -81,3 +82,4 @@ class BuilderSettings(AssemblageSettings):
     build_os: str = Field(default_factory=lambda: system().lower())
     compiler: str
     language: str
+    build_mode: str = Field(default="Release", env="BUILD_MODE")
