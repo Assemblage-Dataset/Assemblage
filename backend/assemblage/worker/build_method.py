@@ -208,7 +208,7 @@ class BuildStrategy:
 
     @abstractmethod
     def pre_build(self,
-                  buildmode,
+                  build_mode,
                   clone_dir,
                   optimization: str | None = None,
                   favorsizeorspeed: None | str = None,
@@ -305,7 +305,7 @@ class LinuxBuildStrategy(BuildStrategy):
             extra_flags = 'CFLAGS="$CFLAGS -save-temps=obj" CXXFLAGS="$CXXFLAGS -save-temps=obj"'
         else:
             extra_flags = 'CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS"'
-
+        # ideally use LLM/ other to generate the command here based on the files
         if 'bootstrap' in build_tool:
             cmd = f'cd {clone_dir} && ./bootstrap && ' \
                 f'bash ./configure && timeout 10m make {extra_flags} -j{self.num_p_job}'
@@ -430,7 +430,6 @@ class WindowsDefaultStrategy(BuildStrategy):
             return None
         except AttributeError as err:
             logger.error("Build vcxproj file parsing error %s %s", str(err), projfile)
-            logger.debug("Traceback:\n%s", traceback.format_exc())
 
             return None
         except KeyError:
