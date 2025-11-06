@@ -9,16 +9,13 @@ Yihao Sun
 Alex Duly
 """
 
-import datetime
 import logging
 import os
-import queue
 import shutil
 import json
 import sys
 import time
 import stat
-
 import glob
 import ntpath
 
@@ -35,7 +32,6 @@ logger = logging.getLogger(__name__)
 
 
 NON_EXE_MODE = stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH
-
 
 class Builder(BasicWorker):
     """
@@ -257,11 +253,9 @@ class Builder(BasicWorker):
             before_build_time = int(time.time())
             build_msg, build_status = self.build_strategy.run_build(
                 repo=task,
-                target_dir=clone_dir,
-                compiler_version=compiler_version,
+                clone_dir=clone_dir,
                 build_mode=self.build_mode,
-                optimization=compiler_flag,
-                slnfile=sln_file,
+                slnfile=sln_file
             )
 
             after_build_time = int(time.time())
@@ -290,24 +284,25 @@ class Builder(BasicWorker):
         logger.debug("Worker %s finished %s", self.uuid[:5], url,
                      )
 
-    def save_binaries(self, clone_dir, repo, original_files):
+    def save_binaries(self, target_dir, repo, original_files):
         """ Store the binaries in the specified output directory. 
             and send message to cooridinator to update database
+            Eventually replace again with s3 bucket, then save orignal files/git repo in s3 too
         """
 
         self.build_strategy.own_dir(os.path.dirname(
-            clone_dir))  # possibly overkill here
+            target_dir))  # possibly overkill here
         bin_found = {
-                    f for f in self.build_strategy.find_binaries(clone_dir)
-                    if (os.path.exists(f))
-                }
+                    f for f in self.build_strategy.find_binaries(target_dir)
+                    if (os.path.exists(f)) and f not in original_files
+                } # we dont want to take any files we didnt compile as we dont know what they were compiled with etc
         if not bin_found:
             logger.warning(
                 "no binaries found, build may have not been a success")
             return None
         else:
             logger.info(f"{len(bin_found)} binaries found")
-        dest = f"{BINPATH}/successes/{"/".join(clone_dir.rstrip("/").split("/")[-2:])}"
+        dest = f"{BINPATH}/successes/{"/".join(target_dir.rstrip("/").split("/")[-2:])}"
         try:
             os.mkdir(dest)
         except FileNotFoundError:
@@ -316,8 +311,12 @@ class Builder(BasicWorker):
             for fpath in bin_found:
                 base = os.path.basename(fpath)
                 # put some time stamp to avoid duplicate
-                shutil.move(fpath, f"{dest}/{base}",
+                try: 
+                    shutil.move(fpath, f"{dest}/{base}",
                             copy_function=shutil.copy2)
+                except Exception as e:
+                    logger.info(f"Something went wrong moving {fpath}. Moving onto next")
+                    continue
                 os.chmod(f"{dest}/{base}", NON_EXE_MODE)
 
                 self.send_msg(kind='binary',
@@ -331,26 +330,52 @@ class Builder(BasicWorker):
             for filename in bin_found:
                 if os.path.isfile(filename):
                     prefix = []
-                    if "debug" in filename:
+                    if "debug" in filename.lower():
                         prefix.append("debug")
                     else:
                         prefix.append("release")
-                    if "x86" in filename:
+                    if "x86" in filename.lower():
                         prefix.append("x86")
-                    if "x64" in filename:
+                    if "x64" in filename.lower():
                         prefix.append("x64")
                     prefix_s = "_".join(prefix)
                     dest_file = os.path.join(
                         dest, prefix_s + "_" + ntpath.basename(filename))
-                    logger.info("Move file %s -> %s", os.path.join(clone_dir, filename),
+                    logger.info("Move file %s -> %s", os.path.join(target_dir, filename),
                                 dest_file)
-                    try:
-                        shutil.move(filename,
-                                    dest_file)
-                    except FileNotFoundError:
-                        logger.info("Files not found")
-                    except shutil.Error:
-                        logger.info("File name is invalid")
+                    
+                    attempts = 0 
+                    max_attempts = 5
+                    while attempts < max_attempts:
+                        attempts += 1
+                        try:
+                            shutil.copy2(filename,
+                                        dest_file)
+                            logger.debug(f"{filename} copied to {dest_file}")
+                            try:
+                                os.remove(filename)
+                                logger.debug(f"Deleted source file: {filename}")
+                            except Exception as e:
+                                logger.warning(f"Could not delete source file {filename}: {e}")
+                        except FileNotFoundError:
+                            logger.info(f"File {filename} not found")
+                            break # only retry if is permission error as waiting for lock
+                        except shutil.Error:
+                            logger.info(f"File name {filename} is invalid")
+                            break
+                        except PermissionError as e:
+                            # check if the file has been moved, if it has. move on
+                            if attempts < max_attempts:  # only sleep if we have retries left
+                                logger.info(f"File locked: {filename}. {max_attempts - attempts} retries remaining. Retrying in 60s")
+                                time.sleep(60)
+                            else:
+                                logger.error(f"File locked: {filename}. No retries remaining, giving up.")
+                        except Exception as e:
+                            logger.info(f"Something else went wrong moving {filename}")
+                            break
+                     
+                     
+                        
             try:
                 bins_saved = os.listdir(dest)
                 logger.info("Binary Saved %s", ",".join(bins_saved))
@@ -439,36 +464,3 @@ class Builder(BasicWorker):
             job_conn.send_msg(kind, json.dumps(ret))
         else: 
             raise Exception("No connection for job handler exists")
-
-
-
-# class StandaloneBuilder:
-
-#     def __init__(self, project, build_mode, optimization, cpuarch, compiler_version, build_strategy=DefaultBuildStrategy):
-#         assert "url" in project
-#         assert build_mode.lower() in ['debug', 'release']
-#         assert optimization.lower() in ['o1', 'o2', 'o3', 'od', 'os', 'ox']
-#         self.project = project
-#         self.build_strategy = DefaultBuildStrategy()
-#         self.cpuarch = cpuarch
-#         self.build_mode = build_mode
-#         self.optimization = optimization
-#         self.compiler_version = compiler_version
-
-#     def boot(self):
-#         clone_dir = self.build_strategy.get_clone_dir(self.project)
-#         self.build_strategy.clone_data(self.project)
-#         self.build_strategy.pre_build(self.cpuarch,
-#                                       self.build_mode,
-#                                       clone_dir,
-#                                       self.optimization,
-#                                       os.urandom(4).hex(),
-#                                       self.compiler_version)
-#         self.build_strategy.run_build(self.project,
-#                                       clone_dir,
-#                                       self.build_mode,
-#                                       self.library,
-#                                       self.optimization,
-#                                       slnfile=None,
-#                                       platform='windows',
-#                                       compiler_version='v142')

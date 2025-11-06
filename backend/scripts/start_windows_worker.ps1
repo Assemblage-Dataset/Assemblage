@@ -21,3 +21,6 @@ function Invoke-VcVars {
 # Invoke-VcVars -Version $Version
 Invoke-VcVars
 python.exe C:\app\scripts\start_worker.py
+
+
+
