@@ -21,7 +21,6 @@ from collections import Counter
 from assemblage.consts import (AWS_AUTO_REBOOT_PREFIX, COORDINATOR_DATABASE_SYNC_TIMEOUT,
                                BIN_DIR, CLEAN_OVERTIME_INTERVAL, WORKER_TIMEOUT_THRESHOLD, BuildStatus,
                                REPO_SIZE_THRESHOLD, CloneStatus, InputQueue, OutputQueue,
-                               CHANNEL_HEARTBEAT, CHANNEL_TIMEOUT, CHANNEL_CONNECTION_ATTEMPTS, CHANNEL_RETRY_DELAY,
                                DISPATCH_INTERVAL, IDLE_DISPATCH_INTERVAL, AWS_REBOOT_SLEEP_INTERVAL
                                )
 
@@ -44,7 +43,8 @@ def stop_the_world_excepthook(args):
 
 threading.excepthook = stop_the_world_excepthook
 
-
+# NOTE: if we want to get rid of this function, the api does provide this url (as 'html_url') so we can
+# pass that along from the scraper 
 def patch_url(_url):
     """ make a url cloneable """
     return _url.replace('repos/', '').replace('api.', '')
@@ -74,20 +74,16 @@ class Coordinator:
     # def __init__(self, rabbitmq_host, rabbitmq_port, db_addr, cluster_name, aws_mode=0, reproduce_mode=0):
     def __init__(self, settings: CoordinatorSettings):
         logger.info("Coordinator Init")
-        self.rabbitmq_host = settings.mq_host
-        self.rabbitmq_port = settings.mq_port
         
-        self.mq_client = MessageClient(self.rabbitmq_host, self.rabbitmq_port,
+        self.mq_client = MessageClient(settings.mq_host, settings.mq_port,
                                        username='guest', password='guest')
         
-        # This channel is created exclusively to add the topic exchange
-        conn: Connection = self.mq_client.create_connection(conn_name=f'{self}', channel_name=f'{self}')
-        conn.create_channel()
-        conn.add_topic_exchange('build_opt')
-        conn.close()
+        self._create_buildopt_exchange()
+
         self.db_addr = settings.databaseURL
         # to do create better session management
         self.db_man = DBManager(self.db_addr)
+
         # Appears to be used only in AWS mode for reboots
         self.cluster_name = settings.cluster_name
         self.reproduce_mode = settings.reproduce_mode
@@ -98,6 +94,15 @@ class Coordinator:
         # list of dispatched job threads
         self.t_dispatch_map: dict[int, threading.Thread] = {}
         # setup rpc service
+
+
+    def _create_buildopt_exchange(self):
+        
+        # This channel is created exclusively to add the topic exchange
+        conn: Connection = self.mq_client.create_connection(conn_name=f'{self}', channel_name=f'{self}')
+        conn.create_channel()
+        conn.add_topic_exchange('build_opt')
+        conn.close()
 
     # def __del__(self):
     #     self.channel.close()  # ensure that channels are gracefully closed on deletion of object
@@ -338,10 +343,10 @@ class Coordinator:
             # If building is extremely quick, there's a small chance that build info will be sent
             # before the clone status is even updated in the database, so wait for sync if the status is unexpected.
             # Removing this code won't break anything as of writing, but could introduce bugs in the future.
-            if task.clone_status in [CloneStatus.INIT, CloneStatus.PROCESSING]:
+            if task.clone_status in [CloneStatus.NOT_STARTED, CloneStatus.PROCESSING]:
                 timeout = COORDINATOR_DATABASE_SYNC_TIMEOUT
                 logger.info("Waiting for database sync...")
-                while (timeout > 0 and task.clone_status in [CloneStatus.INIT, CloneStatus.PROCESSING]):
+                while (timeout > 0 and task.clone_status in [CloneStatus.NOT_STARTED, CloneStatus.PROCESSING]):
                     time.sleep(1)  # relatively long wait time to reduce required db accesses
                     timeout -= 1
                     task = self.db_man.find_status_by_id(recv_msg['task_id'])
@@ -386,7 +391,6 @@ class Coordinator:
 
         reg_info: BuilderRegIn = BuilderRegIn.from_json(body)
         logger.info(f"Recieved registration request from builder: {reg_info.name}, intending to compile {reg_info.language} on {reg_info.platform}:{reg_info.library}")
-
         # search for build opt
 
         build_opt_id = self.db_man.register_build_opt(reg_info)
