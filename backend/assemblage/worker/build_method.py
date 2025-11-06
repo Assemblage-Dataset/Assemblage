@@ -38,57 +38,13 @@ import traceback
 logger = logging.getLogger(__name__)
 
 # should this be a class function  change this to debug=False by default
-def cmd_with_output(cmd, timelimit=60, platform='linux', cwd=''):
-    """ The cmd execution function """
 
-    
-    if isinstance(cmd, list):
-        cmd = " ".join(cmd)
-    
-    popen_kwargs = {
-        'stdout': subprocess.PIPE,
-        'stderr': subprocess.PIPE,
-        'shell': True,
-    }
-    
-    if cwd:
-        popen_kwargs['cwd'] = cwd
-    
-    if platform != 'windows':
-        popen_kwargs['close_fds'] = True
-    logger.debug(f"starting process: {cmd}")
-
-    with subprocess.Popen(cmd, **popen_kwargs) as process:
-        try:
-            out, err = process.communicate(timeout=timelimit)
-            exit_code = process.returncode
-            
-            logger.debug(f"Command exited with code {exit_code}")
-            
-            try:
-                process.kill()
-            except:
-                pass
-            
-            return out, err, exit_code
-            
-        except subprocess.TimeoutExpired:
-            if platform == 'linux':
-                try:
-                    os.killpg(os.getpgid(process.pid), signal.SIGTERM)
-                except:
-                    process.kill()
-            else:
-                process.kill()
-            logger.debug(f"Timed out: {cmd}")
-            return b"subprocess.TimeoutExpired", b"subprocess.TimeoutExpired", 1
-        
         
 def clean(folders):
     """ Clean the folders, may not be empty """
     for folder in folders:
         if os.path.exists(folder):
-            shutil.rmtree(folder, ignore_errors=False, onerror=None)
+            shutil.rmtree(folder, ignore_errors=False)
 
 
 class BuildStrategy:
@@ -101,7 +57,49 @@ class BuildStrategy:
         self.platform: str
 
 
+    def cmd_with_output(self, cmd: str, timelimit=60, cwd=''):
+        """
+        Run a command and return stdout, stderr, and exit code.
+        Ensures handles are closed properly on Windows to avoid file locks.
+        """
+ 
 
+        popen_kwargs = {
+            'stdout': subprocess.PIPE,
+            'stderr': subprocess.PIPE,
+            'shell': True,
+        }
+
+        if cwd:
+            popen_kwargs['cwd'] = cwd
+
+        # Ensure child process does not inherit handles
+        popen_kwargs['close_fds'] = True
+
+        logger.debug(f"Starting process: {cmd}")
+
+        with subprocess.Popen(cmd, **popen_kwargs) as process:
+            try:
+                out, err = process.communicate(timeout=timelimit)
+                exit_code = process.returncode
+                logger.debug(f"Command exited with code {exit_code}")
+                return out, err, exit_code
+
+            except subprocess.TimeoutExpired:
+                logger.debug(f"Command timed out: {cmd}")
+                try:
+                    if self.platform != 'windows':
+                        os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+                    else:
+                        process.kill()
+                except Exception as e:
+                    logger.warning(f"Failed to kill process: {e}")
+                return b"", b"subprocess.TimeoutExpired", 1
+            except Exception as e:
+                logger.warning(f"Something went wrong runnign cmd: {cmd} - {e}")
+                return b"", b"{e}", 1
+
+            
     def clone_data(self, repo) -> Tuple[bytes | str | CloneStatus | CloneStatus]:
         """ Clone repo """
 
@@ -119,8 +117,8 @@ class BuildStrategy:
 
         clone_dir = f'{git_user_dir}/{project_name}'
         logger.debug("Starting clone")
-        out, err, exit_code = cmd_with_output(
-            f'git clone --recursive {repo["url"]} {clone_dir}/', 600, self.platform)
+        out, err, exit_code = self.cmd_with_output(
+            f'git clone --recursive {repo["url"]} {clone_dir}/', 600)
 
         logger.info(f"cloned to : git clone --recursive {repo["url"]} {clone_dir}/")
 
@@ -202,7 +200,7 @@ class BuildStrategy:
         '''' A workaround function to fix ownership of the binaries directory. Owns a particular directory '''
         
     @abstractmethod
-    def run_build(self, repo, target_dir, build_mode, optimization, slnfile) -> Tuple[bytes, bytes, int]:
+    def run_build(self, repo, clone_dir, build_mode, optimization, slnfile) -> Tuple[bytes, bytes, int]:
         """ callback function to build command, return...."""
 
     @abstractmethod
@@ -266,19 +264,18 @@ class LinuxBuildStrategy(BuildStrategy):
 
     def run_build(self,
                   repo,
-                  target_dir,
+                  clone_dir,
                   build_mode,
-                  optimization,
                   slnfile=None,
                   ):
         """ Generate cmd to execute """
 
         files = []
-        for filename in glob.iglob(target_dir + '**/**', recursive=True):
+        for filename in glob.iglob(clone_dir + '**/**', recursive=True):
             files.append(filename.split("/")[-1])
         logger.info("%s files in repo: %s", len(files), repo)
         logger.info(
-            f"Files found in {target_dir} {os.listdir(target_dir)}")
+            f"Files found in {clone_dir} {os.listdir(clone_dir)}")
 
         build_tool = get_build_system(files)
         cmd = ""
@@ -289,16 +286,16 @@ class LinuxBuildStrategy(BuildStrategy):
             extra_flags = 'CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS"'
 
         if 'bootstrap' in build_tool:
-            cmd = f'cd {target_dir} && ./bootstrap && ' \
+            cmd = f'cd {clone_dir} && ./bootstrap && ' \
                 f'bash ./configure && timeout 10m make {extra_flags} -j{self.num_p_job}'
         elif 'configure' in build_tool:
-            cmd = f'cd {target_dir} && bash ./configure && ' \
+            cmd = f'cd {clone_dir} && bash ./configure && ' \
                 f'timeout 10m make {extra_flags} -j{self.num_p_job}'
         elif 'cmake' in build_tool:
-            cmd = f'cd {target_dir} && cmake -Bbuild ./ && cd build && ' \
+            cmd = f'cd {clone_dir} && cmake -Bbuild ./ && cd build && ' \
                 f'timeout 10m  make {extra_flags} -j{self.num_p_job}'
         elif 'make' in build_tool:
-            cmd = f'cd {target_dir} && timeout 10m make {extra_flags} -j{self.num_p_job}'
+            cmd = f'cd {clone_dir} && timeout 10m make {extra_flags} -j{self.num_p_job}'
         logger.info("Linux cmd generated: %s", cmd)
 
         if cmd == "":
@@ -306,9 +303,9 @@ class LinuxBuildStrategy(BuildStrategy):
             return "No Build Command Made", BuildStatus.FAILED
 
 
-        out, err, exit_code = cmd_with_output(cmd, 600, 'linux')
+        out, err, exit_code = self.cmd_with_output(cmd, 600)
         return_code = BuildStatus.SUCCESS if exit_code == 0 else BuildStatus.FAILED
-        self.own_dir(os.path.dirname(target_dir)) 
+        self.own_dir(os.path.dirname(clone_dir)) 
 
         return out.decode() + err.decode(), return_code
     
@@ -427,7 +424,7 @@ class WindowsDefaultStrategy(BuildStrategy):
             "powershell", "-Command", "Dia2Dump", "-lines", "*", f"'{binfile}'"
         ]
         file_cache = {}
-        out, _err, exit_code = cmd_with_output(cmd_args, platform='windows')
+        out, _err, exit_code = self.cmd_with_output(cmd_args)
     
         try:
             lines_notclean = out.decode().split("\r\n")
@@ -505,11 +502,9 @@ class WindowsDefaultStrategy(BuildStrategy):
         return funcs_infos, lines_infos, source_file
     def run_build(self,
                   repo,
-                  target_dir,
+                  clone_dir,
                   build_mode,
-                  optimization,
                   slnfile,
-                  compiler_version='v142',
                   num_p_job=16):
         """ Generate cmd to execute """
         if not slnfile:
@@ -529,14 +524,17 @@ class WindowsDefaultStrategy(BuildStrategy):
             cmd.append("/p:Platform=Any CPU")
         # cmd.append(f"/p:PlatformToolset={compiler_version}")
         if self.compiler_version in ["v140", "v141"]:
-            cmd.append("/p:WindowsTargetPlatformVersion= ")
+            cmd.append(f"/p:WindowsTargetPlatformVersion={self.compiler_version}")
         cmd.append("/maxcpucount:16")
-        cmd.append("/property:PostBuildEvent= ")
-        cmd.append("/property:OutDir=assemblage_outdir_bin/")
+        # cmd.append("/property:PostBuildEvent= ")
+        # if target_dir: 
+        #     cmd.append(f"/property:OutDir={target_dir}") # change this so just go straight to successes/name?
+        # if dfkjakl
+            # cmd.append(f"/property:InDir={target_dir}) # 
         cmd.append(f"'{slnfile}'")
         cmd = " ".join(cmd)
         logger.info("Windows cmd generated: %s", cmd)
-        out, err, exit_code = cmd_with_output(cmd, 600, "windows")
+        out, err, exit_code = self.cmd_with_output(cmd, 600)
         return_code = BuildStatus.SUCCESS if exit_code == 0 else BuildStatus.FAILED
         if return_code == BuildStatus.SUCCESS:
             logger.warning(f"BUILD STATUS FOR {repo} succeeded!!!")
@@ -589,11 +587,14 @@ class WindowsDefaultStrategy(BuildStrategy):
             json_di["Optimization"] = optimization
             json_di["Pushed_at"] = repoinfo["updated_at"]
             json_di["commit_sha"] = commit_hexsha
+            # fix this 
             with open(os.path.join(dest_binfolder, PDBJSONNAME), "w") as outfile:
                 json.dump(json_di, outfile, sort_keys=False)
             repoid = dest_binfolder.split("\\")[-1]
             with open(os.path.join(PDBPATH, f"{repoid}.json"), "w") as outfile:
                 json.dump(json_di, outfile, sort_keys=False, indent=4)
+                logger.debug(f"written to {outfile} ")
+                
         except FileNotFoundError:
             logging.info("Pdbjsonfile not found")
     
