@@ -66,18 +66,18 @@ class ScraperDataOutSingle(MQMsg):
     '''
     def __init__(self, name: str, url: str, language: str,
                  owner_id: int, description: str,
-                 created_at: str, updated_at: bool, size: int, 
+                 created_at: str, updated_at: str, size: int, 
                  build_system: str, branch: str):
         super().__init__()
         self.name: str = name
         self.url: str = url
         self.language: str = language
-        self.owner_id: int = owner_id
+        self.owner_id: int = int(owner_id)
         self.description: str = description
         self.created_at: str = created_at
         self.updated_at: str = updated_at
-        self.size: int = size
-        self.build_system = build_system
+        self.size: int = int(size)
+        self.build_system: str = build_system
         self.branch: str = branch
 
     def to_dict(self):
