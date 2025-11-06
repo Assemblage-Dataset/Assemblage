@@ -20,6 +20,7 @@ You can use one secrets.env, or multiple separate env files, but the following s
 Also, in the compose file, specify the type - Coordinator,Scraper,Builder
 
 ## ENVIRONMENT VARIABLES FOR coordinator
+```
 DB_HOST=assemblage-db (database container name)
 POSTGRES_DATABASE=assemblage
 POSTGRES_USER=assemblage
@@ -51,3 +52,7 @@ MQ_HOST=<mq_host>
 MQ_PORT=<mq_port>
 ```
 You will also need to expose the rabbitmq port. TODO: add proper authentication
+
+
+Note to future developers with builder - 
+On windows, there is an issue where Windows places a lock on all the built executables, this lock will not get lifted until the python program ( ie the worker script) stops and the container is downed. This means that it cannot be moved only copied to the volume ( or s3 bucket if implemented). Therefore it will progressively take more space so may have to be perioditically stopped, cleaned, and recreated.
