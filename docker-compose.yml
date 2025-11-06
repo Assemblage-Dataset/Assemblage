@@ -82,33 +82,6 @@ services:
     volumes:
       - ./backend:/app 
       - scraper-data:/binaries
-  # builder_0:
-  #   image: assemblage-clang:default
-  #   build:
-  #     context: .
-  #     dockerfile: docker/clang/Dockerfile
-  #   healthcheck:
-  #     test: [ "CMD", "bash", "-c", "pgrep -f start_worker.py > /dev/null" ]
-  #     interval: 10s
-  #     start_period: 5s
-  #   environment:
-  #     PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
-  #     TYPE: builder
-  #     compiler: clang
-  #     language: c++
-  #     name: clang-builder
-  #   env_file:
-  #     - secrets.env
-  #   depends_on:
-  #     rabbitmq: 
-  #       condition: service_healthy
-  #   deploy:
-  #     restart_policy:
-  #       condition: on-failure
-  #   volumes:
-  #     - ./backend:/app 
-  #     - builder-data:/binaries
-  #   mem_limit: 250g
 
   minio:
     image: minio/minio:latest
@@ -122,6 +95,35 @@ services:
       - minio_data:/data
     command: server /data --console-address ":9001"
     restart: unless-stopped
+  builder_0:
+    image: assemblage-clang:default
+    build:
+      context: .
+      dockerfile: docker/clang/Dockerfile
+    command: python3 /app/scripts/start_worker.py --type builder --id 0
+    healthcheck:
+      test: [ "CMD", "bash", "-c", "pgrep -f start_worker.py > /dev/null" ]
+      interval: 10s
+      start_period: 5s
+    environment:
+      PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
+      TYPE: builder
+      compiler: clang
+      language: c++
+      name: clang-builder
+    env_file:
+      - secrets.env
+    depends_on:
+      rabbitmq: 
+        condition: service_healthy
+    deploy:
+      restart_policy:
+        condition: on-failure
+    volumes:
+      - ./backend:/app 
+      - builder-data:/binaries
+    mem_limit: 250g
+
 
 volumes:
   builder-data:

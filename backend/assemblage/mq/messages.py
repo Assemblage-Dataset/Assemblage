@@ -57,3 +57,60 @@ class BuilderRegOut(MQMsg):
         self.build_opt_id: int = build_opt_id
         self.build_opt_queue: str = build_opt_queue if build_opt_queue else f"build_opt_{build_opt_id}"  # what build option queue to listen to for the worker
 
+
+
+class ScraperDataOutSingle(MQMsg):
+    '''
+    Format of a single repository message.
+    By default, the scraper sends these in bundles of 10 (see ScraperDataOutBundle)
+    '''
+    def __init__(self, name: str, url: str, language: str,
+                 owner_id: int, description: str,
+                 created_at: str, updated_at: str, size: int, 
+                 build_system: str, branch: str):
+        super().__init__()
+        self.name: str = name
+        self.url: str = url
+        self.language: str = language
+        self.owner_id: int = int(owner_id)
+        self.description: str = description
+        self.created_at: str = created_at
+        self.updated_at: str = updated_at
+        self.size: int = int(size)
+        self.build_system: str = build_system
+        self.branch: str = branch
+
+    def to_dict(self):
+        return self.__dict__
+
+class ScraperDataOutBundle(MQMsg):
+    '''
+        Represents an array of ScraperDataOutSingle (as dicts). Sent from scraper to coordinator
+    '''
+    def __init__(self, repo_array=[]): # type of repo_array should be ScraperDataOutSingle[]
+        super().__init__()
+        self.repos = repo_array
+
+    def to_json(self):
+        # returns a json that converts to an array of dictionaries
+        return json.dumps(
+            [r.to_dict() for r in self.repos]
+        )
+    
+    @classmethod
+    def from_json(cls, json_str : str): # the json_str should represent a list of dictionaries
+        # Creates a new ScraperDataOutSingle for each dict in the json str
+        body = json.loads(json_str)
+        return cls(
+            [ScraperDataOutSingle(**r) for r in body]
+        )
+    
+    def __iter__(self):  # iterate over self data
+        for r in self.repos:
+            yield r
+
+    def __str__(self):
+        return f"ScraperDataOutBundle({len(self.repos)})"
+    
+    def __len__(self):
+        return len(self.repos)

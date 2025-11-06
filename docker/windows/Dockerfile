@@ -12,6 +12,7 @@ SHELL ["cmd", "/S", "/C"]
 ENV VS_VERSION=2022
 
 
+
 ADD https://aka.ms/vs/17/release/vs_BuildTools.exe vs_buildtools.exe 
 # Install Build Tools with the Microsoft.VisualStudio.Workload.AzureBuildTools workload, excluding workloads and components with known issues.
 RUN (start /w vs_buildtools.exe --wait --quiet --norestart --nocache `

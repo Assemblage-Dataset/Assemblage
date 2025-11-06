@@ -1,5 +1,4 @@
 from datetime import datetime, timezone
-from email.policy import default
 from typing import Any, Literal
 from pydantic_settings import BaseSettings
 from pydantic import computed_field, Field
