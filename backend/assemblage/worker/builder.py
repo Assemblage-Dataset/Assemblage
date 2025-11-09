@@ -137,9 +137,9 @@ class Builder(BasicWorker):
             conn.add_queue(self.control_queue_in)
 
             self.send_msg(kind=InputQueue.BUILD_REG, repo=None)
-            
-            
+            logger.info("Registration Message sent. Starting consumption now")
             conn.consume(self.control_queue_in)
+        
 
 
         except Exception as e:
@@ -151,27 +151,26 @@ class Builder(BasicWorker):
         Run the build job. 
 
         '''
-        logger.info(f"setting up Build option channel for channel for {self}")        
    
         # create input connection and channel
         # create input queue 
         # start consuming
         
-        # if not self.build_opt_queue:
-        #     logger.info("Waiting for build_opt_thread to be set")
+        logger.info(f"{self} Waiting for build_opt_thread to be set")
         self.sleep_job_event.wait()
             
         logger.info(f"Build option queue set to {self.build_opt_queue} initialising job")
         conn: Connection = self.mq_client.create_connection(conn_name=f'{self}',
                                                                 channel_name=f'{self}')
         conn.create_channel()
-        
         conn.add_queue(self.build_opt_queue)
         
         for queue in self.output_message_queue:
             conn.add_queue(queue)
         
+        logger.info(f"{self} Starting consumption on {self.build_opt_queue}")
         conn.consume(self.build_opt_queue)
+        logger.warning(f"Consume on {self} has finished.")
 
         
 
@@ -186,7 +185,6 @@ class Builder(BasicWorker):
         self.opt_id = msg.build_opt_id 
         self.build_opt_queue = MQQueue(msg.build_opt_queue, callback=self.job_handler, exchange_name='build_opt', routing_key=f'builder.opt.{self.opt_id}')
         ch.basic_ack(delivery_tag=method.delivery_tag)
-
         logger.info(f"Build {self.name} registered, waking job thread")
         self.sleep_job_event.set()
         
@@ -416,6 +414,7 @@ class Builder(BasicWorker):
                 ).to_json()                
                 ctrl_conn = self.mq_client.get_connection(f'{self}-ctrl')
                 if ctrl_conn:
+                    logger.info(f"Registering builder with {ret}")
                     ctrl_conn.send_msg(queue_name=kind, msg=ret,
                                                                 #    exchange='builder.register',
                                                                 reply_to=f"{self.control_queue_in.name}", 
