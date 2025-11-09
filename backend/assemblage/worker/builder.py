@@ -138,7 +138,7 @@ class Builder(BasicWorker):
 
             self.send_msg(kind=InputQueue.BUILD_REG, repo=None)
             logger.info("Registration Message sent. Starting consumption now")
-            conn.consume(self.control_queue_in)
+            conn.consume(self.control_queue_in, auto_ack = False, reconnect_on_failure=True)
         
 
 
@@ -157,7 +157,11 @@ class Builder(BasicWorker):
         # start consuming
         
         logger.info(f"{self} Waiting for build_opt_thread to be set")
-        self.sleep_job_event.wait()
+        # if not self.build_opt_queue:
+        #     logger.info("Waiting for build_opt_thread to be set")
+        
+        while not self.sleep_job_event.wait(timeout=5):  # check every 5 second
+            logger.info("{self}: still job process still waiting for configuration")
             
         logger.info(f"Build option queue set to {self.build_opt_queue} initialising job")
         conn: Connection = self.mq_client.create_connection(conn_name=f'{self}',
