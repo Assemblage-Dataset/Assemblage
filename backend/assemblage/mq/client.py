@@ -9,6 +9,7 @@ import time
 from typing import Callable
 import pika
 from pika.adapters.blocking_connection import BlockingChannel, BlockingConnection
+import pika.exceptions
 from pika.exchange_type import ExchangeType
 from pika.spec import PERSISTENT_DELIVERY_MODE
 from assemblage.consts import (CHANNEL_HEARTBEAT, CHANNEL_TIMEOUT, CHANNEL_CONNECTION_ATTEMPTS, CHANNEL_RETRY_DELAY)
@@ -76,6 +77,7 @@ class Connection:
         
     def __str__(self):
         return f"Connection: {self.conn_name}" # channel/connection named the same typically
+
 
     def connect(self, auto_retry: bool = True, retry_attempts: int | None = 10):
 
@@ -184,7 +186,7 @@ class Connection:
         except Exception as err:
             logging.error(f"failed to send message: {err}")
 
-    def consume(self, queue: MQQueue, auto_ack = False):
+    def consume(self, queue: MQQueue, auto_ack = False, reconnect_on_failure = False):
         '''
         Consume, on speicifed queue
         '''
@@ -197,10 +199,24 @@ class Connection:
             self.consume_tag = self.chan.basic_consume(queue=queue.name,
                                                         on_message_callback=queue.callback, auto_ack=auto_ack)
             self.chan.start_consuming()
+        
+        except (pika.exceptions.AMQPConnectionError, pika.exceptions.StreamLostError) as e:
+            logger.critical(
+                            f"__consume_from_queue from queue {queue} connection was closed {self}!")
+            if reconnect_on_failure: 
+                logger.info(f"__consume_from_queue from queue {queue}  set to retry. Attempting to reinitialise connection in 60s")
+                time.sleep(60)            
+                self.connect()
+                self.create_channel()
+                self.add_queue(queue)
+                self.consume(queue, auto_ack, reconnect_on_failure)
         except Exception as e:
             logger.critical(
                 f"__consume_from_queue from queue {queue} connection {self} failed!")
             logger.critical(e)
+            
+            logger.critical("this is actually updating")
+            
 
     def close(self):
         try:

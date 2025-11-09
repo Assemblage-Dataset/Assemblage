@@ -170,7 +170,7 @@ class BuildStrategy:
                 if not os.path.exists(location):
                     continue
                 try:
-                    if self.save_assembly and location.endswith(('.s', '.ii', '.bc', '.S', '.obj', '.asm', '.cod')):
+                    if self.save_assembly and location.endswith(('.s', '.ii', '.bc', '.S', '.obj', '.asm', '.cod', 'json')): # include the pdb json files and copy to success folders ( not binaries but keeps a record?)
                         file_paths.add(location)
                         continue
                     with open(location, 'rb') as f:
