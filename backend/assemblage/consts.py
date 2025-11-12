@@ -150,7 +150,7 @@ class InputQueue(str, Enum):
     BUILD = 'build'
     BINARY = 'binary'
     POST_ANALYSIS = 'post_analysis'
-    BUILD_REG = 'builder_registration'
+    BUILD_REG = 'builder_reg'
     def __str__(self):
         # to ensure compatibility with the areas where I haven't replaced channels with enums yet
         return self.value 

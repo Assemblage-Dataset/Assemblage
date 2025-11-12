@@ -74,11 +74,11 @@ class Coordinator:
     # def __init__(self, rabbitmq_host, rabbitmq_port, db_addr, cluster_name, aws_mode=0, reproduce_mode=0):
     def __init__(self, settings: CoordinatorSettings):
         logger.info("Coordinator Init")
-        
+        logger.debug(f"Settings: {settings}")
         self.mq_client = MessageClient(settings.mq_host, settings.mq_port,
                                        username='guest', password='guest')
         
-        self._create_buildopt_exchange()
+
 
         self.db_addr = settings.databaseURL
         # to do create better session management
@@ -86,6 +86,9 @@ class Coordinator:
 
         # Appears to be used only in AWS mode for reboots
         self.cluster_name = settings.cluster_name
+        self._create_buildopt_exchange()
+
+        logger.debug(f"{self.cluster_name}")        
         self.reproduce_mode = settings.reproduce_mode
         self.aws_flag = settings.aws_mode
 
@@ -94,12 +97,14 @@ class Coordinator:
         # list of dispatched job threads
         self.t_dispatch_map: dict[int, threading.Thread] = {}
         # setup rpc service
+    def __str__(self):
+        return f'Coordinator-{self.cluster_name}'
 
 
     def _create_buildopt_exchange(self):
         
         # This channel is created exclusively to add the topic exchange
-        conn: Connection = self.mq_client.create_connection(conn_name=f'{self}', channel_name=f'{self}')
+        conn: Connection = self.mq_client.create_connection(conn_name=f'{self}-build-opt', channel_name=f'{self}-build-opt')
         conn.create_channel()
         conn.add_topic_exchange('build_opt')
         conn.close()
@@ -193,14 +198,16 @@ class Coordinator:
                 if sleep:
                     time.sleep(DISPATCH_INTERVAL)
             except Exception as e:
-                logger.info("Dispatch Err:", err=str(e))
-                _thread_channel = conn.create_channel() # should work but not tested yet
+                logger.info(f"Dispatch Err:  {e}")
+                # _thread_channel = conn.create_channel() # should work but not tested yet
                 # _thread_channel = create_channel(
                 #     self.rabbitmq_host, self.rabbitmq_port)
                 # _thread_channel.exchange_declare(
                 #     exchange='build_opt', exchange_type=ExchangeType.topic)
                 # _thread_channel.confirm_delivery()
+                break ## this should fail, and then be reopened once the builder re registers
 
+        logger.info(f"__dispatch_task Build Opt {build_opt_id} exiting...")
     # TODO: Possibly this runs occasionally at very long time scales, but I think this is a candidate for cutting
     # Appears to be a helper method for the old DB system
     def __recycle_clone(self):
@@ -255,11 +262,14 @@ class Coordinator:
                 logger.info(
                     "Consume thread on queue '%s' started in coordinator", queue)
                 # Create a channel and listen on the relevant queue
-                conn: Connection = self.mq_client.create_connection(conn_name=f'{self}', channel_name=f'{self}')
+                conn: Connection = self.mq_client.create_connection(conn_name=f'{self}-{queue}', channel_name=f'{self}-{queue}')
+            
+                if conn.conn.is_closed:
+                    logger.warning("The connection was never opened!")
                 conn.create_channel()
                 queue_object = MQQueue(name=queue, callback=callback)
-                conn.add_queue(queue_object)
-                conn.consume(queue_object)
+                logger.debug(f"Queue object? : {queue_object.name}")
+                self.mq_client.start_consumer(conn=conn, queue=queue_object ,retry_delay=10)
                 logger.critical("Consume thread '%s' exited", queue)
             except Exception as err:
                 logger.critical(

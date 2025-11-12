@@ -1,6 +1,6 @@
 '''
 message queue client for worker
-Yihao Sun
+Alex Duly
 '''
 
 from dataclasses import dataclass
@@ -12,26 +12,26 @@ from pika.adapters.blocking_connection import BlockingChannel, BlockingConnectio
 import pika.exceptions
 from pika.exchange_type import ExchangeType
 from pika.spec import PERSISTENT_DELIVERY_MODE
-from assemblage.consts import (CHANNEL_HEARTBEAT, CHANNEL_TIMEOUT, CHANNEL_CONNECTION_ATTEMPTS, CHANNEL_RETRY_DELAY)
-
-
+from assemblage.consts import (CHANNEL_HEARTBEAT, CHANNEL_TIMEOUT,
+                               CHANNEL_CONNECTION_ATTEMPTS, CHANNEL_RETRY_DELAY, InputQueue, OutputQueue)
 
 
 # this reduces a lot of errors
 logger = logging.getLogger(__name__)
 
+
 @dataclass
 class MQQueue:
-    
-    name: str
+
+    name: InputQueue | OutputQueue
     callback: Callable | None = None
     exchange_name: str | None = None
     routing_key: str | None = None
     durable: bool = True
     exclusive: bool = False
     auto_delete: bool = False
-    def __repr__(self) -> str:
-        return self.name
+    # def __str__(self) -> str:
+    #     return self.name
 
     def __post_init__(self):
         # If no routing_key specified, use queue name
@@ -46,7 +46,7 @@ class MQQueue:
 class Connection:
     '''
     Wrapper for individual connection channel
-    Pika is not thread safe so require 1 connection/channel per thread 
+    Pika is not thread safe so require 1 connection/channel per thread
 
     Multiple queues per channel/connections
 
@@ -73,44 +73,50 @@ class Connection:
         self.conn: BlockingConnection | None = None
         self.chan: BlockingChannel | None = None  #  actually stores the MQ shcnanel
         # is this connection producing or consuming ( could be useful to differentiate)
-        self.queues: dict[str,MQQueue] = {}
-        
-    def __str__(self):
-        return f"Connection: {self.conn_name}" # channel/connection named the same typically
+        self.queues: dict[str, MQQueue] = {}
 
+    def __str__(self):
+        # channel/connection named the same typically
+        return f"Connection: {self.conn_name}"
 
     def connect(self, auto_retry: bool = True, retry_attempts: int | None = 10):
 
         if self.conn and self.conn.is_open:
+            logger.debug(f"{self} already connected")
             return self.conn
 
         credentials = pika.PlainCredentials(self.username, self.password)
         conn_params = pika.ConnectionParameters(
             host=self.mq_host, port=self.mq_port,
             connection_attempts=self.connection_attempts, retry_delay=self.retry_delay,
-            heartbeat=self.heartbeat, blocked_connection_timeout=self.timeout, credentials=credentials)        
+            heartbeat=self.heartbeat, blocked_connection_timeout=self.timeout, credentials=credentials)
         attempt = 0
-        while auto_retry: 
+        while auto_retry:
             try:
                 self.conn = BlockingConnection(conn_params)
                 if self.conn.is_open:
+                    logger.debug(f"{self} now open ")
                     return self.conn
             except pika.exceptions.AMQPConnectionError as e:
-                logger.error(f"Failed to create connection {self}. RabbitMQ connection error: {e}")
+                logger.error(
+                    f"Failed to create connection {self}. RabbitMQ connection error: {e}")
             except Exception as e:
-                logger.error(f"Failed to create connection: {self}. Unexpected error: {e}")
+                logger.error(
+                    f"Failed to create connection: {self}. Unexpected error: {e}")
             attempt += 1
             if not auto_retry:
                 break
             if retry_attempts is not None and attempt >= retry_attempts:
-                logger.error(f"Connection {self} failed. Maximum retry attempts ({retry_attempts}) reached.")
+                logger.error(
+                    f"Connection {self} failed. Maximum retry attempts ({retry_attempts}) reached.")
                 break
-            else: 
-                logger.info(f"Retrying to connect on {self} in {self.retry_delay}s")
+            else:
+                logger.info(
+                    f"Retrying to connect on {self} in {self.retry_delay}s")
                 time.sleep(self.retry_delay)
                 break
-        raise ConnectionError(f"Failed to connect on {self} to RabbitMQ {self.host}")
-
+        raise ConnectionError(
+            f"Failed to connect on {self} to RabbitMQ {self.host}")
 
     def create_channel(self):
         '''
@@ -129,19 +135,37 @@ class Connection:
         '''
         Declare queue and add it to queue map if successful
         '''
+        logger.debug(f"Adding: {queue} ")
+        if not queue:
+            raise ValueError("Queue cannot be none")
+
         try:
             if not self.chan or self.chan.is_closed:
-                raise Exception(f"Channel is closed, cannot create queue on {self}")
+                raise Exception(
+                    f"Channel is closed, cannot create queue on {self}")
             self.chan.queue_declare(queue=queue.name, durable=True)
             logger.info(f"Created queue: {queue} on {self}")
             if queue.exchange_name and queue.routing_key:
-                logger.debug(f"Binding routing key {queue.routing_key }  and exchagne {queue.exchange_name}")
-                self.chan.queue_bind(queue.name, queue.exchange_name, queue.routing_key)
+                logger.debug(
+                    f"Binding routing key {queue.routing_key}  and exchagne {queue.exchange_name}")
+                self.chan.queue_bind(
+                    queue.name, queue.exchange_name, queue.routing_key)
             self.queues[queue.name] = queue
 
             return queue
         except Exception as e:
             logger.error(f"Failed to create queue {queue} on {self} - {e} ")
+            import traceback
+            traceback.print_exc()
+
+    def ensure_connection(self):
+        """Ensure connection and channel are alive."""
+        if not self.conn or self.conn.is_closed:
+            logger.warning(f"{self}: Connection closed. Reconnecting...")
+            self.connect()
+        if not self.chan or self.chan.is_closed:
+            logger.warning(f"{self}: No channel Creating now ...")
+            self.create_channel()
 
     def delete_queue(self, queue: MQQueue):
         try:
@@ -154,27 +178,29 @@ class Connection:
         ''' add a topic exchanger to channel '''
         self.exchange_name = exchange_name
         self.chan.exchange_declare(exchange=exchange_name,
-                                      exchange_type=ExchangeType.topic)
+                                   exchange_type=ExchangeType.topic)
 
-    def send_msg(self, queue_name, msg, exchange='', reply_to: str | None = None, corr_id: str | None = None):
+    def ensure_queue(self, queue: MQQueue):
+        '''
+        Ensures a queue exists
+        '''
+        queue_check= self.queues.get(queue.name)
+        if not queue_check:
+            queue = self.add_queue(queue)
+        else: 
+            self.chan.queue_declare(queue=queue.name, passive=True)
+
+
+    def send_msg(self, queue: MQQueue, msg, exchange='', reply_to: str | None = None, corr_id: str | None = None):
         '''
         send message into the queue, should only be used on Producer connections
         '''
         logging.debug("MQ queued length %s", len(msg))
-
-        queue = self.queues.get(queue_name) # woudl it be better to just pass in mqqueue type and deal with exception later?
-        if not queue:
-            raise ValueError(
-                f"Queue is not in this connection's queue map: {self}. Please create queue before sending message")
-        # rabbit mq doesnt like it when you go to sleep
-        if not self.chan:
-            # not sure on which errors to raise here. try later
-            raise ValueError("Channel does not exist ")
-        if self.chan.is_closed:
-            # not sure we want to always automatically reopen? Or maybe we do
-            raise ConnectionError("Channel is closed")
-        # self.ensure_connection()
+  
+      # woudl it be better to just pass in mqqueue type and deal with exception later?
         try:
+            self.ensure_connection()
+            self.ensure_queue(queue)
             self.chan.basic_publish(exchange=exchange,
                                     routing_key=queue.routing_key,
                                     body=msg,
@@ -182,41 +208,34 @@ class Connection:
                                                                     reply_to=reply_to,
                                                                     correlation_id=corr_id,
                                                                     ))
-            
+
         except Exception as err:
             logging.error(f"failed to send message: {err}")
 
-    def consume(self, queue: MQQueue, auto_ack = False, reconnect_on_failure = False):
-        '''
-        Consume, on speicifed queue
-        '''
-        if queue.name not in self.queues:
-            raise ValueError(
-                f"Queue {queue.name} is not in this connection's queue map: {self}. Please create queue before consuming message")
-        try:
+    def consume(self, queue: MQQueue, auto_ack=False):
+        """Consume from specified queue."""
+        logger.debug(f"Consuming from {queue}")
 
-
-            self.consume_tag = self.chan.basic_consume(queue=queue.name,
-                                                        on_message_callback=queue.callback, auto_ack=auto_ack)
-            self.chan.start_consuming()
+        # woudl it be better to just pass in mqqueue type and deal with exception later?
         
-        except (pika.exceptions.AMQPConnectionError, pika.exceptions.StreamLostError) as e:
-            logger.critical(
-                            f"__consume_from_queue from queue {queue} connection was closed {self}!")
-            if reconnect_on_failure: 
-                logger.info(f"__consume_from_queue from queue {queue}  set to retry. Attempting to reinitialise connection in 60s")
-                time.sleep(60)            
-                self.connect()
-                self.create_channel()
-                self.add_queue(queue)
-                self.consume(queue, auto_ack, reconnect_on_failure)
+        try:
+            self.ensure_connection()
+            self.ensure_queue(queue)
+            self.consume_tag = self.chan.basic_consume(
+                queue=queue.name,
+                on_message_callback=queue.callback,
+                auto_ack=auto_ack
+            )
+            self.chan.start_consuming()
+        except (pika.exceptions.AMQPConnectionError,
+                pika.exceptions.StreamLostError,
+                ConnectionError) as e:
+            logger.error(f"{self}: Connection lost during consume: {e}")
+            raise  # client decides retry policy
         except Exception as e:
             logger.critical(
-                f"__consume_from_queue from queue {queue} connection {self} failed!")
-            logger.critical(e)
-            
-            logger.critical("this is actually updating")
-            
+                f"{self}: Unexpected consume failure ({type(e).__name__}): {e}", exc_info=True)
+            raise e
 
     def close(self):
         try:
@@ -227,6 +246,7 @@ class Connection:
         finally:
             self.conn = None
             self.chan = None
+
 
 class MessageClient:
     ''' a rabbit mq wrapper for all different worker 
@@ -258,11 +278,11 @@ class MessageClient:
 
     def create_connection(self, conn_name: str, channel_name: str, heartbeat: int = CHANNEL_HEARTBEAT, timeout: int = CHANNEL_TIMEOUT,
                           connection_attempts: int = CHANNEL_CONNECTION_ATTEMPTS,
-                          retry_delay: int = CHANNEL_RETRY_DELAY, auto_connect: bool = True)-> Connection:
+                          retry_delay: int = CHANNEL_RETRY_DELAY, auto_connect: bool = True) -> Connection:
         '''
         Create a new connection, 
         Defaults to auto connect
-        
+
         if auto connect, then the connection is automatically opened 
         '''
         connection: Connection | None
@@ -280,21 +300,42 @@ class MessageClient:
             username=self.username,
             password=self.password
         )
-        if auto_connect: 
+        if auto_connect:
+            logger.debug(
+                f"Auto connect enabled, tryng to connect {connection} now")
             connection.connect()
+
         self.connections[conn_name] = connection
         return connection
 
     def delete_connection(self, conn_name):
+        ''' remove a connection, return True if closed/deleted or it doesnt exist'''
         connection: Connection | None = self.connections.get(conn_name)
-        if not connection: 
-            raise ValueError(f"Connection does not exist in this client, cannot delete")
-        try: 
-             connection.close()
-             self.connections.pop(conn_name)
-        except Exception as e: 
+        if not connection:
+            return True
+        try:
+            connection.close()
+            self.connections.pop(conn_name)
+            return True
+        except Exception as e:
             logger.error(f"Failed to delete {connection}, exec={e}")
-            
+            return False
+
     def get_connection(self, conn_name):
+        '''Fetch a connection from the client, will return None if not in the connection dict  '''
         return self.connections.get(conn_name)
-        
+
+    def start_consumer(self, conn: Connection, queue: MQQueue, auto_ack=False, retry_delay=10):
+        """Run a consumer loop with reconnection + retry."""
+        conn = self.get_connection(conn.conn_name)
+        if not conn:
+            raise ValueError(
+                f"Connection {conn.conn_name} not found in client")
+
+        while True:
+            try:
+                conn.consume(queue, auto_ack=auto_ack)
+            except Exception as e:
+                logger.error(f"Consumer on {queue} failed: {e}", exc_info=True)
+                logger.info(f"Retrying in {retry_delay}s...")
+                time.sleep(retry_delay)
