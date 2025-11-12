@@ -47,7 +47,6 @@ from assemblage.mq.messages import ScraperDataOutSingle, ScraperDataOutBundle
 
 logger = logging.getLogger(__name__)
 
-scrape_queue = MQQueue( name=InputQueue.SCRAPE )  # should this be a class var?
 
 '''
 possible TODO:
@@ -470,6 +469,7 @@ class Scraper(BasicWorker):
         self.repocache = []
         self.workerid = workerid
         self.total_repos_sent = 0
+        self.scrape_queue = MQQueue( name=InputQueue.SCRAPE )  # should this be a class var?
 
     def send_bundle(self):
         conn: Connection = self.mq_client.get_connection(f'{self}')
@@ -479,10 +479,9 @@ class Scraper(BasicWorker):
                                                                 channel_name=f'{self}')
             conn.create_channel()
 
-            conn.add_queue(scrape_queue)
         bundle = ScraperDataOutBundle(self.repocache)
         conn.send_msg(
-            scrape_queue.name, bundle.to_json())
+            self.scrape_queue, bundle.to_json())
         self.total_repos_sent += len(self.repocache)
         logger.info("Scraper %s bundled and sent %s repos to coordinator. Total repos sent by this scraper: %s",
                     self.workerid, len(self.repocache), self.total_repos_sent)

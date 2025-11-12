@@ -30,7 +30,11 @@ class AssemblageSettings(BaseSettings):
     def logLevel(self) -> Literal['DEBUG'] | Literal['INFO']:
         # i would rather set using 
         return 'DEBUG' if self.runtime_env == RuntimeEnv.dev else 'INFO'
-
+    def __str__(self) -> str:
+        items = self.model_dump()
+        return f"{self.__class__.__name__}:\n" + "\n".join(
+            f"  {key}: {value}" for key, value in items.items()
+        )
 class CoordinatorSettings(AssemblageSettings):
     """
     Coordinator specific settings
@@ -44,7 +48,7 @@ class CoordinatorSettings(AssemblageSettings):
     # extracted directly from coordinator
     reproduce_mode: int = Field(0)
     aws_mode: int = Field(0)
-    cluster_name: str = Field("ClusterName")
+    cluster_name: str = Field("CLUSTER_NAME") # eventually use the website host name for DNS for this
 
     mq_manage_port: int = Field(default=56723)
 

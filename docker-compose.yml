@@ -14,6 +14,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
   rabbitmq:
     image: rabbitmq:3-management
     environment:
@@ -55,6 +56,7 @@ services:
         condition: on-failure
     volumes:
       - ./backend:/app 
+
   scraper_0:
     image: assemblage-gcc:default
     build:
@@ -82,19 +84,6 @@ services:
     volumes:
       - ./backend:/app 
       - scraper-data:/binaries
-
-  minio:
-    image: minio/minio:latest
-    container_name: minio
-    ports:
-      - "9000:9000"      # API port
-      - "9001:9001"      # Console port
-    env_file:
-      - secrets.env
-    volumes:
-      - minio_data:/data
-    command: server /data --console-address ":9001"
-    restart: unless-stopped
   builder_0:
     image: assemblage-clang:default
     build:
@@ -123,7 +112,19 @@ services:
       - ./backend:/app 
       - builder-data:/binaries
     mem_limit: 250g
-
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    ports:
+      - "9000:9000"      # API port
+      - "9001:9001"      # Console port
+    env_file:
+      - secrets.env
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    restart: unless-stopped
+  
 
 volumes:
   builder-data:

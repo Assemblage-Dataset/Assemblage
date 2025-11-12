@@ -11,7 +11,6 @@ Alex Duly
 
 import logging
 import os
-import queue
 import shutil
 import json
 import sys
@@ -20,10 +19,8 @@ import stat
 import glob
 import ntpath
 
-from assemblage.consts import BINPATH, PDBPATH, TASK_TIMEOUT_THRESHOLD, BuildStatus, MAX_MQ_SIZE, CloneStatus, InputQueue, WorkerType
+from assemblage.consts import BINPATH, TASK_TIMEOUT_THRESHOLD, BuildStatus, MAX_MQ_SIZE, CloneStatus, InputQueue, WorkerType
 from assemblage.worker.base_worker import BasicWorker
-from assemblage.worker import build_method
-from assemblage.worker.profile import AWSProfile
 from assemblage.worker.build_method import LinuxBuildStrategy, WindowsDefaultStrategy
 from assemblage.config import BuilderSettings
 from assemblage.mq.messages import BuilderRegIn, BuilderRegOut
@@ -129,18 +126,13 @@ class Builder(BasicWorker):
                                                                 channel_name=f'{self}-ctrl',
                                                         )
             conn.create_channel()
-            coordinator_queue = MQQueue(
-                InputQueue.BUILD_REG)
-
-            conn.add_queue(coordinator_queue)
             
             conn.add_queue(self.control_queue_in)
 
             self.send_msg(kind=InputQueue.BUILD_REG, repo=None)
-            logger.info("Registration Message sent. Starting consumption now")
-            conn.consume(self.control_queue_in, auto_ack = False, reconnect_on_failure=True)
-        
-
+            logger.info("Registration Message sent. Starting consumption on control queue now")        
+            self.mq_client.start_consumer(conn=conn, queue=self.control_queue_in ,retry_delay=10)
+            logger.warning(f"Consume control on {self} has finished.")
 
         except Exception as e:
             logger.error(f"Failed to create builder control thread, exec={e}")
@@ -160,21 +152,25 @@ class Builder(BasicWorker):
         # if not self.build_opt_queue:
         #     logger.info("Waiting for build_opt_thread to be set")
         
-        while not self.sleep_job_event.wait(timeout=5):  # check every 5 second
-            logger.info("{self}: still job process still waiting for configuration")
-            
+        MAX_WAIT = 15 * 60  # 15 minutes in seconds
+        CHECK_INTERVAL = 5  # check every 5 seconds
+
+        start_time = time.time()
+
+        while not self.sleep_job_event.wait(timeout=CHECK_INTERVAL):
+            elapsed = time.time() - start_time
+            if elapsed > MAX_WAIT:
+                logger.warning(f"{self}: waited {elapsed:.0f}s — exiting after 15 minutes timeout")
+                return
+
+            logger.info(f"{self}: still waiting for configuration ({elapsed:.0f}s elapsed). Will exit after {MAX_WAIT/60} minuites without configuration")
         logger.info(f"Build option queue set to {self.build_opt_queue} initialising job")
         conn: Connection = self.mq_client.create_connection(conn_name=f'{self}',
                                                                 channel_name=f'{self}')
         conn.create_channel()
-        conn.add_queue(self.build_opt_queue)
-        
-        for queue in self.output_message_queue:
-            conn.add_queue(queue)
-        
-        logger.info(f"{self} Starting consumption on {self.build_opt_queue}")
-        conn.consume(self.build_opt_queue)
-        logger.warning(f"Consume on {self} has finished.")
+        logger.info(f"{self} Starting consumption on {self.build_opt_queue}") 
+        self.mq_client.start_consumer(conn=conn, queue=self.build_opt_queue ,retry_delay=10)
+        logger.warning(f"Consume build opt {self.build_opt_queue} on {self} has finished.")
 
         
 
@@ -185,12 +181,14 @@ class Builder(BasicWorker):
             Also todo: figure out other commands/how to differentiate if necessary
         """
 
+        
         msg = BuilderRegOut.from_json(body) # modifiy to include routing key + exhange name?
         self.opt_id = msg.build_opt_id 
         self.build_opt_queue = MQQueue(msg.build_opt_queue, callback=self.job_handler, exchange_name='build_opt', routing_key=f'builder.opt.{self.opt_id}')
         ch.basic_ack(delivery_tag=method.delivery_tag)
         logger.info(f"Build {self.name} registered, waking job thread")
         self.sleep_job_event.set()
+        logger.info(f"Build opt setting, returning from handler") # maybe add some heartbeat/ check that the job queue is running. if it isnt then restart?
         
         
     def job_handler(self, ch, method, _props, body):
@@ -225,7 +223,7 @@ class Builder(BasicWorker):
         # respond to events before we pause to build - not sure we need this so removed. better to process with ctrl and pause
         # ch.connection.process_data_events() 
         self.send_msg(repo=task,
-                      kind='clone',
+                      kind=InputQueue.CLONE,
                       url=task['url'],
                       status=clone_status,
                       msg=self.uuid[:5]+clone_msg.decode())
@@ -238,7 +236,7 @@ class Builder(BasicWorker):
             else:
                 commit_hexsha = ""
             self.send_msg(repo=task,
-                          kind='build',
+                          kind=InputQueue.BUILD,
                           url=url,
                           status=BuildStatus.PROCESSING,
                           msg="Received and building",
@@ -276,7 +274,7 @@ class Builder(BasicWorker):
                     clone_dir, task, original_files=original_files)
                 logger.info(f"Binaries saved to {dest_binfolder}")
             self.send_msg(repo=task,
-                          kind='build',
+                          kind=InputQueue.BUILD,
                           url=url,  # can we send id + commit
                           status=build_status,
                           msg="Build Process Finished",
@@ -323,7 +321,7 @@ class Builder(BasicWorker):
                     continue
                 os.chmod(f"{dest}/{base}", NON_EXE_MODE)
 
-                self.send_msg(kind='binary',
+                self.send_msg(kind=InputQueue.BINARY,
                               task_id=repo['task_id'],
                               repo=repo,
                               file_name=f"{dest}/{base}")
@@ -387,7 +385,7 @@ class Builder(BasicWorker):
                 logger.info("Binary Not Found")
                 bins_saved = []
             for bin_saved in bins_saved:
-                self.send_msg(kind='binary',
+                self.send_msg(kind=InputQueue.BINARY,
                               repo=repo,
                               task_id=repo['task_id'],
                               file_name=os.path.join(dest, bin_saved))
@@ -399,7 +397,7 @@ class Builder(BasicWorker):
         Remember input is from the perspective of the coordinator so input == output in builder and output == input
         '''
         ret = {}
-
+        queue = MQQueue(kind)
         match kind:
             case InputQueue.BUILD_REG:
                 ret = BuilderRegIn(
@@ -419,7 +417,7 @@ class Builder(BasicWorker):
                 ctrl_conn = self.mq_client.get_connection(f'{self}-ctrl')
                 if ctrl_conn:
                     logger.info(f"Registering builder with {ret}")
-                    ctrl_conn.send_msg(queue_name=kind, msg=ret,
+                    ctrl_conn.send_msg(queue=queue, msg=ret,
                                                                 #    exchange='builder.register',
                                                                 reply_to=f"{self.control_queue_in.name}", 
                                                                 corr_id=self.uuid)
@@ -466,6 +464,6 @@ class Builder(BasicWorker):
                 return
         job_conn = self.mq_client.get_connection(f'{self}')
         if job_conn: 
-            job_conn.send_msg(kind, json.dumps(ret))
+            job_conn.send_msg(queue, json.dumps(ret))
         else: 
             raise Exception("No connection for job handler exists")
