@@ -122,18 +122,26 @@ class Builder(BasicWorker):
         Then it waits for a response and then sets the build option queue to listen on.
         '''
         try:
-            conn: Connection = self.mq_client.create_connection(conn_name=f'{self}-ctrl',
-                                                                channel_name=f'{self}-ctrl',
-                                                        )
-            conn.create_channel()
             
-            conn.add_queue(self.control_queue_in)
+            while True: 
+                
+                if not self.build_opt_queue:  #handle when errors happen in creating hte connectino/ consume without the builder having a queue - could expand to just do some of htis on start up
+                
+                    conn: Connection = self.mq_client.create_connection(conn_name=f'{self}-ctrl',
+                                                                        channel_name=f'{self}-ctrl',
+                                                            )
+                    conn.create_channel()
+                    
+                    # conn.add_queue(self.control_queue_in)
 
-            self.send_msg(kind=InputQueue.BUILD_REG, repo=None)
-            logger.info("Registration Message sent. Starting consumption on control queue now")        
-            self.mq_client.start_consumer(conn=conn, queue=self.control_queue_in ,retry_delay=10)
-            logger.warning(f"Consume control on {self} has finished.")
-
+                    self.send_msg(kind=InputQueue.BUILD_REG, repo=None)
+                    logger.info("Registration Message sent. Starting consumption on control queue now")        
+                    self.mq_client.start_consumer(conn=conn, queue=self.control_queue_in ,retry_delay=10)
+                    logger.warning(f"Consume control on {self} has finished.")
+                else:
+                    logger.debug(f"Builder registered and listening on: {self.build_opt_queue}")
+                time.sleep(15)
+            
         except Exception as e:
             logger.error(f"Failed to create builder control thread, exec={e}")
             
@@ -180,16 +188,18 @@ class Builder(BasicWorker):
             for this 
             Also todo: figure out other commands/how to differentiate if necessary
         """
-
-        
+        if props.correlation_id != self.uuid: # correlation ID doesnt match, send back onto queue
+            ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
+            return
+        logger.debug("Recieiving builder information")
         msg = BuilderRegOut.from_json(body) # modifiy to include routing key + exhange name?
         self.opt_id = msg.build_opt_id 
         self.build_opt_queue = MQQueue(msg.build_opt_queue, callback=self.job_handler, exchange_name='build_opt', routing_key=f'builder.opt.{self.opt_id}')
         ch.basic_ack(delivery_tag=method.delivery_tag)
         logger.info(f"Build {self.name} registered, waking job thread")
         self.sleep_job_event.set()
-        logger.info(f"Build opt setting, returning from handler") # maybe add some heartbeat/ check that the job queue is running. if it isnt then restart?
-        
+        logger.info(f"Build opt setting, Stopping consumption on control message") # maybe add some heartbeat/ check that the job queue is running. if it isnt then restart?
+        ch.stop_consuming()
         
     def job_handler(self, ch, method, _props, body):
         """
@@ -412,9 +422,9 @@ class Builder(BasicWorker):
                     compiler_flag=self.compiler_flag,
                     build_command=self.build_command,
                     build_system=self.build_system,
-                    
                 ).to_json()                
                 ctrl_conn = self.mq_client.get_connection(f'{self}-ctrl')
+                logger.debug(f"Reply to {self.control_queue_in.name}. corr_id {self.uuid}")
                 if ctrl_conn:
                     logger.info(f"Registering builder with {ret}")
                     ctrl_conn.send_msg(queue=queue, msg=ret,
