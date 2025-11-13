@@ -69,6 +69,7 @@ class Connection:
         self.username = username
         self.password = password
         self.conn_name = conn_name
+        self.exchange_name = None 
         self.chan_name = channel_name
         self.conn: BlockingConnection | None = None
         self.chan: BlockingChannel | None = None  #  actually stores the MQ shcnanel
@@ -179,6 +180,11 @@ class Connection:
         self.exchange_name = exchange_name
         self.chan.exchange_declare(exchange=exchange_name,
                                    exchange_type=ExchangeType.topic)
+    def ensure_exchange(self, exchange_name):
+        if self.exchange_name and exchange_name != "":
+            self.chan.exchange_declare(exchange=exchange_name,
+                                   exchange_type=ExchangeType.topic)
+        
 
     def ensure_queue(self, queue: MQQueue):
         '''
@@ -201,6 +207,7 @@ class Connection:
         try:
             self.ensure_connection()
             self.ensure_queue(queue)
+            self.ensure_exchange(exchange)
             self.chan.basic_publish(exchange=exchange,
                                     routing_key=queue.routing_key,
                                     body=msg,
