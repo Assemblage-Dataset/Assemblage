@@ -112,9 +112,6 @@ class Builder(BasicWorker):
                                      MQQueue(name="binary")
         ]
             
-        
-     
-        
 
     def run_ctrl(self):
         '''
@@ -126,7 +123,6 @@ class Builder(BasicWorker):
             while True: 
                 
                 if not self.build_opt_queue:  #handle when errors happen in creating hte connectino/ consume without the builder having a queue - could expand to just do some of htis on start up
-                
                     conn: Connection = self.mq_client.create_connection(conn_name=f'{self}-ctrl',
                                                                         channel_name=f'{self}-ctrl',
                                                             )
@@ -193,6 +189,8 @@ class Builder(BasicWorker):
             return
         logger.debug("Recieiving builder information")
         msg = BuilderRegOut.from_json(body) # modifiy to include routing key + exhange name?
+        logger.debug(f"Recieived Builder Reg Info {msg}")
+
         self.opt_id = msg.build_opt_id 
         self.build_opt_queue = MQQueue(msg.build_opt_queue, callback=self.job_handler, exchange_name='build_opt', routing_key=f'builder.opt.{self.opt_id}')
         ch.basic_ack(delivery_tag=method.delivery_tag)

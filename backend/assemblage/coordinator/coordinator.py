@@ -268,7 +268,6 @@ class Coordinator:
                     logger.warning("The connection was never opened!")
                 conn.create_channel()
                 queue_object = MQQueue(name=queue, callback=callback)
-                logger.debug(f"Queue object? : {queue_object.name}")
                 self.mq_client.start_consumer(conn=conn, queue=queue_object ,retry_delay=10)
                 logger.critical("Consume thread '%s' exited", queue)
             except Exception as err:
@@ -405,17 +404,35 @@ class Coordinator:
         reg_info: BuilderRegIn = BuilderRegIn.from_json(body)
         logger.info(f"Recieved registration request from builder: {reg_info.name}, intending to compile {reg_info.language} on {reg_info.platform}:{reg_info.library}")
         # search for build opt
+        logger.debug(f"Will be replying to {props.reply_to} with corr_id : {props.correlation_id}")
 
         build_opt_id = self.db_man.register_build_opt(reg_info)
+    
+        conn: Connection = self.mq_client.create_connection(conn_name=f'{self}-builder-ctrl', channel_name=f'{self}-builder-ctrl')
+        queue = MQQueue(OutputQueue.BUILDER_CTRL)
 
-        ch.basic_publish(
-            exchange='',
-            routing_key=props.reply_to,
-            properties=pika.BasicProperties(
-                correlation_id=props.correlation_id  # echo back
-            ),
-            body=BuilderRegOut(build_opt_id).to_json()
+        conn.send_msg(queue=queue, msg=BuilderRegOut(build_opt_id).to_json(),
+                      exchange="",
+                      reply_to=props.reply_to,
+                      corr_id=props.correlation_id
         )
+        
+        # conn.send_msg(
+        #     exchange='',
+        #     routing_key=props.reply_to,
+        #     properties=pika.BasicProperties(
+        #         correlation_id=props.correlation_id  # echo back
+        #     ),
+        #     body=BuilderRegOut(build_opt_id).to_json()
+        # )
+        # ch.basic_publish(
+        #     exchange='',
+        #     routing_key=props.reply_to,
+        #     properties=pika.BasicProperties(
+        #         correlation_id=props.correlation_id  # echo back
+        #     ),
+        #     body=BuilderRegOut(build_opt_id).to_json()
+        # )
 
         ch.basic_ack(delivery_tag=method.delivery_tag)
         with self.t_dispatch_map_lock:
