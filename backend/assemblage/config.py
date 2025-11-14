@@ -14,6 +14,18 @@ logging.getLogger("pika").setLevel(logging.WARNING)
 
 # dotenv.load_dotenv()
 
+
+class S3Settings(BaseSettings):
+    # currently only needed by builder and coordinator
+    S3_HOST: str
+    S3_PORT: int = 9000 # default access port 9000 is minio. if https can disable maybe?
+    S3_ACCESS_KEY: str 
+    S3_SECRET_ACCESS_KEY: str
+    S3_HTTPS: bool = True # if false then use http not https (dev only) - todo figure out how to validate against runtime env for that 
+    S3_REGION: str = 'us-east-1'
+    
+
+
 class AssemblageSettings(BaseSettings):
     """
     Core env variables and settings
@@ -24,6 +36,9 @@ class AssemblageSettings(BaseSettings):
     mq_port: int = Field(default=5672, env="MQ_PORT")
     name: str = Field(default_factory=lambda: os.getenv(
         "NAME") or socket.gethostname())
+    
+    # is there a way to delete 
+    
 
     @computed_field
     @property
@@ -35,7 +50,7 @@ class AssemblageSettings(BaseSettings):
         return f"{self.__class__.__name__}:\n" + "\n".join(
             f"  {key}: {value}" for key, value in items.items()
         )
-class CoordinatorSettings(AssemblageSettings):
+class CoordinatorSettings(AssemblageSettings, S3Settings):
     """
     Coordinator specific settings
     """
@@ -70,7 +85,7 @@ class ScraperSettings(AssemblageSettings):
     source: ScrapeSource = Field(os.getenv("SCRAPE_DATASOURCE", default=ScrapeSource.GITHUB))
 
 
-class BuilderSettings(AssemblageSettings):
+class BuilderSettings(AssemblageSettings, S3Settings):
     """
     Builder specific settings
     This populates
