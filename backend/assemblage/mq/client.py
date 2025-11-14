@@ -334,15 +334,22 @@ class MessageClient:
 
     def start_consumer(self, conn: Connection, queue: MQQueue, auto_ack=False, retry_delay=10):
         """Run a consumer loop with reconnection + retry."""
-        conn = self.get_connection(conn.conn_name)
-        if not conn:
-            raise ValueError(
-                f"Connection {conn.conn_name} not found in client")
-
         while True:
             try:
+                # Always construct a fresh connection
+                conn.connect()
+                conn.create_channel()
                 conn.consume(queue, auto_ack=auto_ack)
+
+            except pika.exceptions.AMQPConnectionError as e:
+                logger.error(f"Connection error: {e}. Retrying in {retry_delay}s...")
             except Exception as e:
-                logger.error(f"Consumer on {queue} failed: {e}", exc_info=True)
-                logger.info(f"Retrying in {retry_delay}s...")
-                time.sleep(retry_delay)
+                logger.error(f"Unexpected consumer error: {e}. Retrying in {retry_delay}s...")
+
+            # clean shutdown
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+            time.sleep(retry_delay)
