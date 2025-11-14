@@ -25,6 +25,8 @@ from assemblage.worker.build_method import LinuxBuildStrategy, WindowsDefaultStr
 from assemblage.config import BuilderSettings
 from assemblage.mq.messages import BuilderRegIn, BuilderRegOut
 from assemblage.mq.client import Connection, MQQueue
+from assemblage.s3.client import S3Client, ProjectBucket, ArtifactBucket
+
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +52,8 @@ class Builder(BasicWorker):
                  #  send_binary_method="s3"
                  aws_profile=None
                  ):
-        super().__init__(settings.name, settings.mq_host, settings.mq_port, worker_type=WorkerType.Builder)
+        super().__init__(settings.name, settings.mq_host,
+                         settings.mq_port, worker_type=WorkerType.Builder)
         self.platform = settings.build_os
 
         self.library = settings.library  # x64 vs x86. architecture might be better name
@@ -59,13 +62,12 @@ class Builder(BasicWorker):
         self.build_opt_queue = None
         self.opt_id = None
         self.build_opt_queue_args = {
-                        'arguments': {
-                            'x-max-length': MAX_MQ_SIZE,
-                            'x-overflow': 'reject-publish',
-                            'x-message-ttl': TASK_TIMEOUT_THRESHOLD
-                        }
-                    }
-        
+            'arguments': {
+                'x-max-length': MAX_MQ_SIZE,
+                'x-overflow': 'reject-publish',
+                'x-message-ttl': TASK_TIMEOUT_THRESHOLD
+            }
+        }
         if blacklist:  # what is this
             self.blacklist = blacklist
         else:
@@ -73,7 +75,7 @@ class Builder(BasicWorker):
         # "S3" method will utilize the credentials found in
         # `~/.aws/credentials`. Use "FTP" if you want to connect
         # to a local FTP server instead.
-        self.aws_profile = aws_profile  # probably strip and rewrite for minio?
+        # self.aws_profile = aws_profile  # probably strip and rewrite for minio?
         self.rand_build = rand_build  # what?
         self.library = settings.library
         self.random_pick = random_pick  # what is this?
@@ -85,33 +87,33 @@ class Builder(BasicWorker):
         self.clone_proxy_servers = proxy_clone_servers  # what?
         self.clone_proxy_token = proxy_token  # what?
         # self.build_callback = build_method.default_build_command_generator
-        
-        # these are set in the build_opt tables. not sure what these should be so settign empty for now
-        self.compiler_flag = None  
-        self.build_command = None # 
 
+        # these are set in the build_opt tables. not sure what these should be so settign empty for now
+        self.compiler_flag = None
+        self.build_command = None
 
         if self.platform == "linux":
-            self.build_system = "all" # i think this is the default?
-            # maybe filter by language here too
+            self.build_system = "all"  # i think this is the default?
+            #  maybe filter by language here too
             self.build_strategy = LinuxBuildStrategy(
                 # rename to linux build strat? and add compilier flags but eh for now
-                compiler=settings.compiler, language = settings.language, save_assembly=settings.save_assembly, library=self.library)
+                compiler=settings.compiler, language=settings.language, save_assembly=settings.save_assembly, library=self.library)
         elif self.platform == "windows":
-            self.build_system = "sln" # i think this is the default?
+            self.build_system = "sln"  # i think this is the default?
             self.compiler_flag = "o4"
             self.build_strategy = WindowsDefaultStrategy(
-                compiler=settings.compiler, language = settings.language, save_assembly=settings.save_assembly, library=self.library)
+                compiler=settings.compiler, language=settings.language, save_assembly=settings.save_assembly, library=self.library)
         else:
             logger.error(
                 f"Running on invalid platform: {self.platform}. Options are Linux or Windows")
             sys.exit(1)
-            
-        self.output_message_queue = [ MQQueue("build"), 
-                                     MQQueue(name="clone"),
-                                     MQQueue(name="binary")
-        ]
-            
+
+        self.s3_client = S3Client(host=settings.S3_HOST, port=settings.S3_PORT, access_key=settings.S3_ACCESS_KEY,
+                                  secret_access_key=settings.S3_SECRET_ACCESS_KEY, https=settings.S3_HTTPS, region_name=settings.S3_REGION)
+        # stores cloned projects
+        self.ProjectBucket = ProjectBucket(self.s3_client)
+        # store build artifacts
+        self.ArchiveBucket = ArtifactBucket(self.s3_client)
 
     def run_ctrl(self):
         '''
@@ -119,43 +121,42 @@ class Builder(BasicWorker):
         Then it waits for a response and then sets the build option queue to listen on.
         '''
         try:
-            
-            while True: 
-                
-                if not self.build_opt_queue:  #handle when errors happen in creating hte connectino/ consume without the builder having a queue - could expand to just do some of htis on start up
+
+            while True:
+
+                if not self.build_opt_queue:  # handle when errors happen in creating hte connectino/ consume without the builder having a queue - could expand to just do some of htis on start up
                     conn: Connection = self.mq_client.create_connection(conn_name=f'{self}-ctrl',
                                                                         channel_name=f'{self}-ctrl',
-                                                            )
+                                                                        )
                     conn.create_channel()
-                    
-                    # conn.add_queue(self.control_queue_in)
-
                     self.send_msg(kind=InputQueue.BUILD_REG, repo=None)
-                    logger.info("Registration Message sent. Starting consumption on control queue now")        
-                    self.mq_client.start_consumer(conn=conn, queue=self.control_queue_in ,retry_delay=10)
+                    logger.info(
+                        "Registration Message sent. Starting consumption on control queue now")
+                    self.mq_client.start_consumer(
+                        conn=conn, queue=self.control_queue_in, retry_delay=10)
                     logger.warning(f"Consume control on {self} has finished.")
                 else:
-                    logger.debug(f"Builder registered and listening on: {self.build_opt_queue}")
+                    logger.debug(
+                        f"Builder registered and listening on: {self.build_opt_queue}")
                 time.sleep(15)
-            
+
         except Exception as e:
             logger.error(f"Failed to create builder control thread, exec={e}")
-            
 
     def run_job(self):
         ''' 
         Run the build job. 
 
         '''
-   
+
         # create input connection and channel
-        # create input queue 
+        # create input queue
         # start consuming
-        
+
         logger.info(f"{self} Waiting for build_opt_thread to be set")
         # if not self.build_opt_queue:
         #     logger.info("Waiting for build_opt_thread to be set")
-        
+
         MAX_WAIT = 15 * 60  # 15 minutes in seconds
         CHECK_INTERVAL = 5  # check every 5 seconds
 
@@ -164,19 +165,22 @@ class Builder(BasicWorker):
         while not self.sleep_job_event.wait(timeout=CHECK_INTERVAL):
             elapsed = time.time() - start_time
             if elapsed > MAX_WAIT:
-                logger.warning(f"{self}: waited {elapsed:.0f}s — exiting after 15 minutes timeout")
+                logger.warning(
+                    f"{self}: waited {elapsed:.0f}s — exiting after 15 minutes timeout")
                 return
 
-            logger.info(f"{self}: still waiting for configuration ({elapsed:.0f}s elapsed). Will exit after {MAX_WAIT/60} minuites without configuration")
-        logger.info(f"Build option queue set to {self.build_opt_queue} initialising job")
+            logger.info(
+                f"{self}: still waiting for configuration ({elapsed:.0f}s elapsed). Will exit after {MAX_WAIT/60} minuites without configuration")
+        logger.info(
+            f"Build option queue set to {self.build_opt_queue} initialising job")
         conn: Connection = self.mq_client.create_connection(conn_name=f'{self}',
-                                                                channel_name=f'{self}')
+                                                            channel_name=f'{self}')
         conn.create_channel()
-        logger.info(f"{self} Starting consumption on {self.build_opt_queue}") 
-        self.mq_client.start_consumer(conn=conn, queue=self.build_opt_queue ,retry_delay=10)
-        logger.warning(f"Consume build opt {self.build_opt_queue} on {self} has finished.")
-
-        
+        logger.info(f"{self} Starting consumption on {self.build_opt_queue}")
+        self.mq_client.start_consumer(
+            conn=conn, queue=self.build_opt_queue, retry_delay=10)
+        logger.warning(
+            f"Consume build opt {self.build_opt_queue} on {self} has finished.")
 
     def control_message_handler(self, ch, method, props, body):
         """ recieive a control message to specify the build option queue. 
@@ -184,26 +188,30 @@ class Builder(BasicWorker):
             for this 
             Also todo: figure out other commands/how to differentiate if necessary
         """
-        if props.correlation_id != self.uuid: # correlation ID doesnt match, send back onto queue
+        if props.correlation_id != self.uuid:  # correlation ID doesnt match, send back onto queue
             ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
             return
         logger.debug("Recieiving builder information")
-        msg = BuilderRegOut.from_json(body) # modifiy to include routing key + exhange name?
+        # modifiy to include routing key + exhange name?
+        msg = BuilderRegOut.from_json(body)
         logger.debug(f"Recieived Builder Reg Info {msg}")
 
-        self.opt_id = msg.build_opt_id 
-        self.build_opt_queue = MQQueue(msg.build_opt_queue, callback=self.job_handler, exchange_name='build_opt', routing_key=f'builder.opt.{self.opt_id}')
+        self.opt_id = msg.build_opt_id
+        self.build_opt_queue = MQQueue(msg.build_opt_queue, callback=self.job_handler,
+                                       exchange_name='build_opt', routing_key=f'builder.opt.{self.opt_id}')
         ch.basic_ack(delivery_tag=method.delivery_tag)
         logger.info(f"Build {self.name} registered, waking job thread")
         self.sleep_job_event.set()
-        logger.info(f"Build opt setting, Stopping consumption on control message") # maybe add some heartbeat/ check that the job queue is running. if it isnt then restart?
+        # maybe add some heartbeat/ check that the job queue is running. if it isnt then restart?
+        logger.info(
+            f"Build opt setting, Stopping consumption on control message")
         ch.stop_consuming()
-        
+
     def job_handler(self, ch, method, _props, body):
         """
         Callback for when we get a task request from a coordinator to build and clone/pull a project.
         """
-        self.sleep_job_event.wait() # way to get the control thread to block 
+        self.sleep_job_event.wait()  # way to get the control thread to block
         task = json.loads(body)  # TODO: create type for this
 
         url = task['url']
@@ -221,15 +229,15 @@ class Builder(BasicWorker):
 
         logger.info("Received a task to build %s. buildsys: %s",
                     url,
-                   task['build_system'])
+                    task['build_system'])
         clone_msg, clone_status, clone_dir = self.build_strategy.clone_data(
             task)
-                
+
         original_files = []
         for filename in glob.iglob(clone_dir + '**/**', recursive=True):
             original_files.append(filename)
         # respond to events before we pause to build - not sure we need this so removed. better to process with ctrl and pause
-        # ch.connection.process_data_events() 
+        # ch.connection.process_data_events()
         self.send_msg(repo=task,
                       kind=InputQueue.CLONE,
                       url=task['url'],
@@ -250,14 +258,14 @@ class Builder(BasicWorker):
                           msg="Received and building",
                           commit_hexsha=commit_hexsha,
                           build_time=0)
-            
+
             # this is currently only needed for windows, but linux just reutrns none too, so it wont break
             # seems cleaner to do it like this , instead of doing if statements here
             logger.debug("Starting pre build")
-            sln_file = self.build_strategy.pre_build( 
+            sln_file = self.build_strategy.pre_build(
                 build_mode=self.build_mode,
                 clone_dir=clone_dir,
-                optimization=self.compiler_flag        
+                optimization=self.compiler_flag
             )
             logger.debug(f"Pre Build success, now running build for {url}")
             before_build_time = int(time.time())
@@ -303,9 +311,9 @@ class Builder(BasicWorker):
         self.build_strategy.own_dir(os.path.dirname(
             target_dir))  # possibly overkill here
         bin_found = {
-                    f for f in self.build_strategy.find_binaries(target_dir)
-                    if (os.path.exists(f)) and f not in original_files
-                } # we dont want to take any files we didnt compile as we dont know what they were compiled with etc
+            f for f in self.build_strategy.find_binaries(target_dir)
+            if (os.path.exists(f)) and f not in original_files
+        }  # we dont want to take any files we didnt compile as we dont know what they were compiled with etc
         if not bin_found:
             logger.warning(
                 "no binaries found, build may have not been a success")
@@ -321,11 +329,12 @@ class Builder(BasicWorker):
             for fpath in bin_found:
                 base = os.path.basename(fpath)
                 # put some time stamp to avoid duplicate
-                try: 
+                try:
                     shutil.move(fpath, f"{dest}/{base}",
-                            copy_function=shutil.copy2)
+                                copy_function=shutil.copy2)
                 except Exception as e:
-                    logger.info(f"Something went wrong moving {fpath}. Moving onto next")
+                    logger.info(
+                        f"Something went wrong moving {fpath}. Moving onto next")
                     continue
                 os.chmod(f"{dest}/{base}", NON_EXE_MODE)
 
@@ -353,39 +362,42 @@ class Builder(BasicWorker):
                         dest, prefix_s + "_" + ntpath.basename(filename))
                     logger.info("Move file %s -> %s", os.path.join(target_dir, filename),
                                 dest_file)
-                    
-                    attempts = 0 
+
+                    attempts = 0
                     max_attempts = 5
                     while attempts < max_attempts:
                         attempts += 1
                         try:
                             shutil.copy2(filename,
-                                        dest_file)
+                                         dest_file)
                             logger.debug(f"{filename} copied to {dest_file}")
                             try:
                                 os.remove(filename)
-                                logger.debug(f"Deleted source file: {filename}")
+                                logger.debug(
+                                    f"Deleted source file: {filename}")
                             except Exception as e:
-                                logger.warning(f"Could not delete source file {filename}: {e}")
+                                logger.warning(
+                                    f"Could not delete source file {filename}: {e}")
                         except FileNotFoundError:
                             logger.info(f"File {filename} not found")
-                            break # only retry if is permission error as waiting for lock
+                            break  # only retry if is permission error as waiting for lock
                         except shutil.Error:
                             logger.info(f"File name {filename} is invalid")
                             break
                         except PermissionError as e:
                             # check if the file has been moved, if it has. move on
                             if attempts < max_attempts:  # only sleep if we have retries left
-                                logger.info(f"File locked: {filename}. {max_attempts - attempts} retries remaining. Retrying in 60s")
+                                logger.info(
+                                    f"File locked: {filename}. {max_attempts - attempts} retries remaining. Retrying in 60s")
                                 time.sleep(60)
                             else:
-                                logger.error(f"File locked: {filename}. No retries remaining, giving up.")
+                                logger.error(
+                                    f"File locked: {filename}. No retries remaining, giving up.")
                         except Exception as e:
-                            logger.info(f"Something else went wrong moving {filename}")
+                            logger.info(
+                                f"Something else went wrong moving {filename}")
                             break
-                     
-                     
-                        
+
             try:
                 bins_saved = os.listdir(dest)
                 logger.info("Binary Saved %s", ",".join(bins_saved))
@@ -412,7 +424,7 @@ class Builder(BasicWorker):
                     name=self.name,
                     uuid=self.uuid,
                     compiler=self.build_strategy.compiler,
-                    library = self.library,
+                    library=self.library,
                     compiler_version=self.build_strategy.compiler_version,
                     language=self.build_strategy.language,
                     save_assembly=self.build_strategy.save_assembly,
@@ -420,20 +432,21 @@ class Builder(BasicWorker):
                     compiler_flag=self.compiler_flag,
                     build_command=self.build_command,
                     build_system=self.build_system,
-                ).to_json()                
+                ).to_json()
                 ctrl_conn = self.mq_client.get_connection(f'{self}-ctrl')
-                logger.debug(f"Reply to {self.control_queue_in.name}. corr_id {self.uuid}")
+                logger.debug(
+                    f"Reply to {self.control_queue_in.name}. corr_id {self.uuid}")
                 if ctrl_conn:
                     logger.info(f"Registering builder with {ret}")
                     ctrl_conn.send_msg(queue=queue, msg=ret,
-                                                                #    exchange='builder.register',
-                                                                reply_to=f"{self.control_queue_in.name}", 
-                                                                corr_id=self.uuid)
+                                       #    exchange='builder.register',
+                                       reply_to=f"{self.control_queue_in.name}",
+                                       corr_id=self.uuid)
                     return
                 else:
                     # do we want to create if does not exist then send message?
                     raise Exception(f"Connection {self}-ctrl does not exist")
-                
+
             case InputQueue.CLONE:
                 ret = {
                     'url': kwarg['url'],
@@ -471,7 +484,7 @@ class Builder(BasicWorker):
                     "Unknown type of message %s, not sending... ", kind)
                 return
         job_conn = self.mq_client.get_connection(f'{self}')
-        if job_conn: 
+        if job_conn:
             job_conn.send_msg(queue, json.dumps(ret))
-        else: 
+        else:
             raise Exception("No connection for job handler exists")

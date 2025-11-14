@@ -51,6 +51,8 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+      minio: 
+        condition: service_healthy
     deploy:
       restart_policy:
         condition: on-failure
@@ -105,6 +107,8 @@ services:
     depends_on:
       rabbitmq: 
         condition: service_healthy
+      minio: 
+        condition: service_healthy
     deploy:
       restart_policy:
         condition: on-failure
@@ -112,9 +116,15 @@ services:
       - ./backend:/app 
       - builder-data:/binaries
     mem_limit: 250g
+
+# self host s3 bucket 
   minio:
     image: minio/minio:latest
     container_name: minio
+    healthcheck: 
+      test: ["CMD-SHELL", "curl -l -f http://127.0.0.1:9001/minio/healthcheck/live || exit 1"]
+      interval: 10s
+      start_period: 5s
     ports:
       - "9000:9000"      # API port
       - "9001:9001"      # Console port

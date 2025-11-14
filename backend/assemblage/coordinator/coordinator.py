@@ -5,7 +5,6 @@ Yihao Sun
 """
 
 import os
-from sqlite3 import connect
 import sys
 import threading
 import time
@@ -13,8 +12,7 @@ import logging
 import json
 # from concurrent.futures import ThreadPoolExecutor
 import pika
-import boto3  # Only used in AWS mode
-#from pika.exchange_type import ExchangeType
+# from pika.exchange_type import ExchangeType
 
 from assemblage.data.db import DBManager
 from collections import Counter
@@ -27,9 +25,11 @@ from assemblage.consts import (AWS_AUTO_REBOOT_PREFIX, COORDINATOR_DATABASE_SYNC
 from assemblage.config import CoordinatorSettings
 from assemblage.mq.messages import BuilderRegIn, BuilderRegOut, ScraperDataOutBundle, ScraperDataOutSingle
 from assemblage.mq.client import MQQueue, MessageClient, Connection
+from assemblage.s3.client import S3Client, ProjectBucket, ArtifactBucket
 
 
 logger = logging.getLogger(__name__)
+
 
 def stop_the_world_excepthook(args):
     """ 
@@ -44,7 +44,9 @@ def stop_the_world_excepthook(args):
 threading.excepthook = stop_the_world_excepthook
 
 # NOTE: if we want to get rid of this function, the api does provide this url (as 'html_url') so we can
-# pass that along from the scraper 
+# pass that along from the scraper
+
+
 def patch_url(_url):
     """ make a url cloneable """
     return _url.replace('repos/', '').replace('api.', '')
@@ -65,6 +67,7 @@ def unpatch_url(_url: str) -> str:
 
     return unpatched
 
+
 class Coordinator:
     """
     coordinator node, dispatch work to worker node and also collect data
@@ -77,8 +80,6 @@ class Coordinator:
         logger.debug(f"Settings: {settings}")
         self.mq_client = MessageClient(settings.mq_host, settings.mq_port,
                                        username='guest', password='guest')
-        
-
 
         self.db_addr = settings.databaseURL
         # to do create better session management
@@ -88,7 +89,6 @@ class Coordinator:
         self.cluster_name = settings.cluster_name
         self._create_buildopt_exchange()
 
-        logger.debug(f"{self.cluster_name}")        
         self.reproduce_mode = settings.reproduce_mode
         self.aws_flag = settings.aws_mode
 
@@ -96,15 +96,22 @@ class Coordinator:
 
         # list of dispatched job threads
         self.t_dispatch_map: dict[int, threading.Thread] = {}
-        # setup rpc service
+
+        self.s3_client = S3Client(host=settings.S3_HOST,port=settings.S3_PORT, access_key=settings.S3_ACCESS_KEY,
+                                  secret_access_key=settings.S3_SECRET_ACCESS_KEY, https=settings.S3_HTTPS, region_name=settings.S3_REGION)
+        # coordindator creates but then only needs read only ( unless used to delete ) - leave for now.  
+        self.ProjectBucket = ProjectBucket(self.s3_client) 
+        self.ArchiveBucket = ArtifactBucket(self.s3_client)
+
     def __str__(self):
         return f'Coordinator-{self.cluster_name}'
 
 
     def _create_buildopt_exchange(self):
-        
+
         # This channel is created exclusively to add the topic exchange
-        conn: Connection = self.mq_client.create_connection(conn_name=f'{self}-build-opt', channel_name=f'{self}-build-opt')
+        conn: Connection = self.mq_client.create_connection(
+            conn_name=f'{self}-build-opt', channel_name=f'{self}-build-opt')
         conn.create_channel()
         conn.add_topic_exchange('build_opt')
         conn.close()
@@ -118,10 +125,13 @@ class Coordinator:
     def __dispatch_task(self, build_opt_id, sleep=True):
         """Sends unbuilt repositories to the worker by enqueueing them with RabbitMQ"""
         try:
-            logger.info("__dispatch_task thread on buildopt %s initializing...", build_opt_id)
-            
-            conn: Connection = self.mq_client.create_connection(conn_name=f'{self}', channel_name=f'{self}')
-            _thread_channel = conn.create_channel()  # workaround for issue mentioned in todo below
+            logger.info(
+                "__dispatch_task thread on buildopt %s initializing...", build_opt_id)
+
+            conn: Connection = self.mq_client.create_connection(
+                conn_name=f'{self}', channel_name=f'{self}')
+            # workaround for issue mentioned in todo below
+            _thread_channel = conn.create_channel()
             tasks = self.db_man.find_status_by_status_code(
                 build_opt_id=build_opt_id,
                 clone_status=CloneStatus.NOT_STARTED,
@@ -159,10 +169,11 @@ class Coordinator:
                     status_id=task.id, clone_status=CloneStatus.PROCESSING)
                 time_after_query = time.time()
                 repo_url = patch_url(uncloned_repo.url)
-                out_dir = f'{BIN_DIR}/{task.id}' # dont think this is needed anymore
+                # dont think this is needed anymore
+                out_dir = f'{BIN_DIR}/{task.id}'
                 # correction. later. would be good to replace this with the projectid from scrapes
-                # only once the build and clone is fully fixed and reliable 
-                
+                # only once the build and clone is fully fixed and reliable
+
                 # format a request to be sent to the builder/cloner
                 clone_req = {'name': uncloned_repo.name, 'url': repo_url,
                              'task_id': task.id, 'opt_id': build_opt.id,
@@ -205,11 +216,12 @@ class Coordinator:
                 # _thread_channel.exchange_declare(
                 #     exchange='build_opt', exchange_type=ExchangeType.topic)
                 # _thread_channel.confirm_delivery()
-                break ## this should fail, and then be reopened once the builder re registers
+                break  # this should fail, and then be reopened once the builder re registers
 
         logger.info(f"__dispatch_task Build Opt {build_opt_id} exiting...")
     # TODO: Possibly this runs occasionally at very long time scales, but I think this is a candidate for cutting
     # Appears to be a helper method for the old DB system
+
     def __recycle_clone(self):
         '''Runs a background thread which attempts to set certain failed clone attempts as ready to retry.'''
         # My understanding is this attempts to retry previously-failed repo clones,
@@ -262,13 +274,15 @@ class Coordinator:
                 logger.info(
                     "Consume thread on queue '%s' started in coordinator", queue)
                 # Create a channel and listen on the relevant queue
-                conn: Connection = self.mq_client.create_connection(conn_name=f'{self}-{queue}', channel_name=f'{self}-{queue}')
-            
+                conn: Connection = self.mq_client.create_connection(
+                    conn_name=f'{self}-{queue}', channel_name=f'{self}-{queue}')
+
                 if conn.conn.is_closed:
                     logger.warning("The connection was never opened!")
                 conn.create_channel()
                 queue_object = MQQueue(name=queue, callback=callback)
-                self.mq_client.start_consumer(conn=conn, queue=queue_object ,retry_delay=10)
+                self.mq_client.start_consumer(
+                    conn=conn, queue=queue_object, retry_delay=10)
                 logger.critical("Consume thread '%s' exited", queue)
             except Exception as err:
                 logger.critical(
@@ -285,31 +299,31 @@ class Coordinator:
             logger.info(">>>>>>>>>>>>>>>>>>>>>> cleanning overtime"
                         " tasks ......")
 
-    def __reboot_worker(self):
-        ''' reboot worker every hr, only in aws mode '''
-        if not self.aws_flag:
-            return
-        sesh = boto3.Session(profile_name='assemblage')
-        ec2_resource = sesh.resource('ec2')
-        ec2_client = sesh.client('ec2')
-        sleep_time = AWS_REBOOT_SLEEP_INTERVAL
-        while 1:
-            reboot_instance_ids = []
-            for instance in ec2_resource.instances.all():
-                if instance.tags:
-                    for tag in instance.tags:
-                        cluster_auto_prefix = f"{self.cluster_name}-{AWS_AUTO_REBOOT_PREFIX}"
-                        if tag['Key'] == 'Name' and (cluster_auto_prefix in tag['Value']):
-                            reboot_instance_ids.append(instance.id)
-            if reboot_instance_ids != []:
-                response = ec2_client.reboot_instances(
-                    InstanceIds=reboot_instance_ids, DryRun=False)
-                logger.info("Rebooting %s vms msg %s",
-                            len(reboot_instance_ids), response)
-            for _ in reboot_instance_ids:
-                for i in range(int(sleep_time/60)):
-                    logger.info("%s min to next reboot", sleep_time/60-i)
-                    time.sleep(60)
+    # def __reboot_worker(self):
+    #     ''' reboot worker every hr, only in aws mode '''
+    #     if not self.aws_flag:
+    #         return
+    #     sesh = boto3.Session(profile_name='assemblage')
+    #     ec2_resource = sesh.resource('ec2')
+    #     ec2_client = sesh.client('ec2')
+    #     sleep_time = AWS_REBOOT_SLEEP_INTERVAL
+    #     while 1:
+    #         reboot_instance_ids = []
+    #         for instance in ec2_resource.instances.all():
+    #             if instance.tags:
+    #                 for tag in instance.tags:
+    #                     cluster_auto_prefix = f"{self.cluster_name}-{AWS_AUTO_REBOOT_PREFIX}"
+    #                     if tag['Key'] == 'Name' and (cluster_auto_prefix in tag['Value']):
+    #                         reboot_instance_ids.append(instance.id)
+    #         if reboot_instance_ids != []:
+    #             response = ec2_client.reboot_instances(
+    #                 InstanceIds=reboot_instance_ids, DryRun=False)
+    #             logger.info("Rebooting %s vms msg %s",
+    #                         len(reboot_instance_ids), response)
+    #         for _ in reboot_instance_ids:
+    #             for i in range(int(sleep_time/60)):
+    #                 logger.info("%s min to next reboot", sleep_time/60-i)
+    #                 time.sleep(60)
 
     # The callback, according to Pika's requirements, takes four arguments: the channel that the message was received on,
     # delivery metadata, properties, and the message body.
@@ -321,15 +335,17 @@ class Coordinator:
         start_time = time.time()
         successes = 0
         result = 0
-        bundle = ScraperDataOutBundle.from_json( body.decode() )
+        bundle = ScraperDataOutBundle.from_json(body.decode())
         for repo in bundle:
             # must convert repo from ScrapedDataOutSingle to dict
             result = self.db_man.insert_repos(repo.to_dict())
             successes += result
         if result == 0:
             logger.info(f"{bundle.repos[0].url} inserted err")
-        logger.info(f"Build system counter {Counter(x.build_system for x in bundle)}", )
-        logger.info(f"Saved {successes}/{len(bundle)} repos in {round(time.time()-start_time, 2)}s")
+        logger.info(
+            f"Build system counter {Counter(x.build_system for x in bundle)}", )
+        logger.info(
+            f"Saved {successes}/{len(bundle)} repos in {round(time.time()-start_time, 2)}s")
 
     def recv_binary(self, ch, method, _props, body):
         """ collect binary metadata from worker"""
@@ -359,11 +375,13 @@ class Coordinator:
                 timeout = COORDINATOR_DATABASE_SYNC_TIMEOUT
                 logger.info("Waiting for database sync...")
                 while (timeout > 0 and task.clone_status in [CloneStatus.NOT_STARTED, CloneStatus.PROCESSING]):
-                    time.sleep(1)  # relatively long wait time to reduce required db accesses
+                    # relatively long wait time to reduce required db accesses
+                    time.sleep(1)
                     timeout -= 1
                     task = self.db_man.find_status_by_id(recv_msg['task_id'])
             if task.clone_status != CloneStatus.SUCCESS:  # sync attempt timed out or clone was a failure
-                logger.warning(f"Clone failed but still built: repo id {task.repo_id}")
+                logger.warning(
+                    f"Clone failed but still built: repo id {task.repo_id}")
         self.db_man.update_repo_status(
             status_id=recv_msg['task_id'],
             build_time=recv_msg['build_time'],
@@ -402,21 +420,24 @@ class Coordinator:
         '''
 
         reg_info: BuilderRegIn = BuilderRegIn.from_json(body)
-        logger.info(f"Recieved registration request from builder: {reg_info.name}, intending to compile {reg_info.language} on {reg_info.platform}:{reg_info.library}")
+        logger.info(
+            f"Recieved registration request from builder: {reg_info.name}, intending to compile {reg_info.language} on {reg_info.platform}:{reg_info.library}")
         # search for build opt
-        logger.debug(f"Will be replying to {props.reply_to} with corr_id : {props.correlation_id}")
+        logger.debug(
+            f"Will be replying to {props.reply_to} with corr_id : {props.correlation_id}")
 
         build_opt_id = self.db_man.register_build_opt(reg_info)
-    
-        conn: Connection = self.mq_client.create_connection(conn_name=f'{self}-builder-ctrl', channel_name=f'{self}-builder-ctrl')
+
+        conn: Connection = self.mq_client.create_connection(
+            conn_name=f'{self}-builder-ctrl', channel_name=f'{self}-builder-ctrl')
         queue = MQQueue(OutputQueue.BUILDER_CTRL)
 
         conn.send_msg(queue=queue, msg=BuilderRegOut(build_opt_id).to_json(),
                       exchange="",
                       reply_to=props.reply_to,
                       corr_id=props.correlation_id
-        )
-        
+                      )
+
         # conn.send_msg(
         #     exchange='',
         #     routing_key=props.reply_to,
@@ -498,7 +519,8 @@ class Coordinator:
 
         # t_consume_config = threading.Thread(self.__consume_from_queue, args=(QueueName.CONFIG,))
         t_consume_clone = threading.Thread(
-            target=self.__consume_from_queue, args=(InputQueue.CLONE,))  # note: the comma is important to parse args as tuple
+            # note: the comma is important to parse args as tuple
+            target=self.__consume_from_queue, args=(InputQueue.CLONE,))
         t_consume_build = threading.Thread(
             target=self.__consume_from_queue, args=(InputQueue.BUILD,))
         t_consume_binary = threading.Thread(
@@ -510,7 +532,7 @@ class Coordinator:
 
         t_clean_task = threading.Thread(target=self.__clean_overtime)
         t_recycle_worker = threading.Thread(target=self.__recycle_clone)
-        t_reboot_worker = threading.Thread(target=self.__reboot_worker)
+        # t_reboot_worker = threading.Thread(target=self.__reboot_worker)
         t_daemon = threading.Thread(target=self.__daemon)
         logger.info("Processes ready")
         with open("/tmp/setup_complete.txt", "w") as f:
@@ -524,7 +546,7 @@ class Coordinator:
         t_consume_binary.start()
         t_consume_scrape.start()
         t_consume_build_reg.start()
-        t_reboot_worker.start()
+        # t_reboot_worker.start()
         t_daemon.start()
         logger.info("Threads joining")
         # TODO: No code beyond this point should be run
