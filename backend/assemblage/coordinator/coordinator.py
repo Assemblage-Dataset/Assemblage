@@ -178,8 +178,6 @@ class Coordinator:
                     status_id=task.id, clone_status=CloneStatus.PROCESSING)
                 time_after_query = time.time()
                 repo_url = patch_url(uncloned_repo.url)
-                # dont think this is needed anymore
-                out_dir = f'{BIN_DIR}/{task.id}'
                 # correction. later. would be good to replace this with the projectid from scrapes
                 # only once the build and clone is fully fixed and reliable
 
@@ -187,7 +185,6 @@ class Coordinator:
                 clone_req = {'name': uncloned_repo.name, 'url': repo_url,
                              'task_id': task.id, 'opt_id': build_opt.id,
                              #  'commit_hexsha': task.commit_hexsha,
-                             'output_dir': out_dir,
                              'repo_id': uncloned_repo.id,
                              'updated_at': uncloned_repo.updated_at.strftime("%m/%d/%Y, %H:%M:%S"),
                              'build_system': uncloned_repo.build_system,
