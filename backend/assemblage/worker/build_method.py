@@ -22,6 +22,8 @@ from urllib.parse import urlparse
 from elftools.elf.elffile import ELFFile
 from elftools.common.exceptions import ELFError
 import pefile
+from typing import Tuple
+
 
 from assemblage.worker.profile import AWSProfile
 from assemblage.consts import BuildStatus, PDBJSONNAME, CloneStatus, PDBPATH, BINPATH, RuntimeEnv
@@ -30,7 +32,6 @@ from assemblage.windows.parsers.sln import Solution
 from assemblage.analyze.analyze import get_build_system
 from assemblage.worker.ctags_parser import get_functions as ctags_get_functions
 from assemblage.worker.clang_parser import get_functions as clang_get_functions
-from typing import Tuple
 logger = logging.getLogger(__name__)
 
 # should this be a class function  change this to debug=False by default
@@ -44,15 +45,18 @@ def clean(folders):
 
 
 class BuildStrategy:
-    def __init__(self, compiler: str, language: str, library: str,save_assembly: bool = False):
+    def __init__(self, compiler: str, language: str, library: str,save_assembly: bool = False, base_path: str = BINPATH):
         self.save_assembly = save_assembly
         self.compiler: str = compiler
         self.language: str = language
         self.compiler_version = self._get_compiler_version()
         self.library = library
         self.platform: str
-
-
+        self.base_path: str = base_path # either BINPATH/ or TEMP/. defaults to BINPATH ( C:/binaries or /binaries)
+        
+        logger.debug(f"Base path set to: {base_path}")
+        self.mark_dir_as_safe(base_path) # remove once other things fixed
+    
     def cmd_with_output(self, cmd: str, timelimit=60, cwd=''):
         """
         Run a command and return stdout, stderr, and exit code.
@@ -94,21 +98,35 @@ class BuildStrategy:
             except Exception as e:
                 logger.warning(f"Something went wrong runnign cmd: {cmd} - {e}")
                 return b"", b"{e}", 1
-
-    def get_project_commit(self, clone_dir: str) -> str | None:
         
+    def mark_dir_as_safe(self, path):
+        cmd = f"git config --global --add safe.directory {path}"
+        out, err, code = self.cmd_with_output(cmd, 600, path)
+        if code != 0:
+            logger.error(f"Failed to mark as safe, rest of commands may fail: {err}. {out}")
+
+    
+
+    def get_project_commit(self, clone_dir: str) -> str :
+        '''
+        Temporary function. REMOVE once scrape gets commit
+        '''
         
         cmd = "git rev-parse --short=12 HEAD"
         out, err, code = self.cmd_with_output(cmd, 600, clone_dir)
         if code == 0:
             commit_hash = out.decode().strip()
         else:
-            print(f"Failed to get commit hash: {err.decode().strip()}")
-            commit_hash = None
+            logger.error(f"Failed to get commit hash: {err.decode().strip()}")
+            commit_hash = "Unknown"
         return commit_hash
             
-    def clone_data(self, repo) -> Tuple[bytes | str | CloneStatus | CloneStatus]:
-        """ Clone repo """
+    def clone_data(self, repo, use_temp: bool= False) -> Tuple[bytes | str | CloneStatus | CloneStatus]:
+        """ Clone repo
+            If using s3 storage, then dont use temp, otherwise save to a temporary directory
+        
+        """
+        
 
         user_name, project_name = self.parse_github_name(repo["url"])
         # no longer random + will now group projects from the same user together...
@@ -118,7 +136,8 @@ class BuildStrategy:
         if not project_name:
             project_name = os.urandom(8).hex()
 
-        git_user_dir = f"/binaries/projects/{user_name}"
+        git_user_dir = f"{self.base_path}/projects/{user_name}"
+        
         clone_dir = f'{git_user_dir}/{project_name}'
         os.makedirs(f"{git_user_dir}", exist_ok=True)  # ensure that user's directory exists
         cmd = ""
@@ -150,6 +169,8 @@ class BuildStrategy:
             except:
                 pass
             logger.warning(f"Error in cloning data err={err}")
+            
+        self.mark_dir_as_safe(clone_dir)
       
 
         return out, return_code, clone_dir
@@ -240,10 +261,9 @@ class BuildStrategy:
 
 class LinuxBuildStrategy(BuildStrategy):
 
-    def __init__(self, compiler, language: str, library: str, save_assembly: bool, tmp_dir="/tmp", num_p_job=16):
-        super().__init__(compiler, language=language, save_assembly=save_assembly, library=library)
+    def __init__(self, compiler, language: str, library: str, save_assembly: bool, num_p_job=16, base_path: str = BINPATH):
+        super().__init__(compiler, language=language, save_assembly=save_assembly, library=library, base_path=base_path)
 
-        self.tmp_dir = tmp_dir
         self.num_p_job = num_p_job
         self.platform = "linux"
         # this is not great, i dont like it but for now itll have to do
@@ -261,8 +281,6 @@ class LinuxBuildStrategy(BuildStrategy):
         Detect compiler version using -dumpfullversion -dumpversion via cmd_with_output().
         Works for both GCC and Clang.
         """
-        import re
-
         try:
             out, err, code = self.cmd_with_output(f"{self.compiler} -dumpfullversion -dumpversion")
 
@@ -344,9 +362,8 @@ class LinuxBuildStrategy(BuildStrategy):
 
 class WindowsDefaultStrategy(BuildStrategy):
     # compiler should be an enum of supported...
-    def __init__(self, compiler: str, language: str, library: str,save_assembly: bool, tmp_dir="C:/Windows/Temp", num_p_job=16):
-        super().__init__(compiler, language=language, save_assembly=save_assembly, library=library)
-        self.tmp_dir = tmp_dir
+    def __init__(self, compiler: str, language: str, library: str,save_assembly: bool, num_p_job=16, base_path: str = BINPATH):
+        super().__init__(compiler, language=language, save_assembly=save_assembly, library=library, base_path=base_path)
         self.num_p_job = num_p_job
         self.platform = "windows"
         # this is not great, i dont like it but for now itll have to do

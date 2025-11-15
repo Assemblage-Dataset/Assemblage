@@ -148,7 +148,7 @@ class Connection:
             logger.info(f"Created queue: {queue} on {self}")
             if queue.exchange_name and queue.routing_key:
                 logger.debug(
-                    f"Binding routing key {queue.routing_key}  and exchagne {queue.exchange_name}")
+                    f"Binding routing key {queue.routing_key}  and exchange {queue.exchange_name}")
                 self.chan.queue_bind(
                     queue.name, queue.exchange_name, queue.routing_key)
             self.queues[queue.name] = queue

@@ -95,24 +95,9 @@ class Builder(BasicWorker):
         # these are set in the build_opt tables. not sure what these should be so settign empty for now
         self.compiler_flag = None
         self.build_command = None
-
-        if self.platform == "linux":
-            self.build_system = "all"  # i think this is the default?
-            #  maybe filter by language here too
-            self.build_strategy = LinuxBuildStrategy(
-                # rename to linux build strat? and add compilier flags but eh for now
-                compiler=settings.compiler, language=settings.language, save_assembly=settings.save_assembly, library=self.library)
-        elif self.platform == "windows":
-            self.build_system = "sln"  # i think this is the default?
-            self.compiler_flag = "o4"
-            self.build_strategy = WindowsDefaultStrategy(
-                compiler=settings.compiler, language=settings.language, save_assembly=settings.save_assembly, library=self.library)
-        else:
-            logger.error(
-                f"Running on invalid platform: {self.platform}. Options are Linux or Windows")
-            sys.exit(1)
-
-        # s3 configuration
+        
+        
+      # s3 configuration
         if settings.s3_enabled:
             # settings.validate_s3()
             self.s3_client = S3Client(host=settings.S3_HOST, port=settings.S3_PORT, access_key=settings.S3_ACCESS_KEY,
@@ -122,10 +107,30 @@ class Builder(BasicWorker):
             self.ProjectBucket = S3Bucket(self.s3_client, "project-archive")
             # store build artifacts
             self.ArtifactBucket = S3Bucket(self.s3_client, "artifacts")
+            base_path = TEMP_DIR
         else:
             self.s3_client = None
             self.ProjectBucket = None
             self.ArtifactBucket = None
+            base_path = BINPATH
+
+        if self.platform == "linux":
+            self.build_system = "all"  # i think this is the default?
+            #  maybe filter by language here too
+            self.build_strategy = LinuxBuildStrategy(
+                # rename to linux build strat? and add compilier flags but eh for now
+                compiler=settings.compiler, language=settings.language, save_assembly=settings.save_assembly, library=self.library, base_path=base_path)
+        elif self.platform == "windows":
+            self.build_system = "sln"  # i think this is the default?
+            self.compiler_flag = "o4"
+            self.build_strategy = WindowsDefaultStrategy(
+                compiler=settings.compiler, language=settings.language, save_assembly=settings.save_assembly, library=self.library, base_path=base_path)
+        else:
+            logger.error(
+                f"Running on invalid platform: {self.platform}. Options are Linux or Windows")
+            sys.exit(1)
+
+      
 
     def run_ctrl(self):
         '''
@@ -260,21 +265,28 @@ class Builder(BasicWorker):
             else:
                 commit_hexsha = self.build_strategy.get_project_commit(
                     clone_dir)
+            
+            
+            save_path = f'{self}:{clone_dir}' # default save location - will be the host + save dir ( either s3 path or the builder it is on + the path in teh builder)
+
 
             if self.s3_client:
                 # save to s3 client and return location
+                username, project = clone_dir.rstrip("/").split("/")[-2:]
+                saved = self.save_project_to_s3(clone_dir, username, project, commit_hexsha)
+                if saved:
+                    save_path = f"{self.ProjectBucket}/{username}/{project}/{commit_hexsha}.tar.gz"
+                    logger.debug(f"Project saved to {save_path} ")
 
-                save_path = ""
-                pass
-            else:
-                save_path = ""
 
             self.send_msg(repo=task,
                       kind=InputQueue.CLONE,
                       url=task['url'],
                       status=clone_status,
                       msg=self.uuid[:5]+clone_msg.decode(),
-                      commit_hexsha=commit_hexsha)
+                      commit_hexsha=commit_hexsha,
+                      save_path = save_path
+                      )
 
             self.send_msg(repo=task,
                           kind=InputQueue.BUILD,
@@ -327,32 +339,33 @@ class Builder(BasicWorker):
                       url=task['url'],
                       status=clone_status,
                       msg=self.uuid[:5]+clone_msg.decode(),
-                      commit_hexsha=None)
+                      commit_hexsha="", 
+                      save_path=None)
 
             logger.info("Clone FAILURE %s: %s", url, clone_msg)
         # build_method.clean(folders)
         logger.debug("Worker %s finished %s", self.uuid[:5], url,
                      )
 
-    def save_projects_to_s3(self, clone_dir, hash):
+    def save_project_to_s3(self, clone_dir: str, username:str, project_name: str, commit_hexsha: str):
         '''
         ZIP and save projects to s3 Project-Archive/<github_username>/<github_project>/commit.zip
         '''
 
         try:
 
-            archive = shutil.make_archive(f"{TEMP_DIR}/{hash}",
+            archive = shutil.make_archive(f"{TEMP_DIR}/{commit_hexsha}",
                                 "gztar", clone_dir)  # zip up
             
 
-            username, project = clone_dir.rstrip("/").split("/")[-2:]
 
-            s3_key = f"{username}/{project}/{hash}.tar.gzw"         
+            s3_key = f"{username}/{project_name}/{commit_hexsha}.tar.gz"         
                
             self.ProjectBucket.upload_file(archive, s3_key )
+            return True
         except Exception as e:
-            logger.warning("failed to save {clone_dir} as zip archive")
-
+            logger.warning(f"failed to save {clone_dir} as zip archive to {self.ProjectBucket}/{username}/{project_name}/{commit_hexsha}.tar.gz : {e}")
+            return False
     def save_binaries(self, target_dir, repo, original_files):
         """ Store the binaries in the specified output directory.
             and send message to cooridinator to update database
@@ -523,7 +536,8 @@ class Builder(BasicWorker):
                     'status': kwarg['status'],
                     'msg': kwarg['msg'][-1000:],
                     'task_id': repo['task_id'],
-                    'commit_hexsha': kwarg['commit_hexsha']
+                    'commit_hexsha': kwarg['commit_hexsha'],
+                    'save_path': kwarg['save_path']
 
                 }
             case InputQueue.BUILD:
