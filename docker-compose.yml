@@ -21,9 +21,9 @@ services:
       RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: -rabbit consumer_timeout 900000
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
+      interval: 5s
+      timeout: 5s
+      retries: 10
       start_period: 10s
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
@@ -35,6 +35,7 @@ services:
     build:
       context: .
       dockerfile: docker/gcc/Dockerfile
+    command: python3 /app/scripts/start_worker.py --type coordinator
     environment: # do not remove!!
       PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
       PYTHONUNBUFFERED: 1
@@ -62,6 +63,7 @@ services:
     build:
       context: .
       dockerfile: docker/gcc/Dockerfile
+    command: python3 /app/scripts/start_worker.py --type scraper --id 0
     healthcheck:
       test: [ "CMD", "bash", "-c", "pgrep -f start_worker.py > /dev/null" ]
       interval: 10s
