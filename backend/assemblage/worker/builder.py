@@ -325,7 +325,7 @@ class Builder(BasicWorker):
 
             if build_status == BuildStatus.SUCCESS:
                 dest_binfolder = self.save_binaries(
-                    clone_dir, task, original_files=original_files)
+                    clone_dir, task, original_files=original_files, commit_hexsha=commit_hexsha)
                 logger.info(f"Binaries saved to {dest_binfolder}")
             self.send_msg(repo=task,
                           kind=InputQueue.BUILD,
@@ -367,7 +367,7 @@ class Builder(BasicWorker):
         except Exception as e:
             logger.warning(f"failed to save {clone_dir} as zip archive to {self.ProjectBucket}/{username}/{project_name}/{commit_hexsha}.tar.gz : {e}")
             return False
-    def save_binaries(self, target_dir, repo, original_files):
+    def save_binaries(self, target_dir, repo, original_files, commit_hexsha):
         """ Store the binaries in the specified output directory.
             and send message to cooridinator to update database
             Eventually replace again with s3 bucket, then save orignal files/git repo in s3 too
@@ -388,9 +388,9 @@ class Builder(BasicWorker):
         username, project = target_dir.rstrip("/").split("/")[-2:]
 
         if self.s3_client:
-            dest = f"{self.ProjectBucket}/{username}/{project}" # to return indicates stored in s3 buckets
+            dest = f"{self.ProjectBucket}/{username}/{project}/{commit_hexsha}" # to return indicates stored in s3 buckets
         else:
-            dest = f"{BINPATH}/successes/{username}/{project}"
+            dest = f"{BINPATH}/successes/{username}/{project}/{commit_hexsha}"
             try:
                 os.mkdir(dest)
             except FileNotFoundError:
@@ -403,7 +403,7 @@ class Builder(BasicWorker):
                 # put some time stamp to avoid duplicate
                 try:
                     if self.s3_client:
-                        s3_key =f"{username}/{project}/{base}"
+                        s3_key =f"{username}/{project}/{commit_hexsha}/{base}" # /username/project/commithexsha/filename
                         saved = self.ArtifactBucket.upload_file(fpath,s3_key )
                         if saved: 
                             logger.debug(f"successfully uploaded {fpath} to {s3_key} on {self.ArtifactBucket}")
