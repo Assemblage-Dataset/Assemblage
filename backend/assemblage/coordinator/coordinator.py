@@ -25,7 +25,7 @@ from assemblage.consts import (AWS_AUTO_REBOOT_PREFIX, COORDINATOR_DATABASE_SYNC
 from assemblage.config import CoordinatorSettings
 from assemblage.mq.messages import BuilderRegIn, BuilderRegOut, ScraperDataOutBundle, ScraperDataOutSingle
 from assemblage.mq.client import MQQueue, MessageClient, Connection
-from assemblage.s3.client import S3Client, ProjectBucket, ArtifactBucket
+from assemblage.s3.client import S3Client, S3Bucket
 
 
 logger = logging.getLogger(__name__)
@@ -97,11 +97,20 @@ class Coordinator:
         # list of dispatched job threads
         self.t_dispatch_map: dict[int, threading.Thread] = {}
 
-        self.s3_client = S3Client(host=settings.S3_HOST,port=settings.S3_PORT, access_key=settings.S3_ACCESS_KEY,
-                                  secret_access_key=settings.S3_SECRET_ACCESS_KEY, https=settings.S3_HTTPS, region_name=settings.S3_REGION)
-        # coordindator creates but then only needs read only ( unless used to delete ) - leave for now.  
-        self.ProjectBucket = ProjectBucket(self.s3_client) 
-        self.ArchiveBucket = ArtifactBucket(self.s3_client)
+
+        if settings.s3_enabled:
+            # settings.validate_s3()
+            self.s3_client = S3Client(host=settings.S3_HOST,port=settings.S3_PORT, access_key=settings.S3_ACCESS_KEY,
+                                    secret_access_key=settings.S3_SECRET_ACCESS_KEY, https=settings.S3_HTTPS, region_name=settings.S3_REGION)
+            # coordindator creates but then only needs read only ( unless used to delete ) - leave for now.  
+            # stores cloned projects
+            self.ProjectBucket = S3Bucket(self.s3_client, "project-archive")
+            # store build artifacts
+            self.ArtifactBucket = S3Bucket(self.s3_client, "artifacts")
+        else: 
+            self.s3_client = None
+            self.ProjectBucket = None
+            self.ArtifactBucket = None
 
     def __str__(self):
         return f'Coordinator-{self.cluster_name}'

@@ -1,3 +1,4 @@
+import os
 import boto3
 import logging
 from botocore.exceptions import ClientError
@@ -47,23 +48,38 @@ class S3Bucket:
     def __str__(self):
         return f"{self.client.url}/{self.bucket_name}"
 
-    def upload_file(self, file_path: str, key: str):
-        self.client._s3.upload_file(file_path, self.bucket_name, key)
+    def upload_file(self, file_name, object_name=None):
+        """Upload a file to an S3 bucket
 
-    def download_file(self, key: str, file_path: str):
-        self.client._s3.download_file(self.bucket_name, key, file_path)
+        :param file_name: File to upload
+        :param object_name: S3 object name. If not specified then file_name is used
+        :return: True if file was uploaded, else False
+        """
 
+        # If S3 object_name was not specified, use file_name
+        if object_name is None:
+            object_name = os.path.basename(file_name)
 
-class ArtifactBucket(S3Bucket):
-    """Bucket used to store successfully built binaries and associated artifacts"""
-    def __init__(self, client: S3Client):
-        super().__init__(client, "artifacts")
+        # Upload the file
+        try:
+            self.client._s3.upload_file(file_name, self.bucket_name, object_name)
+        except ClientError as e:
+            logging.error(e)
+            return False
+        return True
+    
+    def download_file(self, object_name: str, file_path: str)->bool:
+        """Download a file from S3 bucket
 
+        :param file_path: Path to download to 
+        :param object_name: S3 object name.
+        :return: True if file was uploaded, else False
+        """
+        try:
+            self.client._s3.download_File(file_path, self.bucket_name, object_name)
+        except ClientError as e:
+            logging.error(e)
+            return False
+        return True
 
-
-class ProjectBucket(S3Bucket):
-    """Bucket used to store scraped GitHub projects"""
-    def __init__(self, client: S3Client):
-        super().__init__(client, "project-archive")
-        
 

@@ -38,7 +38,7 @@ class BuildStatus(str, Enum):
 # add a recloned status, for when a project is updated and then repulled, to tell buidler to reclone + rebuild, 
 # but store binaries in a new dir 
 
-class CloneStatus(str, Enum):
+class CloneStatus(str, Enum): 
     NOT_STARTED = "not_started"
     PROCESSING = "processing"
     FAILED = "failed"

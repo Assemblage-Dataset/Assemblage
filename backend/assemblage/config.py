@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import Any, Literal
 from pydantic_settings import BaseSettings
-from pydantic import computed_field, Field
+from pydantic import computed_field, Field, model_validator
 from platform import machine, system
 import os
 import socket
@@ -16,16 +16,33 @@ logging.getLogger("pika").setLevel(logging.WARNING)
 
 
 class S3Settings(BaseSettings):
-    # currently only needed by builder and coordinator
-    S3_HOST: str
-    S3_PORT: int = 9000 # default access port 9000 is minio. if https can disable maybe?
-    S3_ACCESS_KEY: str 
-    S3_SECRET_ACCESS_KEY: str
-    S3_HTTPS: bool = True # if false then use http not https (dev only) - todo figure out how to validate against runtime env for that 
-    S3_REGION: str = 'us-east-1'
+    S3_HOST: str | None = None # if s3 host is set then we treat s3 as enabled
+    S3_ACCESS_KEY: str | None = None
+    S3_SECRET_ACCESS_KEY: str | None = None
+    S3_PORT: int = 9000
+    S3_HTTPS: bool  = True
+    S3_REGION: str  = "us-east-1" # maybe do enum, but fine for
+
+    @property
+    def s3_enabled(self) -> bool:
+        """Check if S3 mode is considered enabled"""
+        return self.S3_HOST is not None
+
+    @model_validator(mode="after")
+    def validate_s3_fields(cls, values):
+        # Convert values dict to an object for property access        
+        if values.s3_enabled:
+            missing = []
+            if not values.S3_ACCESS_KEY:
+                missing.append("S3_ACCESS_KEY") 
+                pass
+            if not values.S3_SECRET_ACCESS_KEY: 
+                missing.append("S3_SECRET_ACCESS_KEY") 
+            if missing:
+                raise ValueError(f"S3 HOST is set {values.S3_HOST} but missing required fields: {missing}")
+
+        return values
     
-
-
 class AssemblageSettings(BaseSettings):
     """
     Core env variables and settings

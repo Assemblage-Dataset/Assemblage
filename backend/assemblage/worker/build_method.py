@@ -95,6 +95,17 @@ class BuildStrategy:
                 logger.warning(f"Something went wrong runnign cmd: {cmd} - {e}")
                 return b"", b"{e}", 1
 
+    def get_project_commit(self, clone_dir: str) -> str | None:
+        
+        
+        cmd = "git rev-parse --short=12 HEAD"
+        out, err, code = self.cmd_with_output(cmd, 600, clone_dir)
+        if code == 0:
+            commit_hash = out.decode().strip()
+        else:
+            print(f"Failed to get commit hash: {err.decode().strip()}")
+            commit_hash = None
+        return commit_hash
             
     def clone_data(self, repo) -> Tuple[bytes | str | CloneStatus | CloneStatus]:
         """ Clone repo """
