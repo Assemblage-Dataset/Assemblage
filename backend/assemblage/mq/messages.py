@@ -59,6 +59,33 @@ class BuilderRegOut(MQMsg):
 
 
 
+class BuilderTaskOut(MQMsg):
+    '''
+        Message sent from coordinator to builder to build a repo (clone then build)
+        
+    '''
+    def __init__(self, name: str, url: str, task_id: int, 
+                 opt_id: int, output_dir: str, repo_id: int,
+                 updated_at: str, build_system: str, 
+                 msg_time: float,
+                 commit_hexsha: str | None = None,
+                 mod_timestamp: str | None = None
+                 ):
+        super().__init__()
+        self.name = name
+        self.url = url 
+        self.task_id = task_id
+        self.opt_id = opt_id
+        self.output_dir = output_dir
+        self.repo_id = repo_id
+        self.updated_at = updated_at
+        self.build_system = build_system
+        self.msg_time = msg_time
+        self.commit_hexsha = commit_hexsha if commit_hexsha else ""
+        self.mod_timestamp = mod_timestamp if mod_timestamp else ""
+
+
+
 class ScraperDataOutSingle(MQMsg):
     '''
     Format of a single repository message.

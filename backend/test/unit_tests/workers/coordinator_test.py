@@ -1,9 +1,8 @@
 '''
     [Stub] Some basic regression + unit tests for coordinator functionality. 
     todo
-    * Test recv_ functions
-    * Test dispatch thread
-    * Test consume functions
+    * Implement the skipped test ( test_dispatch_thread_reconnect ) properly
+    * Figure out the underlying assumptions tested in test_recv_clone_info_badclone 
 
     It would be nice to replace assertions around the DBManager functionality to
     assertions on the underlying database, so that we could change
@@ -21,17 +20,21 @@ import unittest
 import json
 from unittest.mock import patch, MagicMock, ANY
 import logging
-import assemblage.coordinator.coordinator as coordinator
-from assemblage.config import CoordinatorSettings
 from pika.exchange_type import ExchangeType
 from pika import BasicProperties
-import assemblage.mq.messages as msg
-from assemblage.consts import BuildStatus, CloneStatus, COORDINATOR_DATABASE_SYNC_TIMEOUT, OutputQueue
 
-logging.basicConfig(format="%(asctime)s [TEST] %(levelname)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S", level='DEBUG')
+import assemblage.coordinator.coordinator as coordinator
+import assemblage.config as settings
+import assemblage.mq.messages as msg
+import assemblage.mq.client as client
+from assemblage.consts import BuildStatus, CloneStatus, COORDINATOR_DATABASE_SYNC_TIMEOUT, InputQueue, BIN_DIR, OutputQueue
+import test.unit_tests.helper_func as helper
+
+
+logging.basicConfig(format="%(asctime)s [TEST] %(levelname)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S", level='INFO')
 
 logger = logging.getLogger(__name__)
-DefaultSettings = CoordinatorSettings()
+DefaultSettings = settings.CoordinatorSettings()
 
 class TestCoordinator(unittest.TestCase):
 
@@ -63,7 +66,7 @@ class TestCoordinator(unittest.TestCase):
             Ensure that the topic exchange is initialized when the coordinator is initialized
         '''
 
-        mock_connection, mock_channel = self._mock_functioning_rabbitmq(MockConnection, MockChannel)
+        mock_connection, mock_channel = helper.mock_functioning_rabbitmq(MockConnection, MockChannel)
         
         c = coordinator.Coordinator(DefaultSettings)
         
@@ -83,18 +86,19 @@ class TestCoordinator(unittest.TestCase):
             Checks that recv_scrape_info successfully inserts the given data into the database
             (assumes database works as expected)
         '''
-        mock_connection, mock_channel = self._mock_functioning_rabbitmq(MockConnection, MockChannel)
-        mock_db = self._mock_functioning_dbmanager(MockDBManager)
+        mock_connection, mock_channel = helper.mock_functioning_rabbitmq(MockConnection, MockChannel)
+        mock_db = helper.mock_functioning_dbmanager(MockDBManager)
 
         # these are mocks so i don't have to worry about creating valid acknowledgement dummy data
         input_method = MagicMock()
         input_props = MagicMock()
-        # Bundle of 1
-        single_msg1_json = '{"name": "DOOM", "url": "https://api.github.com/repos/id-Software/DOOM", "language": "C++", "owner_id": 1395534, "description": "DOOM Open Source Release", "created_at": "2012-01-31 21:28:06", "updated_at": "2024-05-24 13:18:59", "size": 149, "build_system": "others", "branch": "master"}'
-        single_msg2_json = '{"name": "DEFINITELY_NOT_DOOM", "url": "urlhere", "language": "C++", "owner_id": 1, "description": "", "created_at": "2012-01-31 21:28:06", "updated_at": "2024-05-24 13:18:59", "size": 149, "build_system": "others", "branch": "master"}'
+        # Bundle of 2
+        single_msg1_json : str = '{"name": "DOOM", "url": "https://api.github.com/repos/id-Software/DOOM", "language": "C++", "owner_id": 1395534, "description": "DOOM Open Source Release", "created_at": "2012-01-31 21:28:06", "updated_at": "2024-05-24 13:18:59", "size": 149, "build_system": "others", "branch": "master"}'
+        single_msg2_json : str = '{"name": "DEFINITELY_NOT_DOOM", "url": "urlhere", "language": "C++", "owner_id": 1, "description": "", "created_at": "2012-01-31 21:28:06", "updated_at": "2024-05-24 13:18:59", "size": 149, "build_system": "others", "branch": "master"}'
         single_msg1 = msg.ScraperDataOutSingle.from_json(single_msg1_json)
         single_msg2 = msg.ScraperDataOutSingle.from_json(single_msg2_json)
-        input_body = msg.ScraperDataOutBundle([single_msg1, single_msg2]).to_json().encode()  # must be given as bytes, hence encode()
+        bundle = msg.ScraperDataOutBundle([single_msg1, single_msg2])
+        input_body : bytes = bundle.to_json().encode()
         
         c = coordinator.Coordinator(DefaultSettings)
         c.recv_scrape_info(mock_channel, input_method, input_props, input_body)
@@ -131,23 +135,22 @@ class TestCoordinator(unittest.TestCase):
             TODO: tests that cover expected behavior when bad data is passed to the recv methods?
         '''
         
-        mock_connection, mock_channel = self._mock_functioning_rabbitmq(MockConnection, MockChannel)
-        mock_db = self._mock_functioning_dbmanager(MockDBManager)
+        mock_connection, mock_channel = helper.mock_functioning_rabbitmq(MockConnection, MockChannel)
+        mock_db = helper.mock_functioning_dbmanager(MockDBManager)
 
         # see above for reasoning as to why using mocks
         input_method = MagicMock()
         input_props = MagicMock()
-        mock_body = '{"file_name": "FILENAME", "task_id": "TASK_ID_IN_DB_FROM_SCRAPER"}'.encode()
+        mock_body : bytes = '{"file_name": "FILENAME", "task_id": "TASK_ID_IN_DB_FROM_SCRAPER"}'.encode()
 
         c = coordinator.Coordinator(DefaultSettings)
         c.recv_binary(mock_channel, input_method, input_props, mock_body)
 
         # check that acknowledgement and one db insertion happened        
         mock_channel.basic_ack.assert_called_once_with(delivery_tag=input_method.delivery_tag)
-        mock_db.insert_binary.assert_called_with(
+        mock_db.insert_binary.assert_called_once_with(
             file_name="FILENAME", description=ANY, status_id="TASK_ID_IN_DB_FROM_SCRAPER"
         )
-        mock_db.insert_binary.assert_called_once()
 
         # check that no rabbitmq calls happened (this function shouldn't send messages)
         self.assertFalse( mock_channel.basic_publish.called )
@@ -165,13 +168,13 @@ class TestCoordinator(unittest.TestCase):
             (practically speaking, OUTDATED_MSG seems to be used for duplicate tasks fyi)
         '''
 
-        mock_connection, mock_channel = self._mock_functioning_rabbitmq(MockConnection, MockChannel)
-        mock_db = self._mock_functioning_dbmanager(MockDBManager)
-        # see above for reasoning as to why using mocks
+        mock_connection, mock_channel = helper.mock_functioning_rabbitmq(MockConnection, MockChannel)
+        mock_db = helper.mock_functioning_dbmanager(MockDBManager)
+        
         input_method = MagicMock()
         input_props = MagicMock()
-        mock_body = '{"url": "url", "opt_id": 1, "status":"'+ BuildStatus.OUTDATED_MSG +'"}'
-        mock_body = mock_body.encode()
+        mock_body : str = '{"url": "url", "opt_id": 1, "status":"'+ BuildStatus.OUTDATED_MSG +'"}'
+        mock_body : bytes = mock_body.encode()
 
         c = coordinator.Coordinator(DefaultSettings)
         c.recv_build_info(mock_channel, input_method, input_props, mock_body)
@@ -193,13 +196,12 @@ class TestCoordinator(unittest.TestCase):
             Tests that valid build messages are saved
         '''
 
-        mock_connection, mock_channel = self._mock_functioning_rabbitmq(MockConnection, MockChannel)
-        mock_db = self._mock_functioning_dbmanager(MockDBManager)
+        mock_connection, mock_channel = helper.mock_functioning_rabbitmq(MockConnection, MockChannel)
+        mock_db = helper.mock_functioning_dbmanager(MockDBManager)
         input_method = MagicMock()
         input_props = MagicMock()
 
-        # Also need to mock a return value for self.db_man.find_status_by_id(recv_msg['task_id']),
-        # which should be a mock with the attribute clone_status equal to SUCCESS
+        # A valid build message must have a clone_status of SUCCESS saved in the db
         mock_task = MagicMock()
         mock_task.clone_status = CloneStatus.SUCCESS
         mock_db.find_status_by_id.return_value = mock_task
@@ -208,8 +210,8 @@ class TestCoordinator(unittest.TestCase):
             "url": "5.com", "opt_id":1, "status":BuildStatus.FAILED, "msg":"finished",
             "task_id":10001, "build_time": 5, "commit_hexsha":"xxxxxx"
                      }
-        mock_body = json.dumps( input_msg )
-        mock_body = mock_body.encode()
+        mock_body : str = json.dumps( input_msg )
+        mock_body : bytes = mock_body.encode()
 
         c = coordinator.Coordinator(DefaultSettings)
         c.recv_build_info(mock_channel, input_method, input_props, mock_body)
@@ -228,8 +230,8 @@ class TestCoordinator(unittest.TestCase):
             commit_hexsha="xxxxxx")
         
         # if this is called multiple times, then this test is entering the database sync code
-        # which is incorrect
-        mock_db.find_status_by_id.assert_called_once()
+        # which is incorrect for this input (since clone status is SUCCESS)
+        mock_db.find_status_by_id.assert_called_once_with( 10001 )
 
         
     @patch('assemblage.mq.client.BlockingChannel')
@@ -238,18 +240,18 @@ class TestCoordinator(unittest.TestCase):
     @patch('assemblage.coordinator.coordinator.time') # patched purely to skip the waiting
     def test_recv_build_info_clone_wait_stall(self, MockTime, MockDBManager, MockConnection, MockChannel):
         '''
-            Tests that if a task w a clone status of PROCESSING is passed and clone status is never updated,
-            then the task will behave as expected
+            Tests that if a task w a clone status of PROCESSING is built but clone status is never updated,
+            then the recv function will behave as expected
             Regression test
         '''
 
-        mock_connection, mock_channel = self._mock_functioning_rabbitmq(MockConnection, MockChannel)
-        mock_db = self._mock_functioning_dbmanager(MockDBManager)
+        mock_connection, mock_channel = helper.mock_functioning_rabbitmq(MockConnection, MockChannel)
+        mock_db = helper.mock_functioning_dbmanager(MockDBManager)
         input_method = MagicMock()
         input_props = MagicMock()
 
-        # Also need to mock a return value for self.db_man.find_status_by_id(recv_msg['task_id']),
-        # which should be a mock with the attribute clone_status equal to SUCCESS
+        # For this test, we need a non-success CloneStatus (PROCESSING is typical for this bug)
+        # repo_id is needed only in the logging message.
         mock_task = MagicMock()
         mock_task.clone_status = CloneStatus.PROCESSING
         mock_task.repo_id = "FOR_TEST_OUTPUT_ONLY"
@@ -259,8 +261,8 @@ class TestCoordinator(unittest.TestCase):
             "url": "5.com", "opt_id":1, "status":BuildStatus.SUCCESS, "msg":"finished",
             "task_id":10001, "build_time": 5, "commit_hexsha":"xxxxxx"
                      }
-        mock_body = json.dumps( input_msg )
-        mock_body = mock_body.encode()
+        mock_body : str = json.dumps( input_msg )
+        mock_body : bytes = mock_body.encode()
 
         c = coordinator.Coordinator(DefaultSettings)
         c.recv_build_info(mock_channel, input_method, input_props, mock_body)
@@ -272,12 +274,15 @@ class TestCoordinator(unittest.TestCase):
         #mock_db.update_repo_status.assert_called()  
         # currently the repo status is updated anyway for this particular scenario.
         # whether this behavior is expected or not is unknown
+        # if we want to test that this behavior stays, uncomment above line
         
         # should be trapped in the database sync code for the full 10 seconds
         self.assertEqual(
             mock_db.find_status_by_id.call_count,
             COORDINATOR_DATABASE_SYNC_TIMEOUT + 1
         )
+        mock_db.find_status_by_id.assert_called_with( 10001 )  # checks only the last entry, but all should be 10001
+
          
 
     @patch('assemblage.mq.client.BlockingChannel')
@@ -286,31 +291,26 @@ class TestCoordinator(unittest.TestCase):
     @patch('assemblage.coordinator.coordinator.time') # patched purely to skip the waiting
     def test_recv_build_info_clone_wait_eventual_success(self, MockTime, MockDBManager, MockConnection, MockChannel):
         '''
-            Tests that if a task w a clone status of PROCESSING is passed, then the status is eventually updated to SUCCESS,
-            the task will continue as expected
+            Tests that if a task w a clone status of PROCESSING is passed, then the status is updated to SUCCESS
+            two attempts later, the task will continue to be processed as expected
         '''
 
-        mock_connection, mock_channel = self._mock_functioning_rabbitmq(MockConnection, MockChannel)
-        mock_db = self._mock_functioning_dbmanager(MockDBManager)
+        mock_connection, mock_channel = helper.mock_functioning_rabbitmq(MockConnection, MockChannel)
+        mock_db = helper.mock_functioning_dbmanager(MockDBManager)
         input_method = MagicMock()
         input_props = MagicMock()
 
-        # Also need to mock a return value for self.db_man.find_status_by_id(recv_msg['task_id']),
-        # which is one of two mocks: one which represents the DB returning a NOT_STARTED clone status,
-        # and one which represents a SUCCESS clone status.
-        # Then, we use a side effect to mimic the database updating after a few seconds and returning
-        # that the clone has been completed.
-        # Note: we use two mocks rather than one that we just give multiple side effects of clone_status
-        # because we don't care how many times clone_status is called. Using one and putting side effects
-        # on that mock will introduce unpredictable bugs, where for example tests can pass or fail depending
-        # on logger statements.
+        # We create two mock tasks, fill in appropriate data, then configure find_status_by_id to return the 
+        # success on the third time it's called, to mimic the database updating after a few seconds
+        # This is more stable than using one mock with a changing clone_status,
+        # as that way is affected by total calls to clone_status, which can be affected e.g. by log messages.
         mock_task_unstarted = MagicMock()
         mock_task_unstarted.clone_status = CloneStatus.NOT_STARTED
-        mock_task_unstarted.repo_id = "FOR_TEST_OUTPUT_ONLY"
+        mock_task_unstarted.repo_id = "FOR_TEST_OUTPUT_ONLY_UNSTARTED"
 
         mock_task_success = MagicMock()
         mock_task_success.clone_status = CloneStatus.SUCCESS
-        mock_task_success.repo_id = "FOR_TEST_OUTPUT_ONLY"
+        mock_task_success.repo_id = "FOR_TEST_OUTPUT_ONLY_SUCCESS"
 
         mock_db.find_status_by_id.side_effect = [mock_task_unstarted, mock_task_unstarted, mock_task_success]
 
@@ -318,8 +318,8 @@ class TestCoordinator(unittest.TestCase):
             "url": "5.com", "opt_id":1, "status":BuildStatus.SUCCESS, "msg":"finished",
             "task_id":10001, "build_time": 5, "commit_hexsha":"xxxxxx"
                      }
-        mock_body = json.dumps( input_msg )
-        mock_body = mock_body.encode()
+        mock_body : str = json.dumps( input_msg )
+        mock_body : bytes = mock_body.encode()
 
 
         c = coordinator.Coordinator(DefaultSettings)
@@ -329,9 +329,11 @@ class TestCoordinator(unittest.TestCase):
         mock_channel.basic_ack.assert_called_once_with(delivery_tag=input_method.delivery_tag)
 
         mock_channel.basic_publish.assert_not_called()
-        mock_db.update_repo_status.assert_called_once()  
+        mock_db.update_repo_status.assert_called_once_with(
+            status_id=input_msg['task_id'], build_time=ANY, build_status=input_msg['status'],
+            build_msg=ANY, commit_hexsha=ANY
+        )  
         
-        # should be trapped in the database sync code for the full 10 seconds
         self.assertEqual(
             mock_db.find_status_by_id.call_count,
             3
@@ -350,15 +352,15 @@ class TestCoordinator(unittest.TestCase):
             TODO: would like to mock out the logger to check what code path is explored
         '''
 
-        mock_connection, mock_channel = self._mock_functioning_rabbitmq(MockConnection, MockChannel)
-        mock_db = self._mock_functioning_dbmanager(MockDBManager)
+        mock_connection, mock_channel = helper.mock_functioning_rabbitmq(MockConnection, MockChannel)
+        mock_db = helper.mock_functioning_dbmanager(MockDBManager)
         
         input_method = MagicMock()
         input_props = MagicMock()
-        mock_body = '{"url": "url", "task_id": 1001, "msg": "Message", "opt_id": 1, "status":"'+ BuildStatus.SUCCESS +'"}'
-        mock_body = mock_body.encode()
+        mock_body : str = '{"url": "url", "task_id": 1001, "msg": "Message", "opt_id": 1, "status":"'+ BuildStatus.SUCCESS +'"}'
+        mock_body : bytes = mock_body.encode()
 
-        # Mock getting the success
+        # Mock a successful query from find_status_by_id
         mock_task_success = MagicMock()
         mock_task_success.clone_status = CloneStatus.SUCCESS
         mock_task_success.repo_id = "FOR_TEST_OUTPUT_ONLY"
@@ -395,13 +397,13 @@ class TestCoordinator(unittest.TestCase):
             updating based on the clone status, but actually update on the build status?) so this is purely a regression test.
         '''
 
-        mock_connection, mock_channel = self._mock_functioning_rabbitmq(MockConnection, MockChannel)
-        mock_db = self._mock_functioning_dbmanager(MockDBManager)
+        mock_connection, mock_channel = helper.mock_functioning_rabbitmq(MockConnection, MockChannel)
+        mock_db = helper.mock_functioning_dbmanager(MockDBManager)
         
         input_method = MagicMock()
         input_props = MagicMock()
         mock_body = '{"url": "url", "task_id": 1001, "msg": "Message", "opt_id": 1, "status":"'+ BuildStatus.SUCCESS +'"}'
-        mock_body = mock_body.encode()
+        mock_body : bytes = mock_body.encode()
 
         # Mock getting the success
         mock_task_success = MagicMock()
@@ -429,15 +431,15 @@ class TestCoordinator(unittest.TestCase):
     @patch('assemblage.mq.client.BlockingChannel')
     @patch('assemblage.mq.client.BlockingConnection')
     @patch('assemblage.coordinator.coordinator.DBManager')
-    @patch('assemblage.coordinator.coordinator.threading') # patched to prevent orphan threads
+    @patch('assemblage.coordinator.coordinator.threading') # patched to prevent orphan threads -- not tested on
     def test_recv_builder_registration_db(self, MockThreading, MockDBManager, MockConnection, MockChannel):
         '''
             Tests that on builder registration, the db is appropriately accessed and an acknowledgement is sent.
             Creation of dispatch threads is tested in the next test.
         '''
         
-        mock_connection, mock_channel = self._mock_functioning_rabbitmq(MockConnection, MockChannel)
-        mock_db = self._mock_functioning_dbmanager(MockDBManager)
+        mock_connection, mock_channel = helper.mock_functioning_rabbitmq(MockConnection, MockChannel)
+        mock_db = helper.mock_functioning_dbmanager(MockDBManager)
 
         # Set up required return from db
         mock_db.register_build_opt.return_value = 3
@@ -488,6 +490,8 @@ class TestCoordinator(unittest.TestCase):
             body=msg.BuilderRegOut(3).to_json()
         )
 
+        # MockThreading.Thread.assert_called_once()  # this should be true, but will be caught by the next test if not
+
 
     @patch('assemblage.mq.client.BlockingChannel')
     @patch('assemblage.mq.client.BlockingConnection')
@@ -499,8 +503,8 @@ class TestCoordinator(unittest.TestCase):
             (Does not check db/rabbitmq accesses -- see above)
         '''
         
-        mock_connection, mock_channel = self._mock_functioning_rabbitmq(MockConnection, MockChannel)
-        mock_db = self._mock_functioning_dbmanager(MockDBManager)
+        mock_connection, mock_channel = helper.mock_functioning_rabbitmq(MockConnection, MockChannel)
+        mock_db = helper.mock_functioning_dbmanager(MockDBManager)
         
         mock_thread = MagicMock()
         MockThreading.Thread.return_value = mock_thread
@@ -545,11 +549,11 @@ class TestCoordinator(unittest.TestCase):
             Tests that when a new builder registers on a buildopt that already has a thread, 
             it uses that thread instead
             We test this by emulating two sent messages, presumably from two builders that are nearly identical
-            except for the UUID. Only one thread should be spun up.
+            except for the UUID. Only one thread should be spun up, for the first one.
         '''
         
-        mock_connection, mock_channel = self._mock_functioning_rabbitmq(MockConnection, MockChannel)
-        mock_db = self._mock_functioning_dbmanager(MockDBManager)
+        mock_connection, mock_channel = helper.mock_functioning_rabbitmq(MockConnection, MockChannel)
+        mock_db = helper.mock_functioning_dbmanager(MockDBManager)
         
         mock_thread = MagicMock()
         mock_thread.is_alive.return_value = True
@@ -580,12 +584,19 @@ class TestCoordinator(unittest.TestCase):
 
         c = coordinator.Coordinator(DefaultSettings)
         c.recv_builder_registration(mock_channel, input_method, input_props, mock_body1.encode())
-        c.recv_builder_registration(mock_channel, input_method, input_props, mock_body2.encode())
-
+        
+        # Assert that these were both called on the first build message request
         MockThreading.Thread.assert_called_once_with(
             target = c._Coordinator__dispatch_task, args=(3, True)
         )
         mock_thread.start.assert_called_once()
+
+        c.recv_builder_registration(mock_channel, input_method, input_props, mock_body2.encode())
+        
+        # Assert that these are NOT called again
+        MockThreading.Thread.assert_called_once()
+        mock_thread.start.assert_called_once()
+
         
         
     @patch('assemblage.mq.client.BlockingChannel')
@@ -599,8 +610,8 @@ class TestCoordinator(unittest.TestCase):
             
         '''
         
-        mock_connection, mock_channel = self._mock_functioning_rabbitmq(MockConnection, MockChannel)
-        mock_db = self._mock_functioning_dbmanager(MockDBManager)
+        mock_connection, mock_channel = helper.mock_functioning_rabbitmq(MockConnection, MockChannel)
+        mock_db = helper.mock_functioning_dbmanager(MockDBManager)
         
         mock_thread = MagicMock()
         mock_thread.is_alive.return_value = True
@@ -634,46 +645,195 @@ class TestCoordinator(unittest.TestCase):
         c.recv_builder_registration(mock_channel, input_method, input_props, mock_body1.encode())
         c.recv_builder_registration(mock_channel, input_method, input_props, mock_body2.encode())
 
-        self.assertEqual(
-            mock_thread.start.call_count, 2
-        )
-        self.assertEqual(
-            MockThreading.Thread.call_count, 2
-        )
-
         MockThreading.Thread.assert_any_call(
             target = c._Coordinator__dispatch_task, args=(3, True)
         )
         MockThreading.Thread.assert_any_call(
             target = c._Coordinator__dispatch_task, args=(4, True)
         )
+
+        self.assertEqual(
+            mock_thread.start.call_count, 2
+        )
+        self.assertEqual(
+            MockThreading.Thread.call_count, 2
+        )
+        
+    @patch('assemblage.mq.client.BlockingChannel')
+    @patch('assemblage.mq.client.BlockingConnection')
+    @patch('assemblage.coordinator.coordinator.DBManager')
+    @patch('assemblage.coordinator.coordinator.time') # patched purely to skip the waiting
+    def test_dispatch_thread_empty(self, MockTime, MockDBManager, MockConnection, MockChannel):
+        '''
+            Tests that when no messages are present to be dispatched, the thread idles
+        '''
+        mock_connection, mock_channel = helper.mock_functioning_rabbitmq(MockConnection, MockChannel)
+        mock_db = helper.mock_functioning_dbmanager(MockDBManager)
+
+        # no ready-to-dispatch threads found
+        mock_db.find_status_by_status_code.return_value = []
+
+
+        c = coordinator.Coordinator(DefaultSettings)
+        # note mangling
+        c._Coordinator__dispatch_task( 2, sleep=True, only_run_once=True )
+
+        # important: the dispatch thread currently creates its OWN channel and does NOT use the mqclient.
+        # so mock_channel picks up any calls on both 'thread_channel' AND 'self.mq_client'.
+        # This shouldn't matter too much, but may cause issues if we need to differentiate the two later.
+        mock_channel.basic_publish.assert_not_called()
+        mock_db.update_repo_status.assert_not_called()
+
+
+
+        
+    @patch('assemblage.mq.client.BlockingChannel')
+    @patch('assemblage.mq.client.BlockingConnection')
+    @patch('assemblage.coordinator.coordinator.DBManager')
+    @patch('assemblage.coordinator.coordinator.time') # patched purely to skip the waiting
+    def test_dispatch_thread_onemsg(self, MockTime, MockDBManager, MockConnection, MockChannel):
+        '''
+            Tests that when one entry in the database is ready to be sent, a message is sent for it
+            NOTICE: this function could really benefit from some autospecs replacing
+            the mock db messages, to test the somewhat complex database accesses that happen
+            within the dispatch thread.
+        '''
+        mock_connection, mock_channel = helper.mock_functioning_rabbitmq(MockConnection, MockChannel)
+        mock_db = helper.mock_functioning_dbmanager(MockDBManager)
+
+        MockTime.time.return_value = 50 
+
+        # mock_uncloned_repo is dbmodel.RepoDO
+        # mock_task is a join of dbmodel.RepoDO and dbmodel.Status
+        # mock_build_opt is dbmodel.BuildOpt
+        mock_task = MagicMock()
+        mock_task.build_opt_id = 2  # will be opt_id in msg
+        mock_task.id = 44284  # will be task_id in msg
+        mock_task.repo_id = 7921  # will be repo_id in msg. should match mock_uncloned_repo.id
+        mock_uncloned_repo = MagicMock()
+        mock_uncloned_repo.id = 7921
+        mock_uncloned_repo.url = "123ABC"
+        mock_uncloned_repo.name = "RepoName"  # will be name in msg
+        mock_uncloned_repo.build_system = "MaybeClangOrSomething"
+        mock_uncloned_repo.updated_at.strftime.return_value = "placeholder_updatetime"
+        mock_build_opt = MagicMock()
+        mock_build_opt.id = 2 # should match mock_task.build_opt_id
+
+        # msg output_dir should be /binaries/44284
+
+        mock_db.find_status_by_status_code.return_value = [mock_task]
+        mock_db.find_repo_by_id.return_value = mock_uncloned_repo
+        mock_db.find_build_opt_by_id.return_value = mock_build_opt
+
+        expected_build_message = msg.BuilderTaskOut(
+            name = mock_uncloned_repo.name,
+            url = mock_uncloned_repo.url, 
+            task_id = mock_task.id,
+            opt_id = mock_build_opt.id,
+            output_dir = f'{BIN_DIR}/44284',
+            repo_id = mock_uncloned_repo.id,
+            updated_at = "placeholder_updatetime",
+            build_system = mock_uncloned_repo.build_system,
+            msg_time = MockTime.time()
+        )
+
+
+        c = coordinator.Coordinator(DefaultSettings)
+        # note mangling
+        c._Coordinator__dispatch_task( 2, sleep=True, only_run_once=True )
+
+        # important: the dispatch thread currently creates its OWN channel and does NOT use the mqclient.
+        # so mock_channel picks up any calls on both 'thread_channel' AND 'self.mq_client'.
+        # This shouldn't matter too much, but may cause issues if we need to differentiate the two later.
+        mock_channel.basic_publish.assert_called_once()
+        mock_db.update_repo_status.assert_called_once()
+
+        # check that args are as expected.
+        publish_args : unittest.mock.call = mock_channel.basic_publish.call_args
+        # Was called with correct settings
+        self.assertEqual(publish_args.kwargs['exchange'], 'build_opt')
+        self.assertEqual(publish_args.kwargs['routing_key'], 'builder.opt.2')
+
+        # Body was correct
+        self.assertEqual(
+            publish_args.kwargs['body'], 
+            expected_build_message.to_json()
+        )
+
+        
+    @patch('assemblage.mq.client.BlockingChannel')
+    @patch('assemblage.mq.client.BlockingConnection')
+    @patch('assemblage.coordinator.coordinator.DBManager')
+    @patch('assemblage.coordinator.coordinator.time') # patched purely to skip the waiting
+    @unittest.skip("Trying to think of a good way to test that RabbitMQ reconnects properly")
+    def test_dispatch_thread_reconnect(self, MockTime, MockDBManager, MockConnection, MockChannel): #
+        '''
+            Tests that if the dispatch thread encounters an error in dispatch,
+            it will reopen the channel and continue 
+        ''' 
+
+        mock_connection, mock_channel = helper.mock_functioning_rabbitmq(MockConnection, MockChannel)
+        mock_db = helper.mock_functioning_dbmanager(MockDBManager)
+        
+        mock_db.find_status_by_status_code.return_value = ["Bad Task"]
+
+        c = coordinator.Coordinator(DefaultSettings)
+        
+        # Ensure that an exception will be raised inside of the dispatch task (since it's caught before
+        # this test function will get to see it)
+        
+        self.assertEqual(c.mq_client.get_connection(f'{c}').chan, mock_channel)
+        
+        self.assertRaises(Exception, c._dispatch_to_builder,
+                          2, c.mq_client.get_connection(f'{c}').chan, True, 0 )
+
+        # note mangling
+        c._Coordinator__dispatch_task( 2, sleep=True, only_run_once=True )
+
+    @patch('assemblage.mq.client.BlockingChannel')
+    @patch('assemblage.mq.client.BlockingConnection')
+    @patch('assemblage.coordinator.coordinator.MessageClient')
+    @unittest.skip('Working on repairing this test to work with new infinite-retry consume. As is, it\'s not very informative')
+    def test_basic_consume_from_queue(self, MockConnection, MockChannel, MockClient):
+        '''
+            Tests that a valid queue name will be consumed from
+        '''
+
+        mock_connection, mock_channel = helper.mock_functioning_rabbitmq(MockConnection, MockChannel)
+        mock_client = MockClient.return_value
+
+
+        c = coordinator.Coordinator(DefaultSettings)
         
 
+        c._Coordinator__consume_from_queue(InputQueue.SCRAPE, only_run_once=True)
 
+        # Check that the consume function was successfully called
+        c.mq_client.start_consumer.assert_called_once()
+        # c.mq_client.start_consumer.assert_called_with(
+        #     conn=ok_mock,
+        #     queue=client.MQQueue(
+        #         name=InputQueue.SCRAPE, callback=c.recv_scrape_info
+        #         ),
+        #     retry_delay=ANY 
+        # )
+        
 
-    def _mock_functioning_rabbitmq(self, MockConnection, MockChannel):
+    @patch('assemblage.mq.client.BlockingChannel')
+    @patch('assemblage.mq.client.BlockingConnection')
+    def test_basic_consume_from_queue_invalid(self, MockConnection, MockChannel):
         '''
-            Creates a mock for RabbitMQ connections and channels, covering just enough
-            functionality to run tests (instantiation + core health checks)
+            Tests that an invalid queue name will not be permitted
         '''
 
-        mock_connection = MagicMock()
-        mock_channel = MagicMock()
+        mock_connection, mock_channel = helper.mock_functioning_rabbitmq(MockConnection, MockChannel)
 
-        mock_connection.is_open = True
-        mock_connection.channel = MagicMock(return_value = mock_channel)
-        mock_channel.is_closed = False
+        c = coordinator.Coordinator(DefaultSettings)
+        c._Coordinator__consume_from_queue("invalid", only_run_once=True)
 
-        MockConnection.return_value = mock_connection
-        MockChannel.return_value = mock_channel
-
-        return mock_connection, mock_channel
-
-    def _mock_functioning_dbmanager(self, MockManager):
-        mock_db = MagicMock()
-        MockManager.return_value = mock_db
-        mock_db.insert_repos.return_value = 1
-        return mock_db
+        # Check that the consume function was successfully NOT called
+        mock_channel.start_consuming.assert_not_called()
+        
 
     
 if __name__ == '__main__':

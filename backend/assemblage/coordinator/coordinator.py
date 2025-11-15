@@ -25,7 +25,9 @@ from assemblage.consts import (AWS_AUTO_REBOOT_PREFIX, COORDINATOR_DATABASE_SYNC
                                )
 
 from assemblage.config import CoordinatorSettings
-from assemblage.mq.messages import BuilderRegIn, BuilderRegOut, ScraperDataOutBundle, ScraperDataOutSingle
+from assemblage.mq.messages import (
+    BuilderRegIn, BuilderRegOut, ScraperDataOutBundle, BuilderTaskOut
+    )
 from assemblage.mq.client import MQQueue, MessageClient, Connection
 
 
@@ -115,7 +117,7 @@ class Coordinator:
     # This is the task that sends work to the builder.
     # 10/20/2025 minor change in functionality, dispatch now pauses for a short time between sends
     # rather than a long sleep every 1200 seconds
-    def __dispatch_task(self, build_opt_id, sleep=True):
+    def __dispatch_task(self, build_opt_id, sleep=True, only_run_once=False): # last arg is for tests
         """Sends unbuilt repositories to the worker by enqueueing them with RabbitMQ"""
         try:
             logger.info("__dispatch_task thread on buildopt %s initializing...", build_opt_id)
@@ -135,68 +137,9 @@ class Coordinator:
         task_count = 0
         while True:
             try:
-                # find an unstarted task
-                time_before_query = time.time()
-                tasks = self.db_man.find_status_by_status_code(
-                    build_opt_id=build_opt_id,
-                    clone_status=CloneStatus.NOT_STARTED,
-                    build_status=BuildStatus.INIT,
-                    limit=1)
-                if len(tasks) == 0:
-                    logger.info(
-                        "Dispatch thread on build option %s idle", build_opt_id)
-                    time.sleep(IDLE_DISPATCH_INTERVAL)
-                    continue
-                # extract task
-                task = tasks[0]
-                # get the rest of the necessary information from the other tables in database
-                uncloned_repo = self.db_man.find_repo_by_id(task.repo_id)
-                # if uncloned_repo.size < REPO_SIZƒE_THRESHOLD:
-                #     logger.info("Discard task %s size %s", task.repo_id, uncloned_repo.size)
-                #     continue
-                build_opt = self.db_man.find_build_opt_by_id(task.build_opt_id)
-                self.db_man.update_repo_status(
-                    status_id=task.id, clone_status=CloneStatus.PROCESSING)
-                time_after_query = time.time()
-                repo_url = patch_url(uncloned_repo.url)
-                out_dir = f'{BIN_DIR}/{task.id}' # dont think this is needed anymore
-                # correction. later. would be good to replace this with the projectid from scrapes
-                # only once the build and clone is fully fixed and reliable 
-                
-                # format a request to be sent to the builder/cloner
-                clone_req = {'name': uncloned_repo.name, 'url': repo_url,
-                             'task_id': task.id, 'opt_id': build_opt.id,
-                             #  'commit_hexsha': task.commit_hexsha,
-                             'output_dir': out_dir,
-                             'repo_id': uncloned_repo.id,
-                             'updated_at': uncloned_repo.updated_at.strftime("%m/%d/%Y, %H:%M:%S"),
-                             'build_system': uncloned_repo.build_system,
-                             #  also add timestamp when this messsage sent
-                             'msg_time': time.time()}
-                if self.reproduce_mode:
-                    clone_req["mod_timestamp"] = task.mod_timestamp
-
-                # Publish this task, to be picked up by a worker with the appropriate build option settings
-                _thread_channel.basic_publish(
-                    exchange='build_opt', routing_key=f'builder.opt.{build_opt.id}',
-                    body=json.dumps(clone_req),
-                    properties=pika.BasicProperties(delivery_mode=2))
-                # TODO: need messageclient function that can publish to exchange w/out queue
-                # conn.send_msg_on_exchange(
-                #     routing_key=f'builder.{build_opt.id}',
-                #     msg=json.dumps(clone_req),
-                #     exchange='build_opt'
-                # )
-
-                # log progress
-                if task_count % 10 == 0:
-                    logger.info('Placed %sth task on build option %d in %ss', task_count,
-                                task.build_opt_id, str(time_after_query - time_before_query)[:5])
-                task_count += 1
-
-                # sleep
-                if sleep:
-                    time.sleep(DISPATCH_INTERVAL)
+                task_count += self._dispatch_to_builder(
+                    build_opt_id, _thread_channel, sleep, task_count
+                )
             except Exception as e:
                 logger.info(f"Dispatch Err:  {e}")
                 # _thread_channel = conn.create_channel() # should work but not tested yet
@@ -205,9 +148,92 @@ class Coordinator:
                 # _thread_channel.exchange_declare(
                 #     exchange='build_opt', exchange_type=ExchangeType.topic)
                 # _thread_channel.confirm_delivery()
-                break ## this should fail, and then be reopened once the builder re registers
-
+                break
+            if only_run_once:
+                break
         logger.info(f"__dispatch_task Build Opt {build_opt_id} exiting...")
+
+    def _dispatch_to_builder( self, build_opt_id, 
+            thread_channel : pika.adapters.blocking_connection.BlockingChannel, 
+            sleep : bool, task_count : int ):
+        '''
+            Look for and, if present, dispatch unstarted tasks from database to the 
+            appropriate build option channel.
+            build_opt_id: the build option of the worker(s) this thread sends to
+            thread_channel: the BlockingChannel used for publishing connections
+              (TODO: this should be part of the MessageClient, but is not due to reasons listed below)
+            sleep: whether this process should sleep a bit between dispatches
+            task_count: for keeping track of this thread's total dispatches
+        '''
+        # find an unstarted task
+        time_before_query = time.time()
+        tasks = self.db_man.find_status_by_status_code(
+            build_opt_id=build_opt_id,
+            clone_status=CloneStatus.NOT_STARTED,
+            build_status=BuildStatus.INIT,
+            limit=1)
+        if len(tasks) == 0:
+            logger.info(
+                "Dispatch thread on build option %s idle", build_opt_id)
+            time.sleep(IDLE_DISPATCH_INTERVAL)
+            return 0
+        # extract task
+        task = tasks[0]
+        # get the rest of the necessary information from the other tables in database
+        uncloned_repo = self.db_man.find_repo_by_id(task.repo_id)
+        # if uncloned_repo.size < REPO_SIZE_THRESHOLD:
+        #     logger.info("Discard task %s size %s", task.repo_id, uncloned_repo.size)
+        #     return 0
+        build_opt = self.db_man.find_build_opt_by_id(task.build_opt_id)
+        self.db_man.update_repo_status(
+            status_id=task.id, clone_status=CloneStatus.PROCESSING)
+        
+        time_after_query = time.time()
+        repo_url = patch_url(uncloned_repo.url)
+        out_dir = f'{BIN_DIR}/{task.id}'
+        update_time = uncloned_repo.updated_at.strftime("%m/%d/%Y, %H:%M:%S")
+        
+        # format a request to be sent to the builder/cloner
+        build_message = BuilderTaskOut(
+            name = uncloned_repo.name,
+            url = repo_url, 
+            task_id = task.id,
+            opt_id = build_opt.id,
+            output_dir = out_dir,
+            repo_id = uncloned_repo.id,
+            updated_at = update_time,
+            build_system = uncloned_repo.build_system,
+            msg_time = time.time()
+            #commit_hexsha = task.commit_hexsha
+        )
+        
+        if self.reproduce_mode:
+            build_message.mod_timestamp = task.mod_timestamp
+            
+        # Publish this task, to be picked up by a worker with the appropriate build option settings
+        thread_channel.basic_publish(
+            exchange='build_opt', routing_key=f'builder.opt.{build_opt.id}',
+            body = build_message.to_json(),
+            properties=pika.BasicProperties(delivery_mode=2))
+        # TODO: need messageclient function that can publish to exchange w/out queue e.g.:
+        # conn.send_msg_on_exchange(
+        #     routing_key=f'builder.{build_opt.id}',
+        #     msg=json.dumps(clone_req),
+        #     exchange='build_opt'
+        # )
+
+        # log progress
+        if task_count % 10 == 0:
+            logger.info('Placed %sth task on build option %d in %ss', task_count,
+                        task.build_opt_id, str(time_after_query - time_before_query)[:5])
+
+        # sleep
+        if sleep:
+            time.sleep(DISPATCH_INTERVAL)
+        
+        return 1
+
+
     # TODO: Possibly this runs occasionally at very long time scales, but I think this is a candidate for cutting
     # Appears to be a helper method for the old DB system
     def __recycle_clone(self):
@@ -238,7 +264,7 @@ class Coordinator:
                 logger.info("Recycle thread err %s", err)
             time.sleep(1)
 
-    def __consume_from_queue(self, queue):
+    def __consume_from_queue(self, queue, only_run_once=False):  # only_run_once is for testing only
         logger.info(f"__consume_from_queue on {queue} init...")
         match queue:
             case InputQueue.SCRAPE:
@@ -274,6 +300,9 @@ class Coordinator:
                 logger.critical(
                     "Coordinator __consume_from_queue from queue '%s' failed!", queue)
                 logger.critical(err)
+            
+            if only_run_once:
+                break
 
     # TODO: another candidate for cutting?
 

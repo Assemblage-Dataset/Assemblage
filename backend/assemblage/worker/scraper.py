@@ -320,7 +320,7 @@ class GithubRepositories(DataSource):
 
         start_request_time = float(time.time())
         try:
-            r = requests.get(query, payload, headers=use_headers,
+            r = requests.get(query, params=payload, headers=use_headers,
                             proxies=use_proxy, timeout=SCRAPER_REQUEST_TIMEOUT_S)
         except Exception as err:
             logger.error(f"An unexpected issue occurred when getting query {query}:")
@@ -328,6 +328,11 @@ class GithubRepositories(DataSource):
             return None, None
 
         receipt_time = float(time.time())
+
+        if r.status_code == 404:
+            logger.error(f"404 Not Found. Query: {query}:")
+            return None, None
+
 
         # The rest of the function checks for rate limits and other potential issues.
 
@@ -338,18 +343,11 @@ class GithubRepositories(DataSource):
         except:
             logger.warning(
                 "Error when converting rate limit headers into values.")
+            return None, None
             # something has gone quite wrong, so don't bother giving fallback values
 
         # logger.info("Rate limit is %s, %s remaining: resets in %ss", total_rate_limit, remaining_rate_limit, round(rate_limit_reset_time-float(time.time()),2 ))
 
-        # Send an error if the response is generally bad.
-        if not r.ok:
-            logger.error(
-                "Crawler request was UNSUCCESSFUL (status code %s). Query: %s", r.status_code, query)
-            if remaining_rate_limit == 0:  # Provides a hint for a common cause of bad requests.
-                logger.error("No requests remaining on rate limit.")
-
-            return None, start_request_time-receipt_time
 
         # Check for important messages and warn the user. These need to be handled manually.
         try:
@@ -376,11 +374,14 @@ class GithubRepositories(DataSource):
 
         # Check rate limits, handle according to https://docs.github.com/en/rest/using-the-rest-api/
         if remaining_rate_limit == 0:
-            time_to_reset = rate_limit_reset_time - float(time.time())
+            time_to_reset = rate_limit_reset_time - float(time.time()) + 1
             logger.info("Rate limit (%s) reached. Crawler %s will sleep for %ss. ",
                         total_rate_limit, self.parent_workerid, round(time_to_reset, 2))
             self.sleep_and_update(time_to_reset, reason="Rate limit reached")
             # TODO: swap tokens or proxies?
+            # retry after timeout
+            if not r.ok:
+                return self.get_request(query, payload=payload, headers=headers, proxy=proxy)
 
         if "Retry-After" in r.headers:
             # handles circumstances where rate limit has not been respected: wait for Retry-After seconds
@@ -396,12 +397,20 @@ class GithubRepositories(DataSource):
             time_since_response = int(time.time()) - receipt_time
             time_to_sleep = max(0, retry_time - time_since_response)
             if time_to_sleep > 0:
+                # +1 is to round up and ensure not hitting rate limit
                 logger.info("Github refused connection due to rate limit, sleeping for %ss", round(
-                    time_to_sleep, 2))
+                    time_to_sleep+1, 2))
                 self.sleep_and_update(
-                    time_to_sleep, reason="Rate limit reached (2)")
+                    time_to_sleep+1, reason="Rate limit reached (2)")
                 return self.get_request(query, payload=payload, headers=headers, proxy=proxy)
 
+        # Send an error if the response is bad, in a way not caught by above code
+        if not r.ok:
+            logger.error(
+                "Crawler request was UNSUCCESSFUL (status code %s). Query: %s", r.status_code, query)
+
+            return None, start_request_time-receipt_time
+        
         elapsed_time = round(float(time.time()) - start_request_time, 2)
         return r, elapsed_time
 
@@ -412,10 +421,10 @@ class GithubRepositories(DataSource):
 
         time_left = duration
         while (time_left > 0):
-            time.sleep(min(RATE_LIMIT_UPDATE_INTERVAL, duration))
-            time_left -= RATE_LIMIT_UPDATE_INTERVAL
-            logger.info("Crawler %s will wake up in %ss (%sh). Reason for sleep: %s",
+            logger.info("Crawler %s will wake up in %ss (%sm). Reason for sleep: %s",
                         self.parent_workerid, round(time_left, 2), round(time_left/60, 1), reason)
+            time.sleep(min(RATE_LIMIT_UPDATE_INTERVAL, time_left))
+            time_left -= RATE_LIMIT_UPDATE_INTERVAL
         logger.info("Crawler %s done sleeping, resuming activity...",
                     self.parent_workerid)
 
