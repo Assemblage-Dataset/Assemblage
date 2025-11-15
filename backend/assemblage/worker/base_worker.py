@@ -83,5 +83,8 @@ class BasicWorker(ABC):
         self.t_ctrl.start()
         self.t_job = threading.Thread(target=self.run_job)
         self.t_job.start() # to start with. just one control thread, and one job thread per worker. can expand later
-
         logging.info(f"Worker {self.name}:{self.uuid} running") # add healthcheck function here 
+
+        self.t_job.join()
+        self.t_ctrl.join()
+        logger.info(f"Worker {self.name}:{self.uuid} exiting")

@@ -1,8 +1,23 @@
+'''
+S3 client. AWS and Minio compatible
+
+Alex Duly Nov 25
+
+'''
 import os
 import boto3
 import logging
 from botocore.exceptions import ClientError
+# from concurrent.futures import ThreadPoolExecutor
+# from boto3.s3.transfer import TransferConfig
 
+
+# needed for some weird config 
+# config = TransferConfig(use_threads=False)
+# Quiet boto3 logs
+logging.getLogger("boto3").setLevel(logging.WARNING)
+logging.getLogger("botocore").setLevel(logging.WARNING)
+logging.getLogger("s3transfer").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 
@@ -20,7 +35,6 @@ class S3Client:
             region_name=region_name,
             use_ssl=https
         )
-        self.buckets: dict[str, str] = {}  # name -> location (optional)
 
     def ensure_bucket(self, bucket_name: str):
         try:
@@ -62,7 +76,7 @@ class S3Bucket:
 
         # Upload the file
         try:
-            self.client._s3.upload_file(file_name, self.bucket_name, object_name)
+            self.client._s3.upload_file(file_name, self.bucket_name, object_name) #, config=Config)
         except ClientError as e:
             logging.error(e)
             return False
@@ -76,7 +90,7 @@ class S3Bucket:
         :return: True if file was uploaded, else False
         """
         try:
-            self.client._s3.download_File(file_path, self.bucket_name, object_name)
+            self.client._s3.download_File(file_path, self.bucket_name, object_name) 
         except ClientError as e:
             logging.error(e)
             return False
