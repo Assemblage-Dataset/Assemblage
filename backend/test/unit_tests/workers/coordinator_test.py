@@ -26,7 +26,7 @@ from assemblage.config import CoordinatorSettings
 from pika.exchange_type import ExchangeType
 from pika import BasicProperties
 import assemblage.mq.messages as msg
-from assemblage.consts import BuildStatus, CloneStatus, COORDINATOR_DATABASE_SYNC_TIMEOUT
+from assemblage.consts import BuildStatus, CloneStatus, COORDINATOR_DATABASE_SYNC_TIMEOUT, OutputQueue
 
 logging.basicConfig(format="%(asctime)s [TEST] %(levelname)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S", level='DEBUG')
 
@@ -479,8 +479,12 @@ class TestCoordinator(unittest.TestCase):
         mock_channel.basic_ack.assert_called_once_with(delivery_tag=input_method.delivery_tag)
         mock_channel.basic_publish.assert_called_once_with(
             exchange='',
-            routing_key=input_props.reply_to,
-            properties=BasicProperties( correlation_id=input_props.correlation_id ),
+            routing_key=OutputQueue.BUILDER_CTRL,
+            properties=BasicProperties( 
+                correlation_id=input_props.correlation_id,
+                delivery_mode=2,
+                reply_to=input_props.reply_to
+                ),
             body=msg.BuilderRegOut(3).to_json()
         )
 
