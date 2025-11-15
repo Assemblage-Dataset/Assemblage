@@ -18,6 +18,8 @@ import time
 import stat
 import glob
 import ntpath
+import tempfile
+from pathlib import Path
 
 from assemblage.consts import BINPATH, TASK_TIMEOUT_THRESHOLD, BuildStatus, MAX_MQ_SIZE, CloneStatus, InputQueue, WorkerType
 from assemblage.worker.base_worker import BasicWorker
@@ -25,13 +27,15 @@ from assemblage.worker.build_method import LinuxBuildStrategy, WindowsDefaultStr
 from assemblage.config import BuilderSettings
 from assemblage.mq.messages import BuilderRegIn, BuilderRegOut
 from assemblage.mq.client import Connection, MQQueue
-from assemblage.s3.client import S3Client, ProjectBucket, ArtifactBucket
+from assemblage.s3.client import S3Client, S3Bucket
 
 
 logger = logging.getLogger(__name__)
 
 
 NON_EXE_MODE = stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH
+
+TEMP_DIR = Path(tempfile.gettempdir())
 
 
 class Builder(BasicWorker):
@@ -108,12 +112,20 @@ class Builder(BasicWorker):
                 f"Running on invalid platform: {self.platform}. Options are Linux or Windows")
             sys.exit(1)
 
-        self.s3_client = S3Client(host=settings.S3_HOST, port=settings.S3_PORT, access_key=settings.S3_ACCESS_KEY,
-                                  secret_access_key=settings.S3_SECRET_ACCESS_KEY, https=settings.S3_HTTPS, region_name=settings.S3_REGION)
-        # stores cloned projects
-        self.ProjectBucket = ProjectBucket(self.s3_client)
-        # store build artifacts
-        self.ArchiveBucket = ArtifactBucket(self.s3_client)
+        # s3 configuration
+        if settings.s3_enabled:
+            # settings.validate_s3()
+            self.s3_client = S3Client(host=settings.S3_HOST, port=settings.S3_PORT, access_key=settings.S3_ACCESS_KEY,
+                                    secret_access_key=settings.S3_SECRET_ACCESS_KEY, https=settings.S3_HTTPS, region_name=settings.S3_REGION)
+            # coordindator creates but then only needs read only ( unless used to delete ) - leave for now.
+            # stores cloned projects
+            self.ProjectBucket = S3Bucket(self.s3_client, "project-archive")
+            # store build artifacts
+            self.ArtifactBucket = S3Bucket(self.s3_client, "artifacts")
+        else:
+            self.s3_client = None
+            self.ProjectBucket = None
+            self.ArtifactBucket = None
 
     def run_ctrl(self):
         '''
@@ -144,8 +156,8 @@ class Builder(BasicWorker):
             logger.error(f"Failed to create builder control thread, exec={e}")
 
     def run_job(self):
-        ''' 
-        Run the build job. 
+        '''
+        Run the build job.
 
         '''
 
@@ -183,9 +195,9 @@ class Builder(BasicWorker):
             f"Consume build opt {self.build_opt_queue} on {self} has finished.")
 
     def control_message_handler(self, ch, method, props, body):
-        """ recieive a control message to specify the build option queue. 
+        """ recieive a control message to specify the build option queue.
             Figure out later how to change the build options queue, and interrupt the job handler
-            for this 
+            for this
             Also todo: figure out other commands/how to differentiate if necessary
         """
         if props.correlation_id != self.uuid:  # correlation ID doesnt match, send back onto queue
@@ -238,11 +250,7 @@ class Builder(BasicWorker):
             original_files.append(filename)
         # respond to events before we pause to build - not sure we need this so removed. better to process with ctrl and pause
         # ch.connection.process_data_events()
-        self.send_msg(repo=task,
-                      kind=InputQueue.CLONE,
-                      url=task['url'],
-                      status=clone_status,
-                      msg=self.uuid[:5]+clone_msg.decode())
+
         if clone_status == CloneStatus.SUCCESS:
             logger.info("Clone SUCCESS, Attempting to build `%s`", url)
             compiler_flag = self.compiler_flag
@@ -250,7 +258,24 @@ class Builder(BasicWorker):
             if 'commit_hexsha' in task:
                 commit_hexsha = task['commit_hexsha']
             else:
-                commit_hexsha = ""
+                commit_hexsha = self.build_strategy.get_project_commit(
+                    clone_dir)
+
+            if self.s3_client:
+                # save to s3 client and return location
+
+                save_path = ""
+                pass
+            else:
+                save_path = ""
+
+            self.send_msg(repo=task,
+                      kind=InputQueue.CLONE,
+                      url=task['url'],
+                      status=clone_status,
+                      msg=self.uuid[:5]+clone_msg.decode(),
+                      commit_hexsha=commit_hexsha)
+
             self.send_msg(repo=task,
                           kind=InputQueue.BUILD,
                           url=url,
@@ -297,17 +322,43 @@ class Builder(BasicWorker):
                           commit_hexsha=commit_hexsha,
                           build_time=(after_build_time - before_build_time))
         else:
+            self.send_msg(repo=task,
+                      kind=InputQueue.CLONE,
+                      url=task['url'],
+                      status=clone_status,
+                      msg=self.uuid[:5]+clone_msg.decode(),
+                      commit_hexsha=None)
+
             logger.info("Clone FAILURE %s: %s", url, clone_msg)
         # build_method.clean(folders)
         logger.debug("Worker %s finished %s", self.uuid[:5], url,
                      )
 
+    def save_projects_to_s3(self, clone_dir, hash):
+        '''
+        ZIP and save projects to s3 Project-Archive/<github_username>/<github_project>/commit.zip
+        '''
+
+        try:
+
+            archive = shutil.make_archive(f"{TEMP_DIR}/{hash}",
+                                "gztar", clone_dir)  # zip up
+            
+
+            username, project = clone_dir.rstrip("/").split("/")[-2:]
+
+            s3_key = f"{username}/{project}/{hash}.tar.gzw"         
+               
+            self.ProjectBucket.upload_file(archive, s3_key )
+        except Exception as e:
+            logger.warning("failed to save {clone_dir} as zip archive")
+
     def save_binaries(self, target_dir, repo, original_files):
-        """ Store the binaries in the specified output directory. 
+        """ Store the binaries in the specified output directory.
             and send message to cooridinator to update database
             Eventually replace again with s3 bucket, then save orignal files/git repo in s3 too
         """
-
+        logger.debug(f"Repo: {repo}")
         self.build_strategy.own_dir(os.path.dirname(
             target_dir))  # possibly overkill here
         bin_found = {
@@ -320,23 +371,37 @@ class Builder(BasicWorker):
             return None
         else:
             logger.info(f"{len(bin_found)} binaries found")
-        dest = f"{BINPATH}/successes/{"/".join(target_dir.rstrip("/").split("/")[-2:])}"
-        try:
-            os.mkdir(dest)
-        except FileNotFoundError:
-            os.makedirs(dest)
+   
+        if self.s3_client:
+            dest = "".join(target_dir.rstrip("/").split("/")[-2:]) # change to get the username and project from task. OR switch to IDs again 
+        else:
+            dest = f"{BINPATH}/successes/{"/".join(target_dir.rstrip("/").split("/")[-2:])}"
+            try:
+                os.mkdir(dest)
+            except FileNotFoundError:
+                os.makedirs(dest)
+            
+
         if self.platform == 'linux':
             for fpath in bin_found:
                 base = os.path.basename(fpath)
                 # put some time stamp to avoid duplicate
                 try:
-                    shutil.move(fpath, f"{dest}/{base}",
+                    if self.s3_client:
+                        # upload to s3
+                        
+                        pass
+                    else:
+                        shutil.move(fpath, f"{dest}/{base}",
                                 copy_function=shutil.copy2)
                 except Exception as e:
                     logger.info(
-                        f"Something went wrong moving {fpath}. Moving onto next")
+                        f"Something went wrong saving {fpath}. Moving onto next")
                     continue
-                os.chmod(f"{dest}/{base}", NON_EXE_MODE)
+                try:
+                    os.chmod(f"{dest}/{base}", NON_EXE_MODE)
+                except Exception as e:
+                    logger.warning("Failed to alter permisisons on file")
 
                 self.send_msg(kind=InputQueue.BINARY,
                               task_id=repo['task_id'],
@@ -368,16 +433,20 @@ class Builder(BasicWorker):
                     while attempts < max_attempts:
                         attempts += 1
                         try:
-                            shutil.copy2(filename,
-                                         dest_file)
-                            logger.debug(f"{filename} copied to {dest_file}")
-                            try:
-                                os.remove(filename)
-                                logger.debug(
-                                    f"Deleted source file: {filename}")
-                            except Exception as e:
-                                logger.warning(
-                                    f"Could not delete source file {filename}: {e}")
+                            
+                            if self.s3_client:
+                                pass 
+                            else:
+                                shutil.copy2(filename,
+                                            dest_file)
+                                logger.debug(f"{filename} copied to {dest_file}")
+                                try:
+                                    os.remove(filename)
+                                    logger.debug(
+                                        f"Deleted source file: {filename}")
+                                except Exception as e:
+                                    logger.warning(
+                                        f"Could not delete source file {filename}: {e}")
                         except FileNotFoundError:
                             logger.info(f"File {filename} not found")
                             break  # only retry if is permission error as waiting for lock
@@ -453,7 +522,9 @@ class Builder(BasicWorker):
                     'opt_id': self.opt_id,
                     'status': kwarg['status'],
                     'msg': kwarg['msg'][-1000:],
-                    'task_id': repo['task_id']
+                    'task_id': repo['task_id'],
+                    'commit_hexsha': kwarg['commit_hexsha']
+
                 }
             case InputQueue.BUILD:
                 ret = {
