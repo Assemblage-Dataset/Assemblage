@@ -268,7 +268,7 @@ class LinuxBuildStrategy(BuildStrategy):
         self.platform = "linux"
         # this is not great, i dont like it but for now itll have to do
         try: 
-            output_dir_perms = os.stat(BINPATH)
+            output_dir_perms = os.stat(base_path)
             self.output_dir_uid = output_dir_perms.st_uid
             
             self.output_dir_gid = output_dir_perms.st_gid

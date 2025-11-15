@@ -272,6 +272,7 @@ class Builder(BasicWorker):
 
             if self.s3_client:
                 # save to s3 client and return location
+                logger.info(f"Uploading {clone_dir} to s3 bucket { self.ProjectBucket}")
                 username, project = clone_dir.rstrip("/").split("/")[-2:]
                 saved = self.save_project_to_s3(clone_dir, username, project, commit_hexsha)
                 if saved:
@@ -371,7 +372,7 @@ class Builder(BasicWorker):
             and send message to cooridinator to update database
             Eventually replace again with s3 bucket, then save orignal files/git repo in s3 too
         """
-        logger.debug(f"Repo: {repo}")
+        logger.debug(f"Saving binaries of Repo: {repo}")
         self.build_strategy.own_dir(os.path.dirname(
             target_dir))  # possibly overkill here
         bin_found = {
@@ -384,11 +385,12 @@ class Builder(BasicWorker):
             return None
         else:
             logger.info(f"{len(bin_found)} binaries found")
-   
+        username, project = target_dir.rstrip("/").split("/")[-2:]
+
         if self.s3_client:
-            dest = "".join(target_dir.rstrip("/").split("/")[-2:]) # change to get the username and project from task. OR switch to IDs again 
+            dest = f"{self.ProjectBucket}/{username}/{project}" # to return indicates stored in s3 buckets
         else:
-            dest = f"{BINPATH}/successes/{"/".join(target_dir.rstrip("/").split("/")[-2:])}"
+            dest = f"{BINPATH}/successes/{username}/{project}"
             try:
                 os.mkdir(dest)
             except FileNotFoundError:
@@ -401,9 +403,15 @@ class Builder(BasicWorker):
                 # put some time stamp to avoid duplicate
                 try:
                     if self.s3_client:
+                        s3_key =f"{username}/{project}/{base}"
+                        saved = self.ArtifactBucket.upload_file(fpath,s3_key )
+                        if saved: 
+                            logger.debug(f"successfully uploaded {fpath} to {s3_key} on {self.ArtifactBucket}")
                         # upload to s3
-                        
-                        pass
+                        # saved = self.save_project_to_s3(clone_dir, username, project, commit_hexsha)
+                        # if saved:
+                        #     save_path = f"{self.ProjectBucket}/{username}/{project}/{commit_hexsha}.tar.gz"
+                        # pass
                     else:
                         shutil.move(fpath, f"{dest}/{base}",
                                 copy_function=shutil.copy2)
