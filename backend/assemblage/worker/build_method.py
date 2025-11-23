@@ -105,7 +105,7 @@ class BuildStrategy:
 
     def mark_dir_as_safe(self, path):
         cmd = f"git config --global --add safe.directory {path}"
-        out, err, code = self.cmd_with_output(cmd, 600, path)
+        out, err, code = self.cmd_with_output(cmd, 600)
         if code != 0:
             logger.error(
                 f"Failed to mark as safe, rest of commands may fail: {err}. {out}")
@@ -195,7 +195,7 @@ class BuildStrategy:
         return None, None
 
     def find_binaries(self, path: str) -> set:
-        """ Find elf files and executables"""
+        """ Find elf files and executables and other build artifacts to save"""
         logger.info(
             f"Finding executables in {path}, saving assembly files too: {self.save_assembly}")
         file_paths = set()
@@ -205,11 +205,22 @@ class BuildStrategy:
 
             for file_name in file_names:
                 location = f'{root}/{file_name}'
+                location_lc = location.lower()
                 if not os.path.exists(location):
                     continue
                 try:
-                    # include the pdb json files and copy to success folders ( not binaries but keeps a record?)
-                    if self.save_assembly and location.endswith(('.s', '.ii', '.bc', '.S', '.obj', '.asm', '.cod', 'json')):
+                    binary_exts = (".pdb", ".exe", ".dll", ".lib")
+                    assembly_exts = (".s", ".ii", ".bc", ".S", ".obj", ".asm", ".cod")
+                    # optional assembly/ other artifacts
+                    if self.save_assembly and location_lc.endswith(assembly_exts):
+                        file_paths.add(location)
+                        continue
+
+                    if file_name == "pdbinfo.json": # not really an artifact, not sure where else to put this though
+                        file_paths.add(location)
+                        continue
+                    # executables
+                    if location_lc.endswith(binary_exts) and os.path.isfile(location):
                         file_paths.add(location)
                         continue
                     with open(location, 'rb') as f:
@@ -607,21 +618,24 @@ class WindowsDefaultStrategy(BuildStrategy):
         if return_code == BuildStatus.SUCCESS:
             logger.warning(f"BUILD STATUS FOR {repo} succeeded!!!")
         return out.decode() + err.decode(), return_code
+    
+    
 
     def post_build_hook(self, dest_binfolder, build_mode, repoinfo, toolset,
                         optimization, commit_hexsha):
         """ Postprocess the pdb """
-        bin_files = self.dia_list_binaries(dest_binfolder)
+        logger.debug(f"Adding files in {dest_binfolder}")
+        bin_files = self.find_binaries(dest_binfolder)
         outer_list = []
         for _, binfile in enumerate(bin_files):
             binfile_path = os.path.join(dest_binfolder, binfile)
             # logging.info("Checking binary info %s: %s", binfile,
-            #              os.path.isfile(binfile))
+            #              os.path.isfile(binfile))            
             funcs_infos, lines_infos, source_file = self.dia_get_func_funcinfo(
                 binfile_path)
             item_dict = {}
             item_dict["functions"] = []
-            item_dict["file"] = binfile
+            item_dict["file"] = binfile # figure out how to just get filename/ not include C:/binaries/projects/ at least too
             for func_name, infos in funcs_infos.items():
                 functions_val = {}
                 functions_val["function_name"] = func_name

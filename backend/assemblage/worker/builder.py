@@ -38,6 +38,9 @@ NON_EXE_MODE = stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH
 TEMP_DIR = Path(tempfile.gettempdir())
 
 
+
+
+
 class Builder(BasicWorker):
     """
     A Worker that clones and builds repositories.
@@ -129,7 +132,32 @@ class Builder(BasicWorker):
                 f"Running on invalid platform: {self.platform}. Options are Linux or Windows")
             sys.exit(1)
 
-      
+    def _process_window_file_names(self, filename: str):
+        '''
+        Processes the window file names to icnlude release and architecture in filename, so not in subdir
+        turns /x64/Debug/filename -> x64_debug_filename
+        Only the basename is used; if no known build type or architecture is found, returns the original filename.
+
+        '''
+        
+        prefix = []
+        if "debug" in filename.lower():
+            prefix.append("debug")
+        else:
+            prefix.append("release")
+        if "x86" in filename.lower():
+            prefix.append("x86")
+        if "x64" in filename.lower():
+            prefix.append("x64")
+            
+        if prefix:
+            prefix_str = "_".join(prefix)
+            dest_file = f"{prefix_str}_{ntpath.basename(filename)}"
+            return dest_file
+        else: 
+            return filename # nothing to change
+
+
 
     def run_ctrl(self):
         '''
@@ -357,9 +385,6 @@ class Builder(BasicWorker):
 
             archive = shutil.make_archive(f"{TEMP_DIR}/{commit_hexsha}",
                                 "gztar", clone_dir)  # zip up
-            
-
-
             s3_key = f"{username}/{project_name}/{commit_hexsha}.tar.gz"         
                
             self.ProjectBucket.upload_file(archive, s3_key )
@@ -367,141 +392,62 @@ class Builder(BasicWorker):
         except Exception as e:
             logger.warning(f"failed to save {clone_dir} as zip archive to {self.ProjectBucket}/{username}/{project_name}/{commit_hexsha}.tar.gz : {e}")
             return False
+        
+        
     def save_binaries(self, target_dir, repo, original_files, commit_hexsha, optimization="None"):
-        """ Store the binaries in the specified output directory.
-            and send message to cooridinator to update database
-            Eventually replace again with s3 bucket, then save orignal files/git repo in s3 too
-        """
+        """ Store binaries locally or on S3, and notify coordinator. """
         logger.debug(f"Saving binaries of Repo: {repo}")
-        self.build_strategy.own_dir(os.path.dirname(
-            target_dir))  # possibly overkill here
+
+        self.build_strategy.own_dir(os.path.dirname(target_dir))
+
         bin_found = {
             f for f in self.build_strategy.find_binaries(target_dir)
-            if (os.path.exists(f)) and f not in original_files
-        }  # we dont want to take any files we didnt compile as we dont know what they were compiled with etc
+            if os.path.exists(f) and f not in original_files
+        }
         if not bin_found:
-            logger.warning(
-                "no binaries found, build may have not been a success")
+            logger.warning("No binaries found, build may have failed")
             return None
-        else:
-            logger.info(f"{len(bin_found)} binaries found")
+
+        logger.info(f"{len(bin_found)} binaries found")
         username, project = target_dir.rstrip("/").split("/")[-2:]
+        dest_base = f"{username}/{project}/{commit_hexsha}"
 
-        # windows requires some extra name processing of files
         if self.s3_client:
-            base_s3_key = f"{username}/{project}/{commit_hexsha}"
-            # base folder where all are stored. 
-            dest = f"{self.ProjectBucket}/{base_s3_key}" # to return indicates stored in s3 buckets
+            dest_base_full = f"{self.ProjectBucket}/{dest_base}"
         else:
-            dest = f"{BINPATH}/successes/{username}/{project}/{commit_hexsha}"
-            try:
-                os.mkdir(dest)
-            except FileNotFoundError:
-                os.makedirs(dest)
-        if self.platform == 'linux':
-            for fpath in bin_found:
-                base = os.path.basename(fpath)
-                # put some time stamp to avoid duplicate
+            dest_base_full = os.path.join(BINPATH, "successes", username, project, commit_hexsha)
+            os.makedirs(dest_base_full, exist_ok=True)
+  
+        for fpath in bin_found:
+            base_name = os.path.basename(fpath)
+            if self.platform == "windows":
+                base_name = self._process_window_file_names(fpath)
+
+            if self.s3_client:
+                s3_key = f"{dest_base}/{self.build_strategy.compiler}/{optimization}/{base_name}"
+                if self.ArtifactBucket.upload_file(fpath, s3_key):
+                    logger.debug(f"Uploaded {fpath} -> {s3_key}")
+            else:
+                dest_file = os.path.join(dest_base_full, base_name)
+                shutil.copy2(fpath, dest_file)
                 try:
-                    if self.s3_client:
-                        s3_key =f"{base_s3_key}/{self.compiler}/{optimization}/{base}" # /username/project/commithexsha/filename
-                        saved = self.ArtifactBucket.upload_file(fpath,s3_key )
-                        if saved: 
-                            logger.debug(f"successfully uploaded {fpath} to {s3_key} on {self.ArtifactBucket}")
-                            continue
-                        # upload to s3
-                        # saved = self.save_project_to_s3(clone_dir, username, project, commit_hexsha)
-                        # if saved:
-                        #     save_path = f"{self.ProjectBucket}/{username}/{project}/{commit_hexsha}.tar.gz"
-                        # pass
-                    else:
-                        shutil.move(fpath, f"{dest}/{base}",
-                                copy_function=shutil.copy2)
-                except Exception as e:
-                    logger.info(
-                        f"Something went wrong saving {fpath}. Moving onto next")
-                    continue
-                try:
-                    os.chmod(f"{dest}/{base}", NON_EXE_MODE)
-                except Exception as e:
-                    logger.warning("Failed to alter permisisons on file")
+                    os.remove(fpath)
+                except Exception:
+                    logger.warning(f"Could not delete {fpath}")
+                if self.platform == 'linux':
+                    try:
+                        os.chmod(dest_file, NON_EXE_MODE)
+                    except Exception:
+                        logger.warning(f"Failed to change permissions on {dest_file}")
 
-                self.send_msg(kind=InputQueue.BINARY,
-                              task_id=repo['task_id'],
-                              repo=repo,
-                              file_name=f"{dest}/{base}")
-            # own successes too...
-            self.build_strategy.own_dir(os.path.dirname(dest))
-            return dest
-        elif self.platform == 'windows':
-            for filename in bin_found:
-                if os.path.isfile(filename):
-                    prefix = []
-                    if "debug" in filename.lower():
-                        prefix.append("debug")
-                    else:
-                        prefix.append("release")
-                    if "x86" in filename.lower():
-                        prefix.append("x86")
-                    if "x64" in filename.lower():
-                        prefix.append("x64")
-                    prefix_s = "_".join(prefix)
-                    dest_file = os.path.join(
-                        dest, prefix_s + "_" + ntpath.basename(filename))
-                    logger.info("Move file %s -> %s", os.path.join(target_dir, filename),
-                                dest_file)
+            self.send_msg(kind=InputQueue.BINARY,
+                        repo=repo,
+                        task_id=repo['task_id'],
+                        file_name=fpath if self.s3_client else dest_file)
 
-                    attempts = 0
-                    max_attempts = 5
-                    while attempts < max_attempts:
-                        attempts += 1
-                        try:
-                            
-                            if self.s3_client:
-                                pass 
-                            else:
-                                shutil.copy2(filename,
-                                            dest_file)
-                                logger.debug(f"{filename} copied to {dest_file}")
-                                try:
-                                    os.remove(filename)
-                                    logger.debug(
-                                        f"Deleted source file: {filename}")
-                                except Exception as e:
-                                    logger.warning(
-                                        f"Could not delete source file {filename}: {e}")
-                        except FileNotFoundError:
-                            logger.info(f"File {filename} not found")
-                            break  # only retry if is permission error as waiting for lock
-                        except shutil.Error:
-                            logger.info(f"File name {filename} is invalid")
-                            break
-                        except PermissionError as e:
-                            # check if the file has been moved, if it has. move on
-                            if attempts < max_attempts:  # only sleep if we have retries left
-                                logger.info(
-                                    f"File locked: {filename}. {max_attempts - attempts} retries remaining. Retrying in 60s")
-                                time.sleep(60)
-                            else:
-                                logger.error(
-                                    f"File locked: {filename}. No retries remaining, giving up.")
-                        except Exception as e:
-                            logger.info(
-                                f"Something else went wrong moving {filename}")
-                            break
 
-            try:
-                bins_saved = os.listdir(dest)
-                logger.info("Binary Saved %s", ",".join(bins_saved))
-            except FileNotFoundError:
-                logger.info("Binary Not Found")
-                bins_saved = []
-            for bin_saved in bins_saved:
-                self.send_msg(kind=InputQueue.BINARY,
-                              repo=repo,
-                              task_id=repo['task_id'],
-                              file_name=os.path.join(dest, bin_saved))
-            return dest
+        self.build_strategy.own_dir(dest_base_full)
+        return dest_base_full
 
     def send_msg(self, kind: InputQueue, repo, **kwarg):
         '''
