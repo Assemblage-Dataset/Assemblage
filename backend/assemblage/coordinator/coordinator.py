@@ -23,7 +23,7 @@ from assemblage.consts import (AWS_AUTO_REBOOT_PREFIX, COORDINATOR_DATABASE_SYNC
                                )
 
 from assemblage.config import CoordinatorSettings
-from assemblage.mq.messages import BuilderRegIn, BuilderRegOut, ScraperDataOutBundle, ScraperDataOutSingle
+from assemblage.mq.messages import BuilderRegIn, BuilderRegOut, ScraperDataOutBundle, ScraperDataOutSingle, BuildCloneReq
 from assemblage.mq.client import MQQueue, MessageClient, Connection
 from assemblage.s3.client import S3Client, S3Bucket
 
@@ -138,9 +138,9 @@ class Coordinator:
                 "__dispatch_task thread on buildopt %s initializing...", build_opt_id)
 
             conn: Connection = self.mq_client.create_connection(
-                conn_name=f'{self}', channel_name=f'{self}')
+                conn_name=f'{self}-build-opt-{build_opt_id}', channel_name=f'{self}-build-opt-{build_opt_id}')
             # workaround for issue mentioned in todo below
-            _thread_channel = conn.create_channel()
+            conn.create_channel()
             tasks = self.db_man.find_status_by_status_code(
                 build_opt_id=build_opt_id,
                 clone_status=CloneStatus.NOT_STARTED,
@@ -181,30 +181,15 @@ class Coordinator:
                 # correction. later. would be good to replace this with the projectid from scrapes
                 # only once the build and clone is fully fixed and reliable
 
-                # format a request to be sent to the builder/cloner
-                clone_req = {'name': uncloned_repo.name, 'url': repo_url,
-                             'task_id': task.id, 'opt_id': build_opt.id,
-                             #  'commit_hexsha': task.commit_hexsha,
-                             'repo_id': uncloned_repo.id,
-                             'updated_at': uncloned_repo.updated_at.strftime("%m/%d/%Y, %H:%M:%S"),
-                             'build_system': uncloned_repo.build_system,
-                             #  also add timestamp when this messsage sent
-                             'msg_time': time.time()}
+                clone_req = BuildCloneReq(uncloned_repo, repo_url, task, build_opt, reproduce_mode=self.reproduce_mode)
+
                 if self.reproduce_mode:
                     clone_req["mod_timestamp"] = task.mod_timestamp
 
                 # Publish this task, to be picked up by a worker with the appropriate build option settings
-                _thread_channel.basic_publish(
-                    exchange='build_opt', routing_key=f'builder.opt.{build_opt.id}',
-                    body=json.dumps(clone_req),
-                    properties=pika.BasicProperties(delivery_mode=2))
-                # TODO: need messageclient function that can publish to exchange w/out queue
-                # conn.send_msg_on_exchange(
-                #     routing_key=f'builder.{build_opt.id}',
-                #     msg=json.dumps(clone_req),
-                #     exchange='build_opt'
-                # )
-
+                
+                conn.publish_to_exchange("build_opt", routing_key=f"builder.opt.{build_opt.id}", body=clone_req.to_json())
+            
                 # log progress
                 if task_count % 10 == 0:
                     logger.info('Placed %sth task on build option %d in %ss', task_count,
