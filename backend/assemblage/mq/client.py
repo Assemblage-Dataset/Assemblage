@@ -6,7 +6,7 @@ Alex Duly
 from dataclasses import dataclass
 import logging
 import time
-from typing import Callable
+from typing import Any, Callable
 import pika
 from pika.adapters.blocking_connection import BlockingChannel, BlockingConnection
 import pika.exceptions
@@ -69,7 +69,6 @@ class Connection:
         self.username = username
         self.password = password
         self.conn_name = conn_name
-        self.exchange_name = None 
         self.chan_name = channel_name
         self.conn: BlockingConnection | None = None
         self.chan: BlockingChannel | None = None  #  actually stores the MQ shcnanel
@@ -177,15 +176,13 @@ class Connection:
 
     def add_topic_exchange(self, exchange_name):
         ''' add a topic exchanger to channel '''
-        self.exchange_name = exchange_name
         self.chan.exchange_declare(exchange=exchange_name,
                                    exchange_type=ExchangeType.topic)
-    def ensure_exchange(self, exchange_name):
-        if self.exchange_name and exchange_name != "":
+    def ensure_exchange(self, exchange_name, exchange_type=ExchangeType.topic):
+        if exchange_name != "":
             self.chan.exchange_declare(exchange=exchange_name,
-                                   exchange_type=ExchangeType.topic)
+                                   exchange_type=exchange_type)
         
-
     def ensure_queue(self, queue: MQQueue):
         '''
         Ensures a queue exists
@@ -218,6 +215,22 @@ class Connection:
 
         except Exception as err:
             logging.error(f"failed to send message: {err}")
+
+    def publish_to_exchange(self, exchange_name: str, routing_key: str, body: dict[Any, Any]):
+        '''
+        Send message to an exchange instead of a queue
+        
+        '''
+        try: 
+            self.ensure_connection()
+            self.ensure_exchange(exchange_name)
+            self.chan.basic_publish(
+                        exchange=exchange_name, routing_key=routing_key,
+                        body=body,
+                        properties=pika.BasicProperties(delivery_mode=2))
+        except Exception as e:
+            logger.error(f"Failed to publish message to exchange: {e}") 
+            
 
     def consume(self, queue: MQQueue, auto_ack=False):
         """Consume from specified queue."""

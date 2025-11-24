@@ -1,5 +1,6 @@
 import json
 import platform
+import time
 
 class MQMsg:
     def __init__(self):
@@ -114,3 +115,20 @@ class ScraperDataOutBundle(MQMsg):
     
     def __len__(self):
         return len(self.repos)
+
+class BuildCloneReq(MQMsg):
+    
+    def __init__(self, uncloned_repo, repo_url, task, build_opt, reproduce_mode=False):
+        super().__init__()
+        self.name = uncloned_repo.name
+        self.url = repo_url
+        self.task_id = task.id
+        self.opt_id = build_opt.id
+        self.commit_hexsha = task.commit_hexsha or None
+        self.repo_id = uncloned_repo.id
+        self.updated_at = uncloned_repo.updated_at.strftime("%m/%d/%Y, %H:%M:%S")
+        self.build_system = uncloned_repo.build_system
+        self.msg_time = time.time()
+        
+        if reproduce_mode:
+            self.mod_timestamp = task.mod_timestamp
