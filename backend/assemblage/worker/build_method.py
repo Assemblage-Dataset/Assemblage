@@ -37,11 +37,6 @@ logger = logging.getLogger(__name__)
 # should this be a class function  change this to debug=False by default
 
 
-def clean(folders):
-    """ Clean the folders, may not be empty """
-    for folder in folders:
-        if os.path.exists(folder):
-            shutil.rmtree(folder, ignore_errors=False)
 
 
 class BuildStrategy:
@@ -58,7 +53,6 @@ class BuildStrategy:
         logger.debug(f"Base path set to: {base_path}")
         self.mark_dir_as_safe(base_path)  # remove once other things fixed
 
-    
 
 
     def cmd_with_output(self, cmd: str, timelimit=60, cwd=''):
@@ -124,7 +118,7 @@ class BuildStrategy:
             commit_hash = "Unknown"
         return commit_hash
 
-    def clone_data(self, repo, use_temp: bool = False) -> Tuple[bytes | str | CloneStatus | CloneStatus]:
+    def clone_data(self, repo) -> Tuple[bytes | str | CloneStatus | CloneStatus]:
         """ Clone repo
             If using s3 storage, then dont use temp, otherwise save to a temporary directory
 

@@ -132,6 +132,44 @@ class Builder(BasicWorker):
                 f"Running on invalid platform: {self.platform}. Options are Linux or Windows")
             sys.exit(1)
 
+
+    def _clean_folder(self, path):
+        '''
+        Try to clean up the target folder, if it fails, will walk and try adn deelte as much as possible. 
+        
+        This is required due to the windows file lock on the produced executable. Only called on s3 when the projects are saved separately
+        This does not delete the top level folder of the git username, but not worth the time and effort currenly
+        '''
+        logger.debug(f"Deleting {path}")
+        if not os.path.exists(path):
+            return
+        
+        try:
+            shutil.rmtree(path)
+            return  # success
+        except Exception as e:
+            logger.warning(f"rmtree failed for {path}: {e}.")
+
+        for root, dirs, files in os.walk(path, topdown=False):
+            for f in files:
+                file_path = os.path.join(root, f)
+                try:
+                    os.chmod(file_path, stat.S_IWRITE)  # ensure writable
+                    os.remove(file_path)
+                except Exception as e:
+                    logger.warning(f"Could not delete file {file_path}: {e}")
+
+            for d in dirs:
+                dir_path = os.path.join(root, d)
+                try:
+                    os.rmdir(dir_path)
+                except Exception as e:
+                    logger.warning(f"Could not delete directory {dir_path}: {e}")
+        try:
+            os.rmdir(path)
+        except Exception as e:
+            logger.warning(f"Could not delete folder {path}: {e}")
+
     def _process_window_file_names(self, filename: str):
         '''
         Processes the window file names to icnlude release and architecture in filename, so not in subdir
@@ -156,9 +194,7 @@ class Builder(BasicWorker):
             return dest_file
         else: 
             return filename # nothing to change
-
-
-
+        
     def run_ctrl(self):
         '''
         At the moment, all this does is send a registering message to the coordinator.
@@ -305,6 +341,7 @@ class Builder(BasicWorker):
                 if saved:
                     save_path = f"{self.ProjectBucket}/{username}/{project}/{commit_hexsha}.tar.gz"
                     logger.debug(f"Project saved to {save_path} ")
+                    
 
 
             self.send_msg(repo=task,
@@ -362,6 +399,10 @@ class Builder(BasicWorker):
                           msg="Build Process Finished",
                           commit_hexsha=commit_hexsha,
                           build_time=(after_build_time - before_build_time))
+            if self.s3_client:
+                self._clean_folder(os.path.dirname(clone_dir)) # dirname needed to also remove parent folder with username
+            
+            
         else:
             self.send_msg(repo=task,
                       kind=InputQueue.CLONE,
@@ -388,6 +429,12 @@ class Builder(BasicWorker):
             s3_key = f"{username}/{project_name}/{commit_hexsha}.tar.gz"         
                
             self.ProjectBucket.upload_file(archive, s3_key )
+            try: 
+                os.remove(archive)
+            except Exception as e:
+                # dont want to fail if successfully failed, just hasnt tidied up
+                logger.warning(f"Failed to delete archive: {s3_key} after uploading to s3")
+            
             return True
         except Exception as e:
             logger.warning(f"failed to save {clone_dir} as zip archive to {self.ProjectBucket}/{username}/{project_name}/{commit_hexsha}.tar.gz : {e}")
