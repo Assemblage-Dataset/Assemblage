@@ -175,3 +175,12 @@ class GithubTimeOrder(Enum):
 class SupportedPlatform(str,Enum):
     WINDOWS = 'windows'
     LINUX = 'linux'
+
+# support optimization levels, roughly translated/made generic
+class OptLevel(Enum):
+    NONE = 0
+    LOW = 1
+    MEDIUM = 2
+    HIGH = 3
+    def __str__(self):
+        return f"opt_{self.name}"

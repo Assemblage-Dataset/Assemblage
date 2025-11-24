@@ -129,6 +129,6 @@ class BuildCloneReq(MQMsg):
         self.updated_at = uncloned_repo.updated_at.strftime("%m/%d/%Y, %H:%M:%S")
         self.build_system = uncloned_repo.build_system
         self.msg_time = time.time()
-        
+        self.optimizations = ["None", "Low", "Medium", "High"] # Build will iterate over rough translation. eventually can make it dynamic
         if reproduce_mode:
             self.mod_timestamp = task.mod_timestamp

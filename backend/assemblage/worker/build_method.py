@@ -26,7 +26,7 @@ from typing import Tuple
 
 
 from assemblage.worker.profile import AWSProfile
-from assemblage.consts import BuildStatus, PDBJSONNAME, CloneStatus, PDBPATH, BINPATH, RuntimeEnv
+from assemblage.consts import BuildStatus, PDBJSONNAME, CloneStatus, PDBPATH, BINPATH, OptLevel, RuntimeEnv
 from assemblage.windows.parsers.proj import Project
 from assemblage.windows.parsers.sln import Solution
 from assemblage.analyze.analyze import get_build_system
@@ -54,6 +54,11 @@ class BuildStrategy:
         self.mark_dir_as_safe(base_path)  # remove once other things fixed
 
 
+    def convert_opt_level(self, level)->str:
+        '''
+        Convert an optimization level to a opt flag ( is a rough translation)
+        '''
+        pass
 
     def cmd_with_output(self, cmd: str, timelimit=60, cwd=''):
         """
@@ -310,6 +315,24 @@ class LinuxBuildStrategy(BuildStrategy):
 
         return None
 
+    def convert_opt_level(self, level)->str:
+        '''
+        Convert an optimization level to a opt flag ( is a rough translation) for gcc/clang
+        '''
+        match level:
+            case OptLevel.NONE:
+                return "-O0"
+            case OptLevel.LOW:
+                return "-O1"
+            case OptLevel.MEDIUM:
+                return "-O2"
+            case OptLevel.HIGH:
+                return "-O3"
+            case _:
+                raise ValueError(f"Unsupported optimization level: {level}")
+            
+
+
     def own_dir(self, dir: str):
         # # see above for how i feel about this
         for root, dirs, files in os.walk(dir):
@@ -385,7 +408,7 @@ class WindowsDefaultStrategy(BuildStrategy):
                          save_assembly=save_assembly, library=library, base_path=base_path)
         self.num_p_job = num_p_job
         self.platform = "windows"
-        # this is not great, i dont like it but for now itll have to do
+
 
     def _get_compiler_version(self) -> str | None:
         # currently this will only work for msvc. future can add more options
@@ -401,6 +424,23 @@ class WindowsDefaultStrategy(BuildStrategy):
             logger.warning(f"Failed to get compiler version: {e}")
 
         return None
+
+    def convert_opt_level(self, level)->str:
+        '''
+        Convert an optimization level to a opt flag ( is a rough translation)
+        '''
+        match level:
+            case OptLevel.NONE:
+                return "/Od"
+            case OptLevel.LOW:
+                return "/O1"
+            case OptLevel.MEDIUM:
+                return "/O2"
+            case OptLevel.HIGH:
+                return "/Ox"
+            case _:
+                raise ValueError(f"Unsupported optimization level: {level}")
+            
 
     def dia_list_binaries(self, dest_binfolder):
         """ get binary file under the binfolder """
