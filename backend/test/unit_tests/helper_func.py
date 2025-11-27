@@ -143,3 +143,46 @@ def scr_doom_messagestr():
     "updated_at": "2024-05-24 13:18:59", "size": 149, "build_system": "others", "branch": "master"}'''))
 
 
+
+
+## DBM test only funcs
+
+def dbm_mock_functioning_sqlalchemy(MockSession, MockCreateEngine):
+    
+    mock_engine = MagicMock()
+    MockCreateEngine.return_value = mock_engine
+
+    mock_session = MagicMock()
+    MockSession.return_value.__enter__.return_value = mock_session
+    return mock_session, mock_engine
+
+
+
+def get_queries_from_session_str(mocked_session):
+    ''' Returns a list of all queries called in a session. 
+        Returns list of strings
+    '''
+    queries = []
+    for call in mocked_session.execute.call_args_list:
+        query = call[0][0]  
+        queries.append(get_str_from_query(query))
+
+    return queries
+
+
+def get_queries_from_session_query(MockSession):
+    ''' Returns a list of all queries called in a session. 
+        Returns list of queries. Good for setting up side effects
+    '''
+    queries = []
+    for call in MockSession.execute.call_args_list:
+        query = call[0][0]  
+        queries.append(query)
+
+    return queries
+
+def get_str_from_query(query):
+    
+    query_with_args = str(query.compile(compile_kwargs={"literal_binds": True}))
+    return query_with_args.replace('\n', '')
+    

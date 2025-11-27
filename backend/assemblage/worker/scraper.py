@@ -88,12 +88,6 @@ class DataSource(object):
                 logger.info(
                     "No saved scrape time data found at %s. Starting from (seconds since epoch) %s...", self.record_file, now)
 
-    # TODO: I want to remove this but ONLY once we know that won't break anything else for sure.
-    def init():
-        '''Deprecated'''
-        logger.warning(
-            "DataSource.init() should not be called: init() functionality has been rolled into __init__, delete the line of code that uses this")
-
     @abstractclassmethod
     def fetch_data(self):
         """ fetch one repository from data source, return a (repository, files_in_repo) generator  """

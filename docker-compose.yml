@@ -11,9 +11,9 @@ services:
       - db-data:/var/lib/postgresql
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "assemblage"]
-      interval: 10s
+      interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
 
   rabbitmq:
     image: rabbitmq:3-management

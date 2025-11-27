@@ -23,7 +23,9 @@ from assemblage.consts import BINPATH, TASK_TIMEOUT_THRESHOLD, BuildStatus, MAX_
 from assemblage.worker.base_worker import BasicWorker
 from assemblage.worker.build_method import LinuxBuildStrategy, WindowsDefaultStrategy
 from assemblage.config import BuilderSettings
-from assemblage.mq.messages import BuilderRegIn, BuilderRegOut
+from assemblage.mq.messages import (
+    MQMsg, BuilderRegIn, BuilderRegOut, BuildStatusMsgIn, CloneStatusMsgIn, BinaryTaskMsgIn, PostAnalysisTaskMsgIn
+    )
 from assemblage.mq.client import Connection, MQQueue
 
 logger = logging.getLogger(__name__)
@@ -406,8 +408,9 @@ class Builder(BasicWorker):
         '''
         ret = {}
         queue = MQQueue(kind)
-        match kind:
-            case InputQueue.BUILD_REG:
+        routing_key = None
+        # temporary, to make it more clear that these two messages are logically distinct
+        if kind == InputQueue.BUILD_REG:
                 ret = BuilderRegIn(
                     name=self.name,
                     uuid=self.uuid,
@@ -433,45 +436,51 @@ class Builder(BasicWorker):
                 else:
                     # do we want to create if does not exist then send message?
                     raise Exception(f"Connection {self}-ctrl does not exist")
+        else:
+            msg = None
+            match kind:
+                case InputQueue.CLONE:
+                    msg = CloneStatusMsgIn(
+                        url=kwarg['url'],
+                        opt_id=self.opt_id,
+                        status=kwarg['status'],
+                        msg=kwarg['msg'][-1000:],
+                        task_id=repo['task_id']
+                    )
+                case InputQueue.BUILD:
+                    msg = BuildStatusMsgIn(
+                        url=kwarg['url'],
+                        opt_id=self.opt_id,
+                        status=kwarg['status'],
+                        msg=kwarg['msg'][-1000:],
+                        task_id=repo['task_id'],
+                        build_time=kwarg['build_time'],
+                        commit_hexsha=kwarg['commit_hexsha']
+                    )
+                case InputQueue.BINARY:
+                    msg = BinaryTaskMsgIn(
+                        task_id=kwarg['task_id'],
+                        file_name=kwarg['file_name']
+                    )
+                case InputQueue.POST_ANALYSIS:
+                    msg = PostAnalysisTaskMsgIn(
+                        file_name=kwarg['file_name'],
+                        platform=self.platform
+                    )
+                    routing_key = f"post_analysis.{self.opt_id}"
+
+                    # it's important to redefine the queue in order to include proper routing key
+                    # TODO: test and troubleshoot, the first 2 params were chosen arbitrarily
+                    queue = MQQueue( name= routing_key, exchange_name=routing_key, routing_key=routing_key)
+                    # self.mq_client.send_kind_msg(f"post_analysis.{self.opt_id}", json.dumps(ret))
+                case _:
+                    logger.warning(
+                        "Unknown type of message %s, not sending... ", kind)
+                    return
                 
-            case InputQueue.CLONE:
-                ret = {
-                    'url': kwarg['url'],
-                    'opt_id': self.opt_id,
-                    'status': kwarg['status'],
-                    'msg': kwarg['msg'][-1000:],
-                    'task_id': repo['task_id']
-                }
-            case InputQueue.BUILD:
-                ret = {
-                    'url': kwarg['url'],
-                    'opt_id': self.opt_id,
-                    'status': kwarg['status'],
-                    'msg': kwarg['msg'][-1000:],
-                    'task_id': repo['task_id'],
-                    'build_time': kwarg['build_time'],
-                    'commit_hexsha': kwarg['commit_hexsha']
-                }
-            case InputQueue.BINARY:
-                ret = {
-                    'task_id': kwarg['task_id'],
-                    'file_name': kwarg['file_name']
-                }
-            case InputQueue.POST_ANALYSIS:
-                ret = {
-                    'file_name': kwarg['file_name'],
-                    'platform': self.platform
-                }
-                kind = f"post_analysis.{self.opt_id}"
-                # self.mq_client.send_kind_msg(f"post_analysis.{self.opt_id}", json.dumps(ret))
-                logger.info("Send to post analysis channel %s \n data: \n %s",
-                            f"post_analysis.{self.opt_id}", json.dumps(ret))
-            case _:
-                logger.warning(
-                    "Unknown type of message %s, not sending... ", kind)
-                return
-        job_conn = self.mq_client.get_connection(f'{self}')
-        if job_conn: 
-            job_conn.send_msg(queue, json.dumps(ret))
-        else: 
-            raise Exception("No connection for job handler exists")
+            job_conn = self.mq_client.get_connection(f'{self}')
+            assert (isinstance(msg, MQMsg))
+            if job_conn: 
+                job_conn.send_msg(queue, msg.to_json())
+            else: 
+                raise Exception("No connection for job handler exists")

@@ -27,11 +27,11 @@ import assemblage.coordinator.coordinator as coordinator
 import assemblage.config as settings
 import assemblage.mq.messages as msg
 import assemblage.mq.client as client
-from assemblage.consts import BuildStatus, CloneStatus, COORDINATOR_DATABASE_SYNC_TIMEOUT, InputQueue, BIN_DIR, OutputQueue
+from assemblage.consts import BuildStatus, CloneStatus, COORDINATOR_DATABASE_SYNC_TIMEOUT, InputQueue, BIN_DIR, OutputQueue, TEST_MESSAGE_LEVEL
 import test.unit_tests.helper_func as helper
 
 
-logging.basicConfig(format="%(asctime)s [TEST] %(levelname)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S", level='INFO')
+logging.basicConfig(format="%(asctime)s [TEST] %(levelname)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S", level=TEST_MESSAGE_LEVEL)
 
 logger = logging.getLogger(__name__)
 DefaultSettings = settings.CoordinatorSettings()
@@ -173,7 +173,7 @@ class TestCoordinator(unittest.TestCase):
         
         input_method = MagicMock()
         input_props = MagicMock()
-        mock_body : str = '{"url": "url", "opt_id": 1, "status":"'+ BuildStatus.OUTDATED_MSG +'"}'
+        mock_body : str = '{"url": "url", "opt_id": 1, "status":"'+ BuildStatus.OUTDATED_MSG +'", "msg":"", "task_id":1, "build_time":5, "commit_hexsha":""}'
         mock_body : bytes = mock_body.encode()
 
         c = coordinator.Coordinator(DefaultSettings)
@@ -184,7 +184,7 @@ class TestCoordinator(unittest.TestCase):
         # check that no rabbitmq publishes or db calls happened
         mock_channel.basic_publish.assert_not_called()
         mock_db.update_repo_status.assert_not_called()
-        mock_db.find_status_by_id.assert_not_called()
+        mock_db.get_status_row_by_id.assert_not_called()
         #TODO: assert that no db calls happen whatsoever, not just these ones? or no writes at least
 
 
@@ -204,7 +204,7 @@ class TestCoordinator(unittest.TestCase):
         # A valid build message must have a clone_status of SUCCESS saved in the db
         mock_task = MagicMock()
         mock_task.clone_status = CloneStatus.SUCCESS
-        mock_db.find_status_by_id.return_value = mock_task
+        mock_db.get_status_row_by_id.return_value = mock_task
 
         input_msg = {  # note: even a failed build is a "good" build message 
             "url": "5.com", "opt_id":1, "status":BuildStatus.FAILED, "msg":"finished",
@@ -231,7 +231,7 @@ class TestCoordinator(unittest.TestCase):
         
         # if this is called multiple times, then this test is entering the database sync code
         # which is incorrect for this input (since clone status is SUCCESS)
-        mock_db.find_status_by_id.assert_called_once_with( 10001 )
+        mock_db.get_status_row_by_id.assert_called_once_with( 10001 )
 
         
     @patch('assemblage.mq.client.BlockingChannel')
@@ -255,7 +255,7 @@ class TestCoordinator(unittest.TestCase):
         mock_task = MagicMock()
         mock_task.clone_status = CloneStatus.PROCESSING
         mock_task.repo_id = "FOR_TEST_OUTPUT_ONLY"
-        mock_db.find_status_by_id.return_value = mock_task
+        mock_db.get_status_row_by_id.return_value = mock_task
 
         input_msg = {
             "url": "5.com", "opt_id":1, "status":BuildStatus.SUCCESS, "msg":"finished",
@@ -278,10 +278,10 @@ class TestCoordinator(unittest.TestCase):
         
         # should be trapped in the database sync code for the full 10 seconds
         self.assertEqual(
-            mock_db.find_status_by_id.call_count,
+            mock_db.get_status_row_by_id.call_count,
             COORDINATOR_DATABASE_SYNC_TIMEOUT + 1
         )
-        mock_db.find_status_by_id.assert_called_with( 10001 )  # checks only the last entry, but all should be 10001
+        mock_db.get_status_row_by_id.assert_called_with( 10001 )  # checks only the last entry, but all should be 10001
 
          
 
@@ -300,7 +300,7 @@ class TestCoordinator(unittest.TestCase):
         input_method = MagicMock()
         input_props = MagicMock()
 
-        # We create two mock tasks, fill in appropriate data, then configure find_status_by_id to return the 
+        # We create two mock tasks, fill in appropriate data, then configure get_status_row_by_id to return the 
         # success on the third time it's called, to mimic the database updating after a few seconds
         # This is more stable than using one mock with a changing clone_status,
         # as that way is affected by total calls to clone_status, which can be affected e.g. by log messages.
@@ -312,7 +312,7 @@ class TestCoordinator(unittest.TestCase):
         mock_task_success.clone_status = CloneStatus.SUCCESS
         mock_task_success.repo_id = "FOR_TEST_OUTPUT_ONLY_SUCCESS"
 
-        mock_db.find_status_by_id.side_effect = [mock_task_unstarted, mock_task_unstarted, mock_task_success]
+        mock_db.get_status_row_by_id.side_effect = [mock_task_unstarted, mock_task_unstarted, mock_task_success]
 
         input_msg = {
             "url": "5.com", "opt_id":1, "status":BuildStatus.SUCCESS, "msg":"finished",
@@ -335,7 +335,7 @@ class TestCoordinator(unittest.TestCase):
         )  
         
         self.assertEqual(
-            mock_db.find_status_by_id.call_count,
+            mock_db.get_status_row_by_id.call_count,
             3
         )
          
@@ -360,12 +360,12 @@ class TestCoordinator(unittest.TestCase):
         mock_body : str = '{"url": "url", "task_id": 1001, "msg": "Message", "opt_id": 1, "status":"'+ BuildStatus.SUCCESS +'"}'
         mock_body : bytes = mock_body.encode()
 
-        # Mock a successful query from find_status_by_id
+        # Mock a successful query from get_status_row_by_id
         mock_task_success = MagicMock()
         mock_task_success.clone_status = CloneStatus.SUCCESS
         mock_task_success.repo_id = "FOR_TEST_OUTPUT_ONLY"
 
-        mock_db.find_status_by_id.return_value = mock_task_success
+        mock_db.get_status_row_by_id.return_value = mock_task_success
 
 
         c = coordinator.Coordinator(DefaultSettings)
@@ -410,7 +410,7 @@ class TestCoordinator(unittest.TestCase):
         mock_task_success.clone_status = CloneStatus.FAILED
         mock_task_success.repo_id = "FOR_TEST_OUTPUT_ONLY"
 
-        mock_db.find_status_by_id.return_value = mock_task_success
+        mock_db.get_status_row_by_id.return_value = mock_task_success
 
 
         c = coordinator.Coordinator(DefaultSettings)
@@ -671,7 +671,7 @@ class TestCoordinator(unittest.TestCase):
         mock_db = helper.mock_functioning_dbmanager(MockDBManager)
 
         # no ready-to-dispatch threads found
-        mock_db.find_status_by_status_code.return_value = []
+        mock_db.get_dispatch_task.return_value = None
 
 
         c = coordinator.Coordinator(DefaultSettings)
@@ -703,39 +703,18 @@ class TestCoordinator(unittest.TestCase):
 
         MockTime.time.return_value = 50 
 
-        # mock_uncloned_repo is dbmodel.RepoDO
-        # mock_task is a join of dbmodel.RepoDO and dbmodel.Status
-        # mock_build_opt is dbmodel.BuildOpt
-        mock_task = MagicMock()
-        mock_task.build_opt_id = 2  # will be opt_id in msg
-        mock_task.id = 44284  # will be task_id in msg
-        mock_task.repo_id = 7921  # will be repo_id in msg. should match mock_uncloned_repo.id
-        mock_uncloned_repo = MagicMock()
-        mock_uncloned_repo.id = 7921
-        mock_uncloned_repo.url = "123ABC"
-        mock_uncloned_repo.name = "RepoName"  # will be name in msg
-        mock_uncloned_repo.build_system = "MaybeClangOrSomething"
-        mock_uncloned_repo.updated_at.strftime.return_value = "placeholder_updatetime"
-        mock_build_opt = MagicMock()
-        mock_build_opt.id = 2 # should match mock_task.build_opt_id
-
-        # msg output_dir should be /binaries/44284
-
-        mock_db.find_status_by_status_code.return_value = [mock_task]
-        mock_db.find_repo_by_id.return_value = mock_uncloned_repo
-        mock_db.find_build_opt_by_id.return_value = mock_build_opt
-
         expected_build_message = msg.BuilderTaskOut(
-            name = mock_uncloned_repo.name,
-            url = mock_uncloned_repo.url, 
-            task_id = mock_task.id,
-            opt_id = mock_build_opt.id,
+            name = "RepoName",
+            url = "123ABC", 
+            task_id = 44284,
+            opt_id = 2,
             output_dir = f'{BIN_DIR}/44284',
-            repo_id = mock_uncloned_repo.id,
+            repo_id = 7921,
             updated_at = "placeholder_updatetime",
-            build_system = mock_uncloned_repo.build_system,
+            build_system = "MaybeClangOrSomething",
             msg_time = MockTime.time()
         )
+        mock_db.get_dispatch_task.return_value = expected_build_message
 
 
         c = coordinator.Coordinator(DefaultSettings)
@@ -757,7 +736,7 @@ class TestCoordinator(unittest.TestCase):
         # Body was correct
         self.assertEqual(
             publish_args.kwargs['body'], 
-            expected_build_message.to_json()
+            expected_build_message.to_json().encode()
         )
 
         
