@@ -17,11 +17,11 @@ from requests import Response
 import assemblage.worker.scraper as scraper
 import assemblage.config as settings
 from assemblage.mq.messages import ScraperDataOutSingle
-from assemblage.consts import (ScrapeSource, InputQueue, SCRAPER_PAGE_SIZE, GITHUB_REPO_URL, SCRAPER_REQUEST_TIMEOUT_S)
+from assemblage.consts import (ScrapeSource, InputQueue, SCRAPER_PAGE_SIZE, GITHUB_REPO_URL, SCRAPER_REQUEST_TIMEOUT_S, TEST_MESSAGE_LEVEL)
 import test.unit_tests.helper_func as helper
 
 
-logging.basicConfig(format="%(asctime)s [TEST] %(levelname)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S", level='DEBUG')
+logging.basicConfig(format="%(asctime)s [TEST] %(levelname)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S", level=TEST_MESSAGE_LEVEL)
 logger = logging.getLogger(__name__)
 
 

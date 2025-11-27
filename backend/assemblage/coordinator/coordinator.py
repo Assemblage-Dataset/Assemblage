@@ -26,7 +26,7 @@ from assemblage.consts import (AWS_AUTO_REBOOT_PREFIX, COORDINATOR_DATABASE_SYNC
 
 from assemblage.config import CoordinatorSettings
 from assemblage.mq.messages import (
-    BuilderRegIn, BuilderRegOut, ScraperDataOutBundle, BuilderTaskOut
+    BuilderRegIn, BuilderRegOut, ScraperDataOutBundle, BuilderTaskOut, CloneStatusMsgIn, BuildStatusMsgIn, BinaryTaskMsgIn
     )
 from assemblage.mq.client import MQQueue, MessageClient, Connection
 
@@ -89,6 +89,7 @@ class Coordinator:
         # Appears to be used only in AWS mode for reboots
         self.cluster_name = settings.cluster_name
         self._create_buildopt_exchange()
+        self._dispatch_queue : MQQueue | None = None  # To be set by dispatch thread
 
         logger.debug(f"{self.cluster_name}")        
         self.reproduce_mode = settings.reproduce_mode
@@ -122,15 +123,13 @@ class Coordinator:
         try:
             logger.info("__dispatch_task thread on buildopt %s initializing...", build_opt_id)
             
-            conn: Connection = self.mq_client.create_connection(conn_name=f'{self}', channel_name=f'{self}')
-            _thread_channel = conn.create_channel()  # workaround for issue mentioned in todo below
-            tasks = self.db_man.find_status_by_status_code(
-                build_opt_id=build_opt_id,
-                clone_status=CloneStatus.NOT_STARTED,
-                build_status=BuildStatus.INIT,
-                limit=99999)
+            self._dispatch_queue = MQQueue( name= f'builder.opt.{build_opt_id}', exchange_name='build_opt', routing_key=f'builder.opt.{build_opt_id}')
+            conn: Connection = self.mq_client.get_connection(conn_name=f'{self}-build-opt')
+            
+            num_tasks = self.db_man.get_tasks_to_dispatch_on_opt(build_opt_id)
+            
             logger.info(
-                "__dispatch_task started successfully, %s tasks are ready to be queued for dispatch on build_opt_%d", len(tasks), build_opt_id)
+                "__dispatch_task started successfully, %s tasks are ready to be queued for dispatch on build_opt_%d", num_tasks, build_opt_id)
         except:
             logger.info("__dispatch_task start fail")
             exit(1)
@@ -138,100 +137,57 @@ class Coordinator:
         while True:
             try:
                 task_count += self._dispatch_to_builder(
-                    build_opt_id, _thread_channel, sleep, task_count
+                    build_opt_id, conn, sleep, task_count
                 )
             except Exception as e:
-                logger.info(f"Dispatch Err:  {e}")
-                # _thread_channel = conn.create_channel() # should work but not tested yet
-                # _thread_channel = create_channel(
-                #     self.rabbitmq_host, self.rabbitmq_port)
-                # _thread_channel.exchange_declare(
-                #     exchange='build_opt', exchange_type=ExchangeType.topic)
-                # _thread_channel.confirm_delivery()
-                break
+                logger.error(f"Dispatch Err:  {e}")
+                
+                # try to restart thread in case this was a fluke
+                # break
             if only_run_once:
                 break
-        logger.info(f"__dispatch_task Build Opt {build_opt_id} exiting...")
+        logger.warning(f"__dispatch_task Build Opt {build_opt_id} exiting...")
 
     def _dispatch_to_builder( self, build_opt_id, 
-            thread_channel : pika.adapters.blocking_connection.BlockingChannel, 
+            conn : Connection, 
             sleep : bool, task_count : int ):
         '''
             Look for and, if present, dispatch unstarted tasks from database to the 
             appropriate build option channel.
             build_opt_id: the build option of the worker(s) this thread sends to
-            thread_channel: the BlockingChannel used for publishing connections
-              (TODO: this should be part of the MessageClient, but is not due to reasons listed below)
+            conn: the connection used for publishes
             sleep: whether this process should sleep a bit between dispatches
             task_count: for keeping track of this thread's total dispatches
         '''
         # find an unstarted task
         time_before_query = time.time()
-        tasks = self.db_man.find_status_by_status_code(
-            build_opt_id=build_opt_id,
-            clone_status=CloneStatus.NOT_STARTED,
-            build_status=BuildStatus.INIT,
-            limit=1)
-        if len(tasks) == 0:
+        build_message = self.db_man.get_dispatch_task(build_opt_id, self.reproduce_mode)
+        time_after_query = time.time()
+        if build_message is None:
             logger.info(
                 "Dispatch thread on build option %s idle", build_opt_id)
             time.sleep(IDLE_DISPATCH_INTERVAL)
             return 0
-        # extract task
-        task = tasks[0]
-        # get the rest of the necessary information from the other tables in database
-        uncloned_repo = self.db_man.find_repo_by_id(task.repo_id)
-        # if uncloned_repo.size < REPO_SIZE_THRESHOLD:
-        #     logger.info("Discard task %s size %s", task.repo_id, uncloned_repo.size)
-        #     return 0
-        build_opt = self.db_man.find_build_opt_by_id(task.build_opt_id)
-        self.db_man.update_repo_status(
-            status_id=task.id, clone_status=CloneStatus.PROCESSING)
         
-        time_after_query = time.time()
-        repo_url = patch_url(uncloned_repo.url)
-        out_dir = f'{BIN_DIR}/{task.id}'
-        update_time = uncloned_repo.updated_at.strftime("%m/%d/%Y, %H:%M:%S")
-        
-        # format a request to be sent to the builder/cloner
-        build_message = BuilderTaskOut(
-            name = uncloned_repo.name,
-            url = repo_url, 
-            task_id = task.id,
-            opt_id = build_opt.id,
-            output_dir = out_dir,
-            repo_id = uncloned_repo.id,
-            updated_at = update_time,
-            build_system = uncloned_repo.build_system,
-            msg_time = time.time()
-            #commit_hexsha = task.commit_hexsha
-        )
-        
-        if self.reproduce_mode:
-            build_message.mod_timestamp = task.mod_timestamp
+        else:
             
-        # Publish this task, to be picked up by a worker with the appropriate build option settings
-        thread_channel.basic_publish(
-            exchange='build_opt', routing_key=f'builder.opt.{build_opt.id}',
-            body = build_message.to_json(),
-            properties=pika.BasicProperties(delivery_mode=2))
-        # TODO: need messageclient function that can publish to exchange w/out queue e.g.:
-        # conn.send_msg_on_exchange(
-        #     routing_key=f'builder.{build_opt.id}',
-        #     msg=json.dumps(clone_req),
-        #     exchange='build_opt'
-        # )
+            # # Publish this task, to be picked up by a worker with the appropriate build option settings
+            conn.send_msg(queue=self._dispatch_queue, 
+                          msg=build_message.to_json().encode(),
+                          exchange=self._dispatch_queue.exchange_name )
+            
+            self.db_man.update_repo_status( status_id=build_message.task_id, clone_status=CloneStatus.PROCESSING )
 
-        # log progress
-        if task_count % 10 == 0:
-            logger.info('Placed %sth task on build option %d in %ss', task_count,
-                        task.build_opt_id, str(time_after_query - time_before_query)[:5])
+            # log progress
+            if task_count % 10 == 0:
+                logger.info('Placed %sth task on build option %d in %ss', task_count,
+                            build_opt_id, str(time_after_query - time_before_query)[:5])
 
-        # sleep
-        if sleep:
-            time.sleep(DISPATCH_INTERVAL)
-        
-        return 1
+            # sleep
+            if sleep:
+                time.sleep(DISPATCH_INTERVAL)
+            
+            return 1
 
 
     # TODO: Possibly this runs occasionally at very long time scales, but I think this is a candidate for cutting
@@ -362,24 +318,24 @@ class Coordinator:
 
     def recv_binary(self, ch, method, _props, body):
         """ collect binary metadata from worker"""
-        recv_msg = json.loads(body.decode())
+        recv_msg = BinaryTaskMsgIn.from_json( body.decode() )
 
         self.db_man.insert_binary(
-            file_name=recv_msg['file_name'],
+            file_name=recv_msg.file_name,
             description='',
-            status_id=recv_msg['task_id']
+            status_id=recv_msg.task_id
         )
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
     def recv_build_info(self, ch, method, _props, body):
         """ collect and update build status of a task """
-        recv_msg = json.loads(body.decode())
-        # task = db_man.find_status_by_id(recv_msg['task_id'])
-        if BuildStatus(recv_msg['status']) == BuildStatus.OUTDATED_MSG:
+        recv_msg = BuildStatusMsgIn.from_json( body.decode() )
+        # task = db_man.get_status_row_by_id(recv_msg['task_id'])
+        if BuildStatus(recv_msg.status) == BuildStatus.OUTDATED_MSG:
             logger.info("discarding a timeout build msg %s", body.decode())
             ch.basic_ack(delivery_tag=method.delivery_tag)
             return
-        task = self.db_man.find_status_by_id(recv_msg['task_id'])
+        task = self.db_man.get_status_row_by_id(recv_msg.task_id)
         if task.clone_status != CloneStatus.SUCCESS:
             # If building is extremely quick, there's a small chance that build info will be sent
             # before the clone status is even updated in the database, so wait for sync if the status is unexpected.
@@ -390,35 +346,35 @@ class Coordinator:
                 while (timeout > 0 and task.clone_status in [CloneStatus.NOT_STARTED, CloneStatus.PROCESSING]):
                     time.sleep(1)  # relatively long wait time to reduce required db accesses
                     timeout -= 1
-                    task = self.db_man.find_status_by_id(recv_msg['task_id'])
+                    task = self.db_man.get_status_row_by_id(recv_msg.task_id)
             if task.clone_status != CloneStatus.SUCCESS:  # sync attempt timed out or clone was a failure
                 logger.warning(f"Clone failed but still built: repo id {task.repo_id}")
         self.db_man.update_repo_status(
-            status_id=recv_msg['task_id'],
-            build_time=recv_msg['build_time'],
-            build_status=BuildStatus(recv_msg['status']),
-            build_msg=recv_msg['msg'][-500:],
-            commit_hexsha=recv_msg['commit_hexsha'])
+            status_id=recv_msg.task_id,
+            build_time=recv_msg.build_time,
+            build_status=BuildStatus(recv_msg.status),
+            build_msg=recv_msg.msg[-500:],
+            commit_hexsha=recv_msg.commit_hexsha)
         logger.info("BUILD task on buildopt %s updated to %s: %s",
-                    recv_msg['opt_id'], recv_msg['status'], " ".join(recv_msg['msg'].split())[-500:])
+                    recv_msg.opt_id, recv_msg.status, " ".join(recv_msg.msg.split())[-500:])
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
     def recv_clone_info(self, ch, method, _props, body):
         """ collect and update clone status of a task """
-        recv_msg = json.loads(body.decode())
+        recv_msg = CloneStatusMsgIn.from_json( body.decode() )
         # if the status code is timeout discard it
-        if recv_msg['status'] == BuildStatus.OUTDATED_MSG:
+        if recv_msg.status == BuildStatus.OUTDATED_MSG:
             logger.info("discarding a timeout clone msg %s", body.decode())
             ch.basic_ack(delivery_tag=method.delivery_tag)
             return
         self.db_man.update_repo_status(
-            status_id=recv_msg['task_id'],
-            clone_status=BuildStatus(recv_msg['status']),
-            clone_msg=recv_msg['msg'][-200:])
-        task = self.db_man.find_status_by_id(recv_msg['task_id'])
+            status_id=recv_msg.task_id,
+            clone_status=BuildStatus(recv_msg.status),
+            clone_msg=recv_msg.msg[-200:])
+        task = self.db_man.get_status_row_by_id(recv_msg.task_id)
         if task.clone_status != BuildStatus.SUCCESS:
             logger.info("CLONE task on buildopt %s updated to %s: %s",
-                        recv_msg['opt_id'], task.clone_status, recv_msg['msg'])
+                        recv_msg.opt_id, task.clone_status, recv_msg.msg)
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
     def recv_builder_registration(self, ch, method, props, body):

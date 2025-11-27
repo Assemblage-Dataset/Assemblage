@@ -7,8 +7,9 @@ import unittest
 #from unittest.mock import patch, MagicMock
 import logging
 import assemblage.mq.messages as msg
+from assemblage.consts import TEST_MESSAGE_LEVEL
 
-logging.basicConfig(format="%(asctime)s [TEST] %(levelname)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S", level='DEBUG')
+logging.basicConfig(format="%(asctime)s [TEST] %(levelname)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S", level=TEST_MESSAGE_LEVEL)
 
 logger = logging.getLogger(__name__)
 

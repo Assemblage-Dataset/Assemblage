@@ -1,5 +1,8 @@
 import json
 import platform
+import logging
+
+from assemblage.consts import CloneStatus, BuildStatus
 
 class MQMsg:
     def __init__(self):
@@ -24,7 +27,10 @@ class MQMsg:
         '''
         return f'{type(self)}:{self.to_json()}'
     
-    
+    def __eq__(self, other):
+        if isinstance(other, self.__class__):
+            return self.__dict__ == other.__dict__
+        return False
 
 
 class BuilderRegIn(MQMsg):
@@ -141,3 +147,39 @@ class ScraperDataOutBundle(MQMsg):
     
     def __len__(self):
         return len(self.repos)
+
+
+class CloneStatusMsgIn(MQMsg):
+    def __init__(self, url: str, opt_id: int, status: CloneStatus,
+                 msg: str, task_id: int):
+        super().__init__()
+        self.url = url 
+        self.opt_id = opt_id
+        self.status = status 
+        self.msg = msg 
+        self.task_id = task_id
+        
+class BuildStatusMsgIn(MQMsg):
+    def __init__(self, url: str, opt_id: int, status: CloneStatus,
+                 msg: str, task_id: int, build_time: int, commit_hexsha: str):
+        super().__init__()
+        self.url = url 
+        self.opt_id = opt_id
+        self.status = status 
+        self.msg = msg 
+        self.task_id = task_id
+        self.build_time = build_time 
+        self.commit_hexsha = commit_hexsha
+
+        
+class BinaryTaskMsgIn(MQMsg):
+    def __init__(self, task_id: int, file_name: str):
+        super().__init__()
+        self.task_id = task_id
+        self.file_name = file_name
+
+class PostAnalysisTaskMsgIn(MQMsg):
+    def __init__(self, file_name: str, platform: str):
+        super().__init__()
+        self.file_name = file_name
+        self.platform = platform

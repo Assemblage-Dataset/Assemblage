@@ -130,7 +130,7 @@ DISPATCH_INTERVAL = 0.1  # time between attempting dispatchs.
 # 0 is OK except when there is a large dispatch backlog and all workers are on the same machine,
 # as working through the dispatch backlog might choke other workers
 
-IDLE_DISPATCH_INTERVAL = 5  # when no dispatches are found, how long to wait until trying again
+IDLE_DISPATCH_INTERVAL = 30  # when no dispatches are found, how long to wait until trying again
 
 CLEAN_OVERTIME_INTERVAL = 600 
 AWS_REBOOT_SLEEP_INTERVAL = 1200
@@ -175,3 +175,9 @@ class GithubTimeOrder(Enum):
 class SupportedPlatform(str,Enum):
     WINDOWS = 'windows'
     LINUX = 'linux'
+
+
+## Testing constants
+
+TEST_MESSAGE_LEVEL = 'DEBUG'
+TEST_DB_ADDR = 'postgresql+psycopg2://assemblage:assemblage@assemblage-test-db:5432/assemblage'
