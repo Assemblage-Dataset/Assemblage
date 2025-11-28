@@ -123,13 +123,13 @@ class BuildStrategy:
             commit_hash = "Unknown"
         return commit_hash
 
-    def clone_data(self, repo) -> Tuple[bytes | str | CloneStatus | CloneStatus]:
+    def clone_data(self, url) -> Tuple[bytes | str | CloneStatus | CloneStatus]:
         """ Clone repo
             If using s3 storage, then dont use temp, otherwise save to a temporary directory
 
         """
 
-        user_name, project_name = self.parse_github_name(repo["url"])
+        user_name, project_name = self.parse_github_name(url)
         # no longer random + will now group projects from the same user together...
 
         if not user_name:
@@ -154,7 +154,7 @@ class BuildStrategy:
             # TODO: check for errors, more sophisticated git pull behavior?
         else:
             # first access of this project. cwd is set to "" so we can pass clone_dir as a destination
-            cmd = f'git clone --recursive {repo["url"]} {clone_dir}/'
+            cmd = f'git clone --recursive {url} {clone_dir}/'
 
         out, err, exit_code = self.cmd_with_output(cmd, 600, cwd=cwd)
 
@@ -354,6 +354,7 @@ class LinuxBuildStrategy(BuildStrategy):
                   repo,
                   clone_dir,
                   build_mode,
+                  optimization,
                   slnfile=None,
                   ):
         """ Generate cmd to execute """
@@ -617,6 +618,7 @@ class WindowsDefaultStrategy(BuildStrategy):
                   clone_dir,
                   build_mode,
                   slnfile,
+                  optimization,
                   num_p_job=16):
         """ Generate cmd to execute """
         if not slnfile:

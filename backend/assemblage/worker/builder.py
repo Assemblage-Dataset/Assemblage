@@ -21,11 +21,11 @@ import ntpath
 import tempfile
 from pathlib import Path
 
-from assemblage.consts import BINPATH, TASK_TIMEOUT_THRESHOLD, BuildStatus, MAX_MQ_SIZE, CloneStatus, InputQueue, WorkerType
+from assemblage.consts import BINPATH, TASK_TIMEOUT_THRESHOLD, BuildStatus, MAX_MQ_SIZE, CloneStatus, InputQueue, OptLevel, WorkerType
 from assemblage.worker.base_worker import BasicWorker
 from assemblage.worker.build_method import LinuxBuildStrategy, WindowsDefaultStrategy
 from assemblage.config import BuilderSettings
-from assemblage.mq.messages import BuilderRegIn, BuilderRegOut
+from assemblage.mq.messages import BuildCloneReq, BuilderRegIn, BuilderRegOut
 from assemblage.mq.client import Connection, MQQueue
 from assemblage.s3.client import S3Client, S3Bucket
 
@@ -97,6 +97,10 @@ class Builder(BasicWorker):
         # these are set in the build_opt tables. not sure what these should be so settign empty for now
         self.compiler_flag = None
         self.build_command = None
+        
+        
+        self.MAX_WAIT = settings.WAIT_FOR_BUILD_OPT  # 15 minutes in seconds
+        self.CHECK_INTERVAL = settings.CONFIG_CHECK_INTERVAL  # check every 5 seconds
         
         
       # s3 configuration
@@ -209,7 +213,7 @@ class Builder(BasicWorker):
                                                                         channel_name=f'{self}-ctrl',
                                                                         )
                     conn.create_channel()
-                    self.send_msg(kind=InputQueue.BUILD_REG, repo=None)
+                    self.send_msg(kind=InputQueue.BUILD_REG, task=None)
                     logger.info(
                         "Registration Message sent. Starting consumption on control queue now")
                     self.mq_client.start_consumer(
@@ -237,20 +241,25 @@ class Builder(BasicWorker):
         # if not self.build_opt_queue:
         #     logger.info("Waiting for build_opt_thread to be set")
 
-        MAX_WAIT = 15 * 60  # 15 minutes in seconds
-        CHECK_INTERVAL = 5  # check every 5 seconds
 
         start_time = time.time()
 
-        while not self.sleep_job_event.wait(timeout=CHECK_INTERVAL):
-            elapsed = time.time() - start_time
-            if elapsed > MAX_WAIT:
-                logger.warning(
-                    f"{self}: waited {elapsed:.0f}s — exiting after 15 minutes timeout")
-                return
+        while not self.sleep_job_event.wait(timeout=self.CHECK_INTERVAL):
+            elapsed = (time.time() - start_time) / 60  # minutes
 
-            logger.info(
-                f"{self}: still waiting for configuration ({elapsed:.0f}s elapsed). Will exit after {MAX_WAIT/60} minuites without configuration")
+            if self.MAX_WAIT:
+                if elapsed > self.MAX_WAIT:
+                    logger.warning(
+                        f"{self}: waited {elapsed:.0f}m — exiting after {self.MAX_WAIT} minutes timeout")
+                    return
+
+                logger.info(
+                    f"{self}: still waiting for configuration ({elapsed:.0f}m elapsed). "
+                    f"Will exit after {self.MAX_WAIT} minutes without configuration")
+
+            else:
+                logger.info(
+                    f"{self}: still waiting for configuration ({elapsed:.0f}m elapsed)")
         logger.info(
             f"Build option queue set to {self.build_opt_queue} initialising job")
         conn: Connection = self.mq_client.create_connection(conn_name=f'{self}',
@@ -292,9 +301,10 @@ class Builder(BasicWorker):
         Callback for when we get a task request from a coordinator to build and clone/pull a project.
         """
         self.sleep_job_event.wait()  # way to get the control thread to block
-        task = json.loads(body)  # TODO: create type for this
+        
+        
+        task = BuildCloneReq.from_json(body)  # TODO: create type for this
 
-        url = task['url']
         ch.basic_ack(method.delivery_tag)
         # check if this is an duplicate task
         # if time.time() - task['msg_time'] >= TASK_TIMEOUT_THRESHOLD: # not sure on this. is this because of a lag between starting the builder and coordinator??
@@ -308,10 +318,10 @@ class Builder(BasicWorker):
         #     return
 
         logger.info("Received a task to build %s. buildsys: %s",
-                    url,
-                    task['build_system'])
+                    task.url,
+                    task.build_system)
         clone_msg, clone_status, clone_dir = self.build_strategy.clone_data(
-            task)
+            task.url)
 
         original_files = []
         for filename in glob.iglob(clone_dir + '**/**', recursive=True):
@@ -320,11 +330,13 @@ class Builder(BasicWorker):
         # ch.connection.process_data_events()
 
         if clone_status == CloneStatus.SUCCESS:
-            logger.info("Clone SUCCESS, Attempting to build `%s`", url)
+            
+            
+            logger.info("Clone SUCCESS, Attempting to build `%s`", task.url)
             compiler_flag = self.compiler_flag
             compiler_version = self.build_strategy.compiler_version
-            if 'commit_hexsha' in task:
-                commit_hexsha = task['commit_hexsha']
+            if task.commit_hexsha:
+                commit_hexsha = task.commit_hexsha
             else:
                 commit_hexsha = self.build_strategy.get_project_commit(
                     clone_dir)
@@ -344,77 +356,87 @@ class Builder(BasicWorker):
                     
 
 
-            self.send_msg(repo=task,
+            self.send_msg(task=task,
                       kind=InputQueue.CLONE,
-                      url=task['url'],
+                      url=task.url,
                       status=clone_status,
                       msg=self.uuid[:5]+clone_msg.decode(),
                       commit_hexsha=commit_hexsha,
                       save_path = save_path
                       )
 
-            self.send_msg(repo=task,
+          
+            # this is currently only needed for windows, but linux just reutrns none too, so it wont break
+            # seems cleaner to do it like this , instead of doing if statements here
+            
+            
+            for opt in task.optimizations:
+                self.send_msg(task=task,
                           kind=InputQueue.BUILD,
-                          url=url,
+                          url=task.url,
                           status=BuildStatus.PROCESSING,
                           msg="Received and building",
                           commit_hexsha=commit_hexsha,
+                          optimization=opt,
                           build_time=0)
 
-            # this is currently only needed for windows, but linux just reutrns none too, so it wont break
-            # seems cleaner to do it like this , instead of doing if statements here
-            logger.debug("Starting pre build")
-            sln_file = self.build_strategy.pre_build(
-                build_mode=self.build_mode,
-                clone_dir=clone_dir,
-                optimization=self.compiler_flag
-            )
-            logger.debug(f"Pre Build success, now running build for {url}")
-            before_build_time = int(time.time())
-            build_msg, build_status = self.build_strategy.run_build(
-                repo=task,
-                clone_dir=clone_dir,
-                build_mode=self.build_mode,
-                slnfile=sln_file
-            )
+                optimization = OptLevel(opt)
 
-            after_build_time = int(time.time())
-            # logger.info("Build exit %s", build_msg.replace("\n", " "))
-            self.build_strategy.post_build_hook(clone_dir,
-                                                self.build_mode,
-                                                task, compiler_version,
-                                                compiler_flag, commit_hexsha)
-            logger.info(f"Post build hook done, build_status: {build_status}")
-            logger.debug(f"Build message: {build_msg}")
+                logger.debug(f"Starting pre build with optimization: {optimization}")
+                sln_file = self.build_strategy.pre_build(
+                    build_mode=self.build_mode,
+                    clone_dir=clone_dir,
+                    optimization=optimization
+                )
+                logger.debug(f"Pre Build success, now running build for {task.url}")
+                before_build_time = int(time.time())
+                build_msg, build_status = self.build_strategy.run_build(
+                    repo=task.url,
+                    clone_dir=clone_dir,
+                    build_mode=self.build_mode,
+                    slnfile=sln_file, 
+                    optimization=optimization
+                )
 
-            if build_status == BuildStatus.SUCCESS:
-                # do something with dest bin_folder
-                dest_binfolder = self.save_binaries(
-                    clone_dir, task, original_files=original_files, commit_hexsha=commit_hexsha)
-                logger.info(f"Binaries saved to {dest_binfolder}")
-            self.send_msg(repo=task,
-                          kind=InputQueue.BUILD,
-                          url=url,  # can we send id + commit
-                          status=build_status,
-                          msg="Build Process Finished",
-                          commit_hexsha=commit_hexsha,
-                          build_time=(after_build_time - before_build_time))
+                after_build_time = int(time.time())
+                # logger.info("Build exit %s", build_msg.replace("\n", " "))
+                self.build_strategy.post_build_hook(clone_dir,
+                                                    self.build_mode,
+                                                    task, compiler_version,
+                                                    optimization, commit_hexsha)
+                logger.info(f"Post build hook done, build_status: {build_status}")
+                logger.debug(f"Build message: {build_msg}")
+
+                if build_status == BuildStatus.SUCCESS:
+                    # do something with dest bin_folder
+                    dest_binfolder = self.save_binaries(
+                        clone_dir, task, original_files=original_files, commit_hexsha=commit_hexsha, optimization=optimization)
+                    logger.info(f"Binaries saved to {dest_binfolder}")
+                self.send_msg(task=task,
+                            kind=InputQueue.BUILD,
+                            url=task.url,  # can we send id + commit
+                            status=build_status,
+                            msg="Build Process Finished",
+                            commit_hexsha=commit_hexsha,
+                            build_time=(after_build_time - before_build_time),
+                            optimization=optimization.value # just send as value 
+                            )
             if self.s3_client:
                 self._clean_folder(os.path.dirname(clone_dir)) # dirname needed to also remove parent folder with username
             
-            
+                
         else:
-            self.send_msg(repo=task,
+            self.send_msg(task=task,
                       kind=InputQueue.CLONE,
-                      url=task['url'],
+                      url=task.url,
                       status=clone_status,
                       msg=self.uuid[:5]+clone_msg.decode(),
                       commit_hexsha="", 
                       save_path=None)
 
-            logger.info("Clone FAILURE %s: %s", url, clone_msg)
+            logger.info("Clone FAILURE %s: %s", task.url, clone_msg)
         # build_method.clean(folders)
-        logger.debug("Worker %s finished %s", self.uuid[:5], url,
+        logger.debug("Worker %s finished %s", self.uuid[:5], task.url,
                      )
 
     def save_project_to_s3(self, clone_dir: str, username:str, project_name: str, commit_hexsha: str):
@@ -441,9 +463,9 @@ class Builder(BasicWorker):
             return False
         
         
-    def save_binaries(self, target_dir, repo, original_files, commit_hexsha, optimization="None"):
+    def save_binaries(self, target_dir, task, original_files, commit_hexsha, optimization="None"):
         """ Store binaries locally or on S3, and notify coordinator. """
-        logger.debug(f"Saving binaries of Repo: {repo}")
+        logger.debug(f"Saving binaries of Repo: {task.url}")
 
         self.build_strategy.own_dir(os.path.dirname(target_dir))
 
@@ -488,15 +510,14 @@ class Builder(BasicWorker):
                         logger.warning(f"Failed to change permissions on {dest_file}")
 
             self.send_msg(kind=InputQueue.BINARY,
-                        repo=repo,
-                        task_id=repo['task_id'],
-                        file_name=fpath if self.s3_client else dest_file)
-
+                        task=task,
+                        file_name=fpath if self.s3_client else dest_file,
+                        optimization=optimization.value)
 
         self.build_strategy.own_dir(dest_base_full)
         return dest_base_full
 
-    def send_msg(self, kind: InputQueue, repo, **kwarg):
+    def send_msg(self, kind: InputQueue, task, **kwarg):
         '''
         send message to the coordinator input queue
         Remember input is from the perspective of the coordinator so input == output in builder and output == input
@@ -531,17 +552,15 @@ class Builder(BasicWorker):
                 else:
                     # do we want to create if does not exist then send message?
                     raise Exception(f"Connection {self}-ctrl does not exist")
-
             case InputQueue.CLONE:
                 ret = {
                     'url': kwarg['url'],
                     'opt_id': self.opt_id,
                     'status': kwarg['status'],
                     'msg': kwarg['msg'][-1000:],
-                    'task_id': repo['task_id'],
+                    'task_id': task.task_id,
                     'commit_hexsha': kwarg['commit_hexsha'],
                     'save_path': kwarg['save_path']
-
                 }
             case InputQueue.BUILD:
                 ret = {
@@ -549,14 +568,16 @@ class Builder(BasicWorker):
                     'opt_id': self.opt_id,
                     'status': kwarg['status'],
                     'msg': kwarg['msg'][-1000:],
-                    'task_id': repo['task_id'],
+                    'task_id': task.task_id,
                     'build_time': kwarg['build_time'],
-                    'commit_hexsha': kwarg['commit_hexsha']
+                    'commit_hexsha': kwarg['commit_hexsha'], 
+                    'optimization': kwarg['optimization'],
                 }
             case InputQueue.BINARY:
                 ret = {
-                    'task_id': kwarg['task_id'],
-                    'file_name': kwarg['file_name']
+                    'task_id': task.task_id,
+                    'file_name': kwarg['file_name'], 
+                    'optimization': kwarg['optimization']
                 }
             case InputQueue.POST_ANALYSIS:
                 ret = {

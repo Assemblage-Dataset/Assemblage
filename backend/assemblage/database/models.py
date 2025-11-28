@@ -13,7 +13,7 @@ from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.sql.schema import ForeignKey
 from sqlalchemy_utils import create_database, database_exists
 from sqlmodel import Integer, Enum, Field, Session, SQLModel, create_engine, select, Relationship, Column
-from assemblage.consts import BuildStatus, CloneStatus, PriorityStatus
+from assemblage.consts import BuildStatus, CloneStatus, PriorityStatus, OptLevel
 from pydantic import HttpUrl
 
 Base = declarative_base()
@@ -76,6 +76,7 @@ class BuildDO(SQLModel, table=True):
     build_date: datetime.datetime = Field(
         default=datetime.datetime.now(datetime.timezone.utc))
     disassembled: bool = False
+    optimization: OptLevel = OptLevel.NONE
 
     status_id: int = Field( foreign_key="b_status.id")  # cascade
     status: Status | None = Relationship(back_populates="binaries")
