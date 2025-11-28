@@ -204,7 +204,7 @@ class DBManager:
     # Used in coordinator in recycler
     def find_repo_by_status(self, clone_status, build_status, build_opt_id=None, limit=-1):
         """ find possible build target repo by given build/clone info. returns array of rows"""
-        with self.get_session() as session:
+        with Session(self.engine) as session:
             query = select(RepoDO).join_from(RepoDO, Status)
             if build_opt_id is not None:
                 query = query.where(
@@ -223,7 +223,6 @@ class DBManager:
                 result = session.execute(query)
             repos = []
             for _s in result:
-                session.expunge(_s)
                 repos.append(_s[0])
             return repos
 
