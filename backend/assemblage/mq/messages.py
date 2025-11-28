@@ -2,6 +2,8 @@ import json
 import platform
 import time
 
+from ..consts import OptLevel
+
 class MQMsg:
     def __init__(self):
         pass
@@ -117,18 +119,21 @@ class ScraperDataOutBundle(MQMsg):
         return len(self.repos)
 
 class BuildCloneReq(MQMsg):
-    
-    def __init__(self, uncloned_repo, repo_url, task, build_opt, reproduce_mode=False):
+    def __init__(self, name: str, url: str, task_id: int,
+                 opt_id: int, commit_hexsha: str | None,
+                 repo_id: int, updated_at: str, build_system: str,
+                 msg_time: float, optimizations: list[int],
+                 mod_timestamp: float | None = None):
         super().__init__()
-        self.name = uncloned_repo.name
-        self.url = repo_url
-        self.task_id = task.id
-        self.opt_id = build_opt.id
-        self.commit_hexsha = task.commit_hexsha or None
-        self.repo_id = uncloned_repo.id
-        self.updated_at = uncloned_repo.updated_at.strftime("%m/%d/%Y, %H:%M:%S")
-        self.build_system = uncloned_repo.build_system
-        self.msg_time = time.time()
-        self.optimizations = ["None", "Low", "Medium", "High"] # Build will iterate over rough translation. eventually can make it dynamic
-        if reproduce_mode:
-            self.mod_timestamp = task.mod_timestamp
+        self.name = name
+        self.url = url
+        self.task_id = task_id
+        self.opt_id = opt_id
+        self.commit_hexsha = commit_hexsha
+        self.repo_id = repo_id
+        self.updated_at = updated_at
+        self.build_system = build_system
+        self.msg_time = msg_time
+        self.optimizations = optimizations
+        if mod_timestamp is not None:
+            self.mod_timestamp = mod_timestamp

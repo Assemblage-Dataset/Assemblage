@@ -18,7 +18,7 @@ from assemblage.data.db import DBManager
 from collections import Counter
 from assemblage.consts import (AWS_AUTO_REBOOT_PREFIX, COORDINATOR_DATABASE_SYNC_TIMEOUT,
                                BIN_DIR, CLEAN_OVERTIME_INTERVAL, WORKER_TIMEOUT_THRESHOLD, BuildStatus,
-                               REPO_SIZE_THRESHOLD, CloneStatus, InputQueue, OutputQueue,
+                               REPO_SIZE_THRESHOLD, CloneStatus, InputQueue, OptLevel, OutputQueue,
                                DISPATCH_INTERVAL, IDLE_DISPATCH_INTERVAL, AWS_REBOOT_SLEEP_INTERVAL
                                )
 
@@ -97,24 +97,22 @@ class Coordinator:
         # list of dispatched job threads
         self.t_dispatch_map: dict[int, threading.Thread] = {}
 
-
         if settings.s3_enabled:
             # settings.validate_s3()
-            self.s3_client = S3Client(host=settings.S3_HOST,port=settings.S3_PORT, access_key=settings.S3_ACCESS_KEY,
-                                    secret_access_key=settings.S3_SECRET_ACCESS_KEY, https=settings.S3_HTTPS, region_name=settings.S3_REGION)
-            # coordindator creates but then only needs read only ( unless used to delete ) - leave for now.  
+            self.s3_client = S3Client(host=settings.S3_HOST, port=settings.S3_PORT, access_key=settings.S3_ACCESS_KEY,
+                                      secret_access_key=settings.S3_SECRET_ACCESS_KEY, https=settings.S3_HTTPS, region_name=settings.S3_REGION)
+            # coordindator creates but then only needs read only ( unless used to delete ) - leave for now.
             # stores cloned projects
             self.ProjectBucket = S3Bucket(self.s3_client, "project-archive")
             # store build artifacts
             self.ArtifactBucket = S3Bucket(self.s3_client, "artifacts")
-        else: 
+        else:
             self.s3_client = None
             self.ProjectBucket = None
             self.ArtifactBucket = None
 
     def __str__(self):
         return f'Coordinator-{self.cluster_name}'
-
 
     def _create_buildopt_exchange(self):
 
@@ -181,15 +179,26 @@ class Coordinator:
                 # correction. later. would be good to replace this with the projectid from scrapes
                 # only once the build and clone is fully fixed and reliable
 
-                clone_req = BuildCloneReq(uncloned_repo, repo_url, task, build_opt, reproduce_mode=self.reproduce_mode)
-
-                if self.reproduce_mode:
-                    clone_req["mod_timestamp"] = task.mod_timestamp
+                clone_req = BuildCloneReq(
+                    name=uncloned_repo.name,
+                    url=repo_url,
+                    task_id=task.id,
+                    opt_id=build_opt.id,
+                    commit_hexsha=task.commit_hexsha or None,
+                    repo_id=uncloned_repo.id,
+                    updated_at=uncloned_repo.updated_at.strftime(
+                        "%m/%d/%Y, %H:%M:%S"),
+                    build_system=uncloned_repo.build_system,
+                    msg_time=time.time(),
+                    optimizations=[level.value for level in OptLevel],
+                    mod_timestamp=task.mod_timestamp if self.reproduce_mode else None,                    
+                )
 
                 # Publish this task, to be picked up by a worker with the appropriate build option settings
-                
-                conn.publish_to_exchange("build_opt", routing_key=f"builder.opt.{build_opt.id}", body=clone_req.to_json())
-            
+
+                conn.publish_to_exchange(
+                    "build_opt", routing_key=f"builder.opt.{build_opt.id}", body=clone_req.to_json())
+
                 # log progress
                 if task_count % 10 == 0:
                     logger.info('Placed %sth task on build option %d in %ss', task_count,

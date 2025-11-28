@@ -118,3 +118,6 @@ class BuilderSettings(AssemblageSettings, S3Settings):
     compiler: str
     language: str
     build_mode: str = Field(default="Release", env="BUILD_MODE")
+    # how long to wait in minutes for the build option id from coordinator before exiting (If none, then will wait forever)
+    WAIT_FOR_BUILD_OPT: int | None 
+    CONFIG_CHECK_INTERVAL: int = 5 # time in seconds to poll coordinator for build options ( defaults to 5 seconds)
