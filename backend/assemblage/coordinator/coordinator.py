@@ -354,7 +354,7 @@ class Coordinator:
         self.db_man.insert_binary(
             file_name=recv_msg['file_name'],
             description='',
-            status_id=recv_msg['task_id']
+            status_id=recv_msg['task_id'], 
         )
         ch.basic_ack(delivery_tag=method.delivery_tag)
 

@@ -77,7 +77,6 @@ class BuildDO(SQLModel, table=True):
         default=datetime.datetime.now(datetime.timezone.utc))
     disassembled: bool = False
     optimization: OptLevel = OptLevel.NONE
-
     status_id: int = Field( foreign_key="b_status.id")  # cascade
     status: Status | None = Relationship(back_populates="binaries")
 
