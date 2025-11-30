@@ -467,6 +467,7 @@ class Builder(BasicWorker):
         """ Store binaries locally or on S3, and notify coordinator. """
         logger.debug(f"Saving binaries of Repo: {task.url}")
 
+
         self.build_strategy.own_dir(os.path.dirname(target_dir))
 
         bin_found = {
@@ -497,7 +498,7 @@ class Builder(BasicWorker):
                 if self.ArtifactBucket.upload_file(fpath, s3_key):
                     logger.debug(f"Uploaded {fpath} -> {s3_key}")
             else:
-                dest_file = os.path.join(dest_base_full, base_name)
+                dest_file = os.path.join(dest_base_full, optimization, base_name)
                 shutil.copy2(fpath, dest_file)
                 try:
                     os.remove(fpath)
@@ -514,7 +515,8 @@ class Builder(BasicWorker):
                         file_name=fpath if self.s3_client else dest_file,
                         optimization=optimization.value)
 
-        self.build_strategy.own_dir(dest_base_full)
+        if not self.s3_client:
+            self.build_strategy.own_dir(dest_base_full)
         return dest_base_full
 
     def send_msg(self, kind: InputQueue, task, **kwarg):
