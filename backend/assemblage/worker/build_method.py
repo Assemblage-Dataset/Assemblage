@@ -54,11 +54,6 @@ class BuildStrategy:
         self.mark_dir_as_safe(base_path)  # remove once other things fixed
 
 
-    def convert_opt_level(self, level)->str:
-        '''
-        Convert an optimization level to a opt flag ( is a rough translation)
-        '''
-        pass
 
     def cmd_with_output(self, cmd: str, timelimit=60, cwd=''):
         """
@@ -315,23 +310,6 @@ class LinuxBuildStrategy(BuildStrategy):
 
         return None
 
-    def convert_opt_level(self, level)->str:
-        '''
-        Convert an optimization level to a opt flag ( is a rough translation) for gcc/clang
-        '''
-        match level:
-            case OptLevel.NONE:
-                return "-O0"
-            case OptLevel.LOW:
-                return "-O1"
-            case OptLevel.MEDIUM:
-                return "-O2"
-            case OptLevel.HIGH:
-                return "-O3"
-            case _:
-                raise ValueError(f"Unsupported optimization level: {level}")
-            
-
 
     def own_dir(self, dir: str):
         # # see above for how i feel about this
@@ -368,14 +346,28 @@ class LinuxBuildStrategy(BuildStrategy):
 
         build_tool = get_build_system(files)
         cmd = ""
+        opt_level: str
+        match optimization:
+           
+            case OptLevel.LOW:
+                opt_level= "-O1"
+            case OptLevel.MEDIUM:
+                opt_level="-O2"
+            case OptLevel.HIGH:
+                opt_level="-O3"
+            case _: 
+                opt_level= "-O0" # default. none
+
+
 
         if self.save_assembly:
-            cflags = '$CFLAGS -save-temps=obj'
-            cxxflags = '$CXXFLAGS -save-temps=obj'
+            cflags = f'$CFLAGS -save-temps=obj {opt_level}'
+            cxxflags = f'$CXXFLAGS -save-temps=obj {opt_level}'
         else:
-            cflags = '$CFLAGS'
-            cxxflags = '$CXXFLAGS'
-
+            cflags = f'$CFLAGS {opt_level}'
+            cxxflags = f'$CXXFLAGS {opt_level}'
+    
+    
         extra_flags = f'CFLAGS="{cflags}" CXXFLAGS="{cxxflags}"'
         # ideally use LLM/ other to generate the command here based on the files
         if 'bootstrap' in build_tool:
@@ -426,21 +418,7 @@ class WindowsDefaultStrategy(BuildStrategy):
 
         return None
 
-    def convert_opt_level(self, level)->str:
-        '''
-        Convert an optimization level to a opt flag ( is a rough translation)
-        '''
-        match level:
-            case OptLevel.NONE:
-                return "/Od"
-            case OptLevel.LOW:
-                return "/O1"
-            case OptLevel.MEDIUM:
-                return "/O2"
-            case OptLevel.HIGH:
-                return "/Ox"
-            case _:
-                raise ValueError(f"Unsupported optimization level: {level}")
+
             
 
     def dia_list_binaries(self, dest_binfolder):
@@ -640,6 +618,23 @@ class WindowsDefaultStrategy(BuildStrategy):
         if self.compiler_version in ["v140", "v141"]:
             cmd.append(
                 f"/p:WindowsTargetPlatformVersion={self.compiler_version}")
+            
+        if build_mode == "Release": 
+            match optimization:
+                case OptLevel.NONE:
+                    cmd.append("/p:Optimization=Disable")
+                case OptLevel.LOW:
+                    cmd.append("/p:Optimize=true")
+                    cmd.append("/p:Optimization=MinSpace")
+                case OptLevel.MEDIUM:
+                    cmd.append("/p:Optimize=true")
+                    cmd.append("/p:Optimization=MaxSpeed")
+                case OptLevel.HIGH:
+                    cmd.append("/p:Optimize=true")
+                    cmd.append("/p:Optimization=Full")
+                case _:
+                    # otherwise do nothing
+                    pass     
         cmd.append("/maxcpucount:16")
         # cmd.append("/property:PostBuildEvent= ")
         # if target_dir:
