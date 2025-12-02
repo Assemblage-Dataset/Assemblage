@@ -106,7 +106,7 @@ class RepoDO(SQLModel, table=True):
     updated_at: datetime.datetime = Field(
         default=datetime.datetime(1970, 1, 1, 0, 0, 1))
     forked_commit_id: int = 0
-    branch: str = Field(max_length=16, default="main")
+    branch: str = Field(max_length=255, default="main")
     # priority high: 2, mid: 1, low 0. 
     priority: PriorityStatus = Field(default=PriorityStatus.LOW, index=True)
     size: int = 0
