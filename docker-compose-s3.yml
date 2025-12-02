@@ -51,6 +51,8 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+      minio: 
+        condition: service_healthy
     deploy:
       restart_policy:
         condition: on-failure
@@ -83,7 +85,6 @@ services:
         condition: on-failure
     volumes:
       - ./backend:/app 
-      - scraper-data:/binaries
   builder_0:
     image: assemblage-clang:default
     build:
@@ -105,26 +106,39 @@ services:
     depends_on:
       rabbitmq: 
         condition: service_healthy
+      minio: 
+        condition: service_healthy
     deploy:
       restart_policy:
         condition: on-failure
     volumes:
       - ./backend:/app 
-      - builder-data:/binaries
     mem_limit: 250g
 
+# self host s3 bucket 
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    healthcheck: 
+      test: ["CMD-SHELL", "curl -l -f http://127.0.0.1:9001/minio/healthcheck/live || exit 1"]
+      interval: 10s
+      start_period: 5s
+    ports:
+      - "9000:9000"      # API port
+      - "9001:9001"      # Console port
+    env_file:
+      - secrets.env
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    restart: unless-stopped
+  
 
 volumes:
-  builder-data:
-    driver: local
-    driver_opts:
-        type: none
-        o: bind
-        device: ${PWD}/binaries
-  scraper-data:
-    driver: local
   db-data:
     driver: local
   rabbitmq-data:
+    driver: local
+  minio_data:
     driver: local
 
