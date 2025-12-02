@@ -369,7 +369,7 @@ class Builder(BasicWorker):
             # this is currently only needed for windows, but linux just reutrns none too, so it wont break
             # seems cleaner to do it like this , instead of doing if statements here
             
-            
+            all_builds_saved = True 
             for opt in task.optimizations:
                 self.send_msg(task=task,
                           kind=InputQueue.BUILD,
@@ -408,20 +408,31 @@ class Builder(BasicWorker):
                 logger.debug(f"Build message: {build_msg}")
 
                 if build_status == BuildStatus.SUCCESS:
-                    # do something with dest bin_folder
-                    dest_binfolder = self.save_binaries(
-                        clone_dir, task, original_files=original_files, commit_hexsha=commit_hexsha, optimization=optimization)
+                    dest_binfolder, saved_successfully = self.save_binaries(
+                        clone_dir, task,
+                        original_files=original_files,
+                        commit_hexsha=commit_hexsha,
+                        optimization=optimization
+                    )
+
+                    if not saved_successfully:
+                        all_builds_saved = False
+
                     logger.info(f"Binaries saved to {dest_binfolder}")
+                else:
+                    all_builds_saved = False   # Build itself failed
+
                 self.send_msg(task=task,
                             kind=InputQueue.BUILD,
-                            url=task.url,  # can we send id + commit
+                            url=task.url,
                             status=build_status,
                             msg="Build Process Finished",
                             commit_hexsha=commit_hexsha,
                             build_time=(after_build_time - before_build_time),
-                            optimization=optimization.value # just send as value 
+                            optimization=optimization.value
                             )
-            if self.s3_client:
+                
+            if self.s3_client and all_builds_saved:
                 self._clean_folder(os.path.dirname(clone_dir)) # dirname needed to also remove parent folder with username
             
                 
@@ -487,7 +498,7 @@ class Builder(BasicWorker):
         else:
             dest_base_full = os.path.join(BINPATH, "successes", username, project, commit_hexsha)
             os.makedirs(dest_base_full, exist_ok=True)
-  
+        all_saved = True 
         for fpath in bin_found:
             base_name = os.path.basename(fpath)
             if self.platform == "windows":
@@ -497,6 +508,9 @@ class Builder(BasicWorker):
                 s3_key = f"{dest_base}/{self.build_strategy.compiler}/{optimization}/{base_name}"
                 if self.ArtifactBucket.upload_file(fpath, s3_key):
                     logger.debug(f"Uploaded {fpath} -> {s3_key}")
+                else: 
+                    all_saved = False
+                    logger.warning(f"Failed to upload {fpath} -> {s3_key}")
             else:
                 dest_file = os.path.join(dest_base_full, optimization, base_name)
                 shutil.copy2(fpath, dest_file)
@@ -509,6 +523,7 @@ class Builder(BasicWorker):
                         os.chmod(dest_file, NON_EXE_MODE)
                     except Exception:
                         logger.warning(f"Failed to change permissions on {dest_file}")
+                        all_saved = False
 
             self.send_msg(kind=InputQueue.BINARY,
                         task=task,
@@ -517,7 +532,7 @@ class Builder(BasicWorker):
 
         if not self.s3_client:
             self.build_strategy.own_dir(dest_base_full)
-        return dest_base_full
+        return dest_base_full, all_saved
 
     def send_msg(self, kind: InputQueue, task, **kwarg):
         '''
