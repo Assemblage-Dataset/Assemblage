@@ -64,6 +64,12 @@ class ScraperSettings(AssemblageSettings):
     """
 
     git_token: str = Field(os.getenv("GITHUB_TOKEN"))
+    # note: must provide GITHUB_TOKEN even if alternative tokens are provided
+    alternative_git_tokens: list[str] | None = None 
+    # alternative_git_tokens: list[str] | None = Field (
+    #     [ os.getenv("BACKUP_TOKEN_1") ]
+    # )
+
     interval: int = Field(os.getenv("SCRAPE_INTERVAL", 14400)) # default is 4 hours
 
     # The below start and end times are overwritten by coordinator -- see recv_scraper_reg
@@ -77,6 +83,11 @@ class ScraperSettings(AssemblageSettings):
     # if true, scrapers don't start scraping until they've received config from coordinator
     # If false, all scrapers will go with the defaults determined above
     # Should probably remain true unless you want to disable the coordinator sending start time for some reason
+    
+    qualifiers: set[str] = {
+                "language:c++"
+            }
+    proxies: list[str] = []
 
     source: ScrapeSource = Field(os.getenv("SCRAPE_DATASOURCE", default=ScrapeSource.GITHUB))
 

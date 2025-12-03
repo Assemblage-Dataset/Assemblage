@@ -100,7 +100,8 @@ class GithubRepositories(DataSource):
 
     # TODO: crawl_time_interval can be replaced with const
     def __init__(self, parent_id: int, git_token: str, qualifiers: set, crawl_time_start: int, crawl_time_end: int, crawl_time_interval: int,
-                 proxies: list, sort=GithubTimeOrder.CREATED, build_sys_callback=get_build_system) -> None:
+                 proxies: list, sort=GithubTimeOrder.CREATED, build_sys_callback=get_build_system, 
+                 alternate_git_tokens : list[str] | None = None) -> None:
         super().__init__(build_sys_callback)
 
         # allows the logger to note that this data generator belongs to the parent crawler
@@ -108,6 +109,9 @@ class GithubRepositories(DataSource):
 
         # github authentication configuration
         self.set_token(git_token)
+
+        # configure cycling tokens + proxies
+        self.configure_token_cycling(alternate_git_tokens)
         self.proxies = proxies
         if "" not in self.proxies:
             self.proxies.append("")
@@ -253,6 +257,7 @@ class GithubRepositories(DataSource):
             # Once all pages are exhausted, move the crawl time earlier
             crawl_time -= self.crawl_time_interval
             crawl_time = int(crawl_time)
+            # TODO send update to coordinator
         logger.info("scraping finished!")
 
     def get_request(self, query: str, payload: set = None, headers="default", proxy: str = "random"):
@@ -312,8 +317,14 @@ class GithubRepositories(DataSource):
                 if "secondary" in rdict["message"]:
                     logger.warning(
                         "Secondary rate limit hit -- this indicates that GitHub has identified unusual scraper activity. Scraping should be paused.")
-                    self.sleep_and_update(
-                        SECONDARY_RATE_LIMIT_WAIT, reason="Secondary rate limit reached")
+                    
+                    if self.do_cycle_tokens:
+                        self.set_token_timeout(rate_limit_reset_time)
+                        success = self.cycle_token()
+
+                    if not self.do_cycle_tokens or not success:
+                        self.sleep_and_update(
+                            SECONDARY_RATE_LIMIT_WAIT, reason="Secondary rate limit reached")
 
             if "Bad credentials" in rdict["message"]:
                 logger.warning(
@@ -325,9 +336,13 @@ class GithubRepositories(DataSource):
         # Check rate limits, handle according to https://docs.github.com/en/rest/using-the-rest-api/
         if remaining_rate_limit == 0:
             time_to_reset = rate_limit_reset_time - float(time.time()) + 1
-            logger.info("Rate limit (%s) reached. Crawler %s will sleep for %ss. ",
-                        total_rate_limit, self.parent_workerid, round(time_to_reset, 2))
-            self.sleep_and_update(time_to_reset, reason="Rate limit reached")
+            if self.do_cycle_tokens:
+                self.set_token_timeout(rate_limit_reset_time)
+                success = self.cycle_token()
+            if not self.do_cycle_tokens or not success:
+                logger.info("Rate limit (%s) reached. Crawler %s will sleep for %ss. ",
+                            total_rate_limit, self.parent_workerid, round(time_to_reset, 2))
+                self.sleep_and_update(time_to_reset, reason="Rate limit reached")
             # TODO: swap tokens or proxies?
             # retry after timeout
             if not r.ok:
@@ -391,6 +406,44 @@ class GithubRepositories(DataSource):
             }
         # self.token_checker = TokenChecker(self.auth_headers)
 
+    def set_token_timeout(self, timeout):
+        for t in range(len(self.alternate_tokens)):
+            if (self.alternate_tokens[t]["token"] == self.token):
+                self.alternate_tokens[t]["timeout"] = timeout
+
+    def cycle_token(self):
+        ''' 
+        Set the token to another one in self.alternate_tokens (i.e. if the current token has hit rate limit) 
+        Currently doesn't try to balance load or anything nice like that: instead favors tokens first in the list
+        '''
+
+        for t in range(len(self.alternate_tokens)):
+            if ( self.alternate_tokens[t]["timeout"] == 0 or self.alternate_tokens[t]["timeout"] <= int(time.time()) ):
+                self.set_token(self.alternate_tokens[t]["token"])
+                logger.info(f"Cycling token to provided token {t}")
+                return 1
+            
+        logger.info("Problem with switching tokens: no non timed out token found. ")
+        return 0
+        
+
+    def configure_token_cycling(self, alternate_git_tokens):
+        ''' configure token cycling'''
+
+        self.do_cycle_tokens = (alternate_git_tokens is not None and len(alternate_git_tokens) > 0)
+        if self.do_cycle_tokens:
+
+            self.alternate_tokens = []
+
+            if self.token is not None:
+                self.alternate_tokens.append({"token":self.token, "timeout":0})
+            for t in alternate_git_tokens:
+                self.alternate_tokens.append({"token":t, "timeout":0})
+
+        else:
+            
+            self.alternate_tokens = [self.token]
+
 
 class Scraper(BasicWorker):
     '''
@@ -412,13 +465,12 @@ class Scraper(BasicWorker):
         self.data_source = GithubRepositories(
             workerid,
             git_token=settings.git_token,
-            qualifiers={
-                "language:c++"
-            },   # TODO extract somewhere
+            alternate_git_tokens=settings.alternative_git_tokens,
+            qualifiers=settings.qualifiers,
             crawl_time_start=settings.default_start_time,
             crawl_time_end=settings.default_end_time,
             crawl_time_interval=settings.interval,
-            proxies=[]  # TODO extract somewhere
+            proxies=settings.proxies
         )
         self.data_source.parent_workerid = workerid
 
