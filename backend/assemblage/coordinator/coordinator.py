@@ -20,13 +20,15 @@ from assemblage.data.db import DBManager
 from collections import Counter
 from assemblage.consts import (AWS_AUTO_REBOOT_PREFIX, COORDINATOR_DATABASE_SYNC_TIMEOUT,
                                BIN_DIR, CLEAN_OVERTIME_INTERVAL, WORKER_TIMEOUT_THRESHOLD, BuildStatus,
-                               REPO_SIZE_THRESHOLD, CloneStatus, InputQueue, OutputQueue,
-                               DISPATCH_INTERVAL, IDLE_DISPATCH_INTERVAL, AWS_REBOOT_SLEEP_INTERVAL
+                               REPO_SIZE_THRESHOLD, CloneStatus, InputQueue, OutputQueue, ScraperMsgType, ScraperOutputPolicy,
+                               DISPATCH_INTERVAL, IDLE_DISPATCH_INTERVAL, AWS_REBOOT_SLEEP_INTERVAL,
+                               COORDINATOR_REPO_REQUEST_THRESHOLD
                                )
 
 from assemblage.config import CoordinatorSettings
 from assemblage.mq.messages import (
-    BuilderRegIn, BuilderRegOut, ScraperDataOutBundle, BuilderTaskOut, CloneStatusMsgIn, BuildStatusMsgIn, BinaryTaskMsgIn
+    BuilderRegIn, BuilderRegOut, ScraperDataOutBundle, BuilderTaskOut, CloneStatusMsgIn, BuildStatusMsgIn, BinaryTaskMsgIn,
+    ScraperControlTaskOut, ScraperControlTaskIn
     )
 from assemblage.mq.client import MQQueue, MessageClient, Connection
 
@@ -125,6 +127,7 @@ class Coordinator:
             
             self._dispatch_queue = MQQueue( name= f'builder.opt.{build_opt_id}', exchange_name='build_opt', routing_key=f'builder.opt.{build_opt_id}')
             conn: Connection = self.mq_client.get_connection(conn_name=f'{self}-build-opt')
+            control_conn: Connection = self.mq_client.create_connection(conn_name=f'{self}-scraper-ctrl', channel_name=f'{self}-scraper-ctrl')
             
             num_tasks = self.db_man.get_tasks_to_dispatch_on_opt(build_opt_id)
             
@@ -137,7 +140,7 @@ class Coordinator:
         while True:
             try:
                 task_count += self._dispatch_to_builder(
-                    build_opt_id, conn, sleep, task_count
+                    build_opt_id, conn, control_conn, sleep, task_count
                 )
             except Exception as e:
                 logger.error(f"Dispatch Err:  {e}")
@@ -150,23 +153,42 @@ class Coordinator:
 
     def _dispatch_to_builder( self, build_opt_id, 
             conn : Connection, 
+            control_conn: Connection,
             sleep : bool, task_count : int ):
         '''
-            Look for and, if present, dispatch unstarted tasks from database to the 
-            appropriate build option channel.
+            Look for and, if present, dispatch unstarted tasks from database to this 
+            thread's build option channel. If no tasks are present to be dispatched,
+            check if more repositories need to be requested. 
             build_opt_id: the build option of the worker(s) this thread sends to
             conn: the connection used for publishes
+            control_conn: the connection used for requesting bundles from the scraper
             sleep: whether this process should sleep a bit between dispatches
             task_count: for keeping track of this thread's total dispatches
         '''
+
+        # TODO the queue name here should be linked more permanently to the builder's input queue
+        builder_receive_queue = MQQueue(f"build_opt_{build_opt_id}", routing_key=f'builder.opt.{build_opt_id}')
+        messages_on_buildopt = conn.get_queue(builder_receive_queue).method.message_count
+
         # find an unstarted task
-        time_before_query = time.time()
         build_message = self.db_man.get_dispatch_task(build_opt_id, self.reproduce_mode)
-        time_after_query = time.time()
-        if build_message is None:
-            logger.info(
-                "Dispatch thread on build option %s idle", build_opt_id)
-            time.sleep(IDLE_DISPATCH_INTERVAL)
+
+        # rabbitmq performance allegedly is much better with shorter queues. 
+        # so only enqueue messages when necessary
+        if messages_on_buildopt > COORDINATOR_REPO_REQUEST_THRESHOLD:
+            time.sleep(DISPATCH_INTERVAL)
+            return 0
+        
+        if build_message is None:  # no more scraped repos to dispatch. determine whether to idle or request repos
+
+            # if there are not many messages waiting to be consumed, request more repos
+            if messages_on_buildopt <= COORDINATOR_REPO_REQUEST_THRESHOLD:
+                logger.info(f"Dispatch thread on build option {build_opt_id} requesting more repos from any scraper...")
+                self._request_repos(control_conn)
+                time.sleep(1) # long enough to process the request, hopefully w/o too much spam, w/o bottlenecking other processes
+            else:
+                logger.info( f"Dispatch thread on build option {build_opt_id} idling ({messages_on_buildopt} tasks waiting to be built)" )
+                time.sleep(IDLE_DISPATCH_INTERVAL)
             return 0
         
         else:
@@ -180,15 +202,30 @@ class Coordinator:
 
             # log progress
             if task_count % 10 == 0:
-                logger.info('Placed %sth task on build option %d in %ss', task_count,
-                            build_opt_id, str(time_after_query - time_before_query)[:5])
+                logger.info(f'Placed {task_count}th task on build option build_opt_id')
 
             # sleep
             if sleep:
                 time.sleep(DISPATCH_INTERVAL)
             
             return 1
+        
 
+    def _request_repos(self, control_conn: Connection):
+            '''
+                Signals to any available scraper that the coordinator has run out of repositories to dispatch.
+                If all scrapers use the on_request policy, this function must be called in order to receive repos.
+                Otherwise it's not necessary to ensure that it's called.
+            '''
+        
+            msg = ScraperControlTaskOut(
+                message_type=ScraperMsgType.REQUEST_REPOS,
+                specific_recipient=False
+                )
+
+            queue = MQQueue(OutputQueue.SCRAPER_CTRL)
+
+            control_conn.send_msg( queue=queue, msg=msg.to_json(), exchange="" )
 
     # TODO: Possibly this runs occasionally at very long time scales, but I think this is a candidate for cutting
     # Appears to be a helper method for the old DB system
@@ -233,6 +270,8 @@ class Coordinator:
                 callback = self.recv_binary
             case InputQueue.BUILD_REG:
                 callback = self.recv_builder_registration
+            case InputQueue.SCRAPER_REG:
+                callback = self.recv_scraper_reg
             case _:
                 logger.error(
                     f"Error: queue type '%s' is not defined in __consume_from_queue", queue)
@@ -299,9 +338,9 @@ class Coordinator:
     # The callback, according to Pika's requirements, takes four arguments: the channel that the message was received on,
     # delivery metadata, properties, and the message body.
 
-    def recv_scrape_info(self, ch: pika.channel.Channel, method: pika.spec.Basic.Deliver, _props: pika.BasicProperties, body):
+    def recv_scrape_info(self, ch: pika.channel.Channel, method: pika.spec.Basic.Deliver, props: pika.BasicProperties, body):
         ''' store scraped message to database page by page '''
-        logger.info("Crawled msg received")
+        #logger.info("Crawled msg received")
         ch.basic_ack(delivery_tag=method.delivery_tag)
         start_time = time.time()
         successes = 0
@@ -313,8 +352,11 @@ class Coordinator:
             successes += result
         if result == 0:
             logger.info(f"{bundle.repos[0].url} inserted err")
-        logger.info(f"Build system counter {Counter(x.build_system for x in bundle)}", )
-        logger.info(f"Saved {successes}/{len(bundle)} repos in {round(time.time()-start_time, 2)}s")
+
+
+        
+        #logger.info(f"Build system counter {Counter(x.build_system for x in bundle)}", )
+        logger.info(f"Received {len(bundle)} / saved {successes} repos in {round(time.time()-start_time, 2)}s")
 
     def recv_binary(self, ch, method, _props, body):
         """ collect binary metadata from worker"""
@@ -437,6 +479,39 @@ class Coordinator:
             self.t_dispatch_map[build_opt_id] = new_build_opt_t
             logger.info(f"Now running {alive_count+1} build opt threads")
 
+    def recv_scraper_reg(self, ch, method, props, body):
+        '''
+            When a scraper requests config (ie asks for start time) send it a start and end time from DB
+        '''
+        
+        request_msg: ScraperControlTaskIn = ScraperControlTaskIn.from_json(body)
+
+        if (request_msg.message_type == ScraperMsgType.SETUP):
+            logger.debug(f"Received scraper request for setup info, correlation id {props.correlation_id}")
+
+            # TODO: get data from db
+            starttime = int(time.time())
+
+            msg = ScraperControlTaskOut(
+                message_type=ScraperMsgType.SETUP,
+                start_time=starttime
+                )
+            
+
+            conn: Connection = self.mq_client.create_connection(conn_name=f'{self}-scraper-ctrl', channel_name=f'{self}-scraper-ctrl')
+            queue = MQQueue(OutputQueue.SCRAPER_CTRL)
+
+            conn.send_msg(queue=queue, msg=msg.to_json(),
+                      exchange="",
+                      reply_to=props.reply_to,
+                      corr_id=props.correlation_id
+            )
+
+            ch.basic_ack(delivery_tag=method.delivery_tag)
+
+            
+                
+
     def __daemon(self):
         while True:
             time.sleep(1)
@@ -492,6 +567,8 @@ class Coordinator:
             target=self.__consume_from_queue, args=(InputQueue.SCRAPE,))
         t_consume_build_reg = threading.Thread(
             target=self.__consume_from_queue, args=(InputQueue.BUILD_REG,))
+        t_consume_scraper_reg = threading.Thread(
+            target=self.__consume_from_queue, args=(InputQueue.SCRAPER_REG,))
 
         t_clean_task = threading.Thread(target=self.__clean_overtime)
         t_recycle_worker = threading.Thread(target=self.__recycle_clone)
@@ -509,6 +586,7 @@ class Coordinator:
         t_consume_binary.start()
         t_consume_scrape.start()
         t_consume_build_reg.start()
+        t_consume_scraper_reg.start()
         t_reboot_worker.start()
         t_daemon.start()
         logger.info("Threads joining")

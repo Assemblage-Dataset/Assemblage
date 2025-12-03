@@ -21,8 +21,7 @@ Mia Kerchen
 Alex Duly
 '''
 
-from abc import abstractclassmethod
-from enum import Enum
+from abc import abstractmethod
 import logging
 import os
 import time
@@ -38,23 +37,20 @@ from assemblage.mq.client import MQQueue, MessageClient, Connection
 # from assemblage.analyze.tokenchecker import TokenChecker
 from assemblage.analyze.analyze import get_build_system
 from assemblage.consts import (
-    SCRAPER_TIMESTAMP_RECORDFILE_PATH, SCRAPER_PAGE_SIZE,  DEBUG_SHOW_ALL_MESSAGES_SCRAPER,
+    SCRAPER_PAGE_SIZE,  DEBUG_SHOW_ALL_MESSAGES_SCRAPER,
     GITHUB_REPO_URL, SCRAPER_REQUEST_TIMEOUT_S, SCRAPER_REPO_BUNDLESIZE,
-    SCRAPER_RATE_INTERVAL, RATE_LIMIT_WAIT, SECONDARY_RATE_LIMIT_WAIT, RATE_LIMIT_UPDATE_INTERVAL, InputQueue,
-    ScrapeSource, GithubTimeOrder, WorkerType
+    SCRAPER_RATE_INTERVAL, RATE_LIMIT_WAIT, SECONDARY_RATE_LIMIT_WAIT, RATE_LIMIT_UPDATE_INTERVAL, InputQueue, OutputQueue,
+    ScrapeSource, GithubTimeOrder, WorkerType, ScraperMsgType, ScraperOutputPolicy
 )
-from assemblage.mq.messages import ScraperDataOutSingle, ScraperDataOutBundle
+from assemblage.mq.messages import ScraperDataOutSingle, ScraperDataOutBundle, ScraperControlTaskIn, ScraperControlTaskOut
 
 logger = logging.getLogger(__name__)
 
 
 '''
 possible TODO:
-* replace self.record_file with SCRAPER_TIMESTAMP_RECORDFILE_PATH everywhere? Or replace with db
-* set start crawltime to database info directly, instead of passing as a parameter
-* set crawl interval from a global const, instead of passing as a parameter
+* update crawl time from DB
 * balance scraper with other API request components to eliminate the SCRAPER_RATE_INTERVAL const
-* have rate limiting checks work directly from query data rather than estimating how many queries have been done
 * add support for multiple tokens
 '''
 
@@ -74,63 +70,23 @@ class DataSource(object):
 
     def __init__(self, build_sys_callback) -> None:
         self.build_sys_callback = build_sys_callback
-        self.record_file = SCRAPER_TIMESTAMP_RECORDFILE_PATH
 
-        # TODO: replace with checking that DB has the appropriate data
-        if not os.path.exists(self.record_file):
-            index = SCRAPER_TIMESTAMP_RECORDFILE_PATH.rfind("/")
-            # TODO: this is a VERY rough fix to ensure that binaries folder exists
-            os.makedirs(
-                SCRAPER_TIMESTAMP_RECORDFILE_PATH[:index], exist_ok=True)
-            with open(self.record_file, "w") as record_file:
-                now = int(time.time())
-                json.dump({"latest_crawled": now}, record_file, indent=4)
-                logger.info(
-                    "No saved scrape time data found at %s. Starting from (seconds since epoch) %s...", self.record_file, now)
-
-    @abstractclassmethod
+    @classmethod
+    @abstractmethod
     def fetch_data(self):
         """ fetch one repository from data source, return a (repository, files_in_repo) generator  """
 
-    @abstractclassmethod
+    @classmethod
+    @abstractmethod
     def data_filter(self, repo,  files):
         """ take a repo and files in repo, check if its valid or need to be discarded"""
         return True
 
-    @abstractclassmethod
+    @classmethod
+    @abstractmethod
     def get_request(self, query, payload=None, headers=None, proxy=None):
         '''Gets the requested query, handling rate limits as necessary.'''
 
-    # TODO: should this be moved into GitHubRepositories, or is this code shared across all data sources?
-    # NOTE: Currently unused.
-    def update_time_record(self, interval):
-        """ Updates SCRAPER_TIMESTAMP_RECORDFILE_PATH with how far back the scraper has looked on its data source (i.e. GitHub)"""
-        while os.path.exists(self.record_file+'.lock'):
-            time.sleep(0.25)
-            logger.debug(
-                "Scraper waiting for lock to be released (if there is only one scraper, this will never happen)")
-        f = open(self.record_file+'.lock', 'w')
-        f.close()
-
-        # try to open crawled.json: if this fails, create a new one and set its time to now
-        try:
-            with open(self.record_file, "r") as record_file:
-                crawled = json.load(record_file)
-                oldtime = int(crawled["latest_crawled"])
-        except:
-            logger.info(
-                "Scraper record file not found or incorrect format, resetting it to defaults...")
-            oldtime = int(time.time())
-
-        # Update the timestamp to search earlier (default is querylap, which is 4 hours)
-        newtime = oldtime - interval
-        with open(self.record_file, "w") as record_file:
-            json.dump({"latest_crawled": newtime}, record_file, indent=4)
-        try:
-            os.remove(self.record_file+'.lock')
-        except:
-            pass
-        return oldtime
 
     def __iter__(self):  # iterate over self data
         for r, fs in self.fetch_data():
@@ -443,8 +399,8 @@ class Scraper(BasicWorker):
 
     # def __init__(self, rabbitmq_port, rabbitmq_host, workerid, data_source: DataSource):
     def __init__(self, settings: ScraperSettings, workerid: int):
-        # TODO: refactor here make scraper connect to gRPC control port
-        logger.info("Booting crawler %s", workerid)
+        
+        logger.info("Booting scraper %s", workerid)
         super().__init__(settings.name, settings.mq_host,
                          settings.mq_port, worker_type=WorkerType.Scraper)
         if settings.source != ScrapeSource.GITHUB:
@@ -459,8 +415,8 @@ class Scraper(BasicWorker):
             qualifiers={
                 "language:c++"
             },   # TODO extract somewhere
-            crawl_time_start=settings.start_time,
-            crawl_time_end=settings.end_time,
+            crawl_time_start=settings.default_start_time,
+            crawl_time_end=settings.default_end_time,
             crawl_time_interval=settings.interval,
             proxies=[]  # TODO extract somewhere
         )
@@ -474,6 +430,12 @@ class Scraper(BasicWorker):
         self.total_repos_sent = 0
         self.scrape_queue = MQQueue( name=InputQueue.SCRAPE )  # should this be a class var?
 
+        self.ready = not settings.wait_for_config
+        self.policy = settings.default_policy
+        self.bundle_requested = False 
+        # set to True when a message is received from coordinator requesting a bundle, OR when SCRAPER_REPO_BUNDLESIZE repos are
+        # collected, depending on current policy
+
     def send_bundle(self):
         conn: Connection = self.mq_client.get_connection(f'{self}')
 
@@ -482,38 +444,139 @@ class Scraper(BasicWorker):
                                                                 channel_name=f'{self}')
             conn.create_channel()
 
+        if len(self.repocache) == 0:
+            logger.warning("Empty bundle requested")
+            return 0
         bundle = ScraperDataOutBundle(self.repocache)
         conn.send_msg(
-            self.scrape_queue, bundle.to_json())
+            queue=self.scrape_queue, 
+            msg=bundle.to_json(),
+            corr_id=self.uuid
+        )
         self.total_repos_sent += len(self.repocache)
         logger.info("Scraper %s bundled and sent %s repos to coordinator. Total repos sent by this scraper: %s",
                     self.workerid, len(self.repocache), self.total_repos_sent)
         self.repocache = []
         return 1  # does nothing but indicate successful execution for testing
 
+    def control_message_handler(self, ch, method, props, body):
+        '''
+            Handle setup and config changes sent from coordinator
+        '''
+        
+        msg = ScraperControlTaskOut.from_json(body)
+        if msg.specific_recipient and props.correlation_id != self.uuid:
+            ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
+            return
+        
+
+        if isinstance(self.data_source, GithubRepositories):
+            
+            self.handle_in_messages_github(ch, method, props, msg)
+
+        else:
+            logger.warning(f"Error: data source of type {type(self.data_source)} does not have defined behavior for responding to coordinator setup msg")
+
+    def handle_in_messages_github(self, ch, method, props, msg):
+        '''
+            Handles valid messages for scrapers with a GitHub data source
+        '''
+
+        
+        if msg.message_type in [ScraperMsgType.SETUP, ScraperMsgType.UPDATE] :
+            if msg.start_time != None:
+                self.data_source.crawl_time_start = msg.start_time
+            if msg.end_time != None:
+                self.data_source.crawl_time_end = msg.end_time
+            if msg.policy != None:
+                self.policy = msg.policy
+            debug_starttime = datetime.utcfromtimestamp(self.data_source.crawl_time_start).strftime('%Y-%m-%d')
+            debug_endtime = datetime.utcfromtimestamp(self.data_source.crawl_time_end).strftime('%Y-%m-%d')
+            self.ready = True
+            if msg.message_type == ScraperMsgType.SETUP and DEBUG_SHOW_ALL_MESSAGES_SCRAPER:
+                logger.debug(f"Configured scraper {self.workerid} to start scraping backward from {debug_endtime} to {debug_starttime} on policy '{self.policy}'")
+
+        elif msg.message_type == ScraperMsgType.REQUEST_REPOS:
+            # should we restrict this type of message to only being handled by scrapers with the on_request policy?
+            self.bundle_requested = True
+            if DEBUG_SHOW_ALL_MESSAGES_SCRAPER:
+                logger.info(f"Repo bundle request accepted by scraper {self.workerid}")
+            
+
+        ch.basic_ack(delivery_tag=method.delivery_tag)
+
+    def run_ctrl(self):
+        '''
+        Sends a message to the coordinator, signaling that it's ready to receive config info
+        Then it waits for a response and sets its variables accordingly.
+        '''
+        try:
+            
+            while True: 
+                
+                conn: Connection = self.mq_client.create_connection(conn_name=f'{self}-ctrl',
+                                                                    channel_name=f'{self}-ctrl')
+                conn.create_channel()
+
+                msg = ScraperControlTaskIn(ScraperMsgType.SETUP)
+                send_queue = MQQueue(InputQueue.SCRAPER_REG)
+                conn.send_msg(
+                    queue=send_queue, msg=msg.to_json(), corr_id=self.uuid
+                )
+                
+                self.mq_client.start_consumer(conn=conn, queue=self.control_queue_in, retry_delay=1)
+
+                logger.warning(f"Consume control on scraper {self.uuid} has finished.")
+
+                time.sleep(5)
+            
+        except Exception as e:
+            logger.error(f"Failed to create scraper control thread, exception: {e}")
+            
 
     def run_job(self):
-        '''Acquires repository information and sends it to coordinator on "scrape" queue until task completed
-           Scraper does not listen to instructions from coordindator for this, so do not need to use the handler
-           and consume
-           
-           Idea for both scraper ctrl and this. Have coordiantor send message also of when it wants to recieve repos it it has
-           
-
+        '''
+        Acquires repository information and sends it to coordinator on "scrape" queue until task completed
         '''
 
         try:
-            logger.info("Scraper %s start", self.workerid)
+            while (not self.ready):
+                time.sleep(0.1)
+                if not self.ready:
+                    logger.info(f"Scraper {self.workerid} waiting for config....")
+
+            logger.info(f"Scraper {self.workerid} started.")
 
             for repo in iter(self.data_source):
-                self.repocache.append(repo)
+                # continually collect repositories, sending when the SCRAPER_REPO_BUNDLESIZE has been satisfied
+                self.repocache.append(repo)  # don't put this in any if statements, to avoid losing repos
 
-                # once enough repositories have been collected, send a message to the coordinator
-                if len(self.repocache) >= SCRAPER_REPO_BUNDLESIZE:
-                    self.send_bundle()
+                if self.policy == ScraperOutputPolicy.CONTINUOUS:
+                    if len(self.repocache) >= SCRAPER_REPO_BUNDLESIZE:
+                        self.send_bundle()
+
+                # continually collect repositories up to SCRAPER_REPO_BUNDLESIZE, then sleep until bundle requested
+                elif self.policy == ScraperOutputPolicy.ON_REQUEST:
+
+                    # If repositories have been collected and were requested, send them
+                    if self.bundle_requested and len(self.repocache) > 0:
+                        self.send_bundle()
+                        self.bundle_requested = False
                     
+                    elif len(self.repocache) >= SCRAPER_REPO_BUNDLESIZE: 
+
+                        if len(self.repocache) == SCRAPER_REPO_BUNDLESIZE:
+                            logger.info(f"Scraper {self.workerid} has collected max number of repos ({SCRAPER_REPO_BUNDLESIZE}). Sleeping until request to send is received from coordinator.")
+
+                        while len(self.repocache) >= SCRAPER_REPO_BUNDLESIZE:
+                            # wait until another request is received
+                            time.sleep(0.1)
+                            
+                            if self.bundle_requested:
+                                self.send_bundle()
+                                self.bundle_requested = False
+                
             logger.info("Crawler %s End Task", self.workerid)
             # deletes the last crawled time at conclusion of task
-            os.remove(self.record_file)
         except Exception as e:
             logger.error(f"Failed to Launch Scraper {self} - {e}")
