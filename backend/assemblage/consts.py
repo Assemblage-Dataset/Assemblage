@@ -184,3 +184,37 @@ class OptLevel(Enum):
     HIGH = 3
     def __str__(self):
         return f"opt_{self.name}"
+    
+    def to_optimization_mode_win_size_space(self):
+        match self:
+            case OptLevel.LOW:
+                return "Size"     # /Os
+            case OptLevel.MEDIUM:
+                return "Speed"    # /Ot
+            case OptLevel.HIGH:
+                return "Speed"
+            case _:
+                return ""
+
+    
+    def to_optimization_mode_win(self):
+        match self:
+            case OptLevel.LOW:
+                return "MinSpace"
+            case OptLevel.MEDIUM:
+                return "MaxSpeed"
+            case OptLevel.HIGH:
+                return "Full"
+            case _:
+                return ""
+    
+    def to_optimization_mode_linux(self):
+        match self:   
+            case OptLevel.LOW:
+                return "-O1"
+            case OptLevel.MEDIUM:
+                return "-O2"
+            case OptLevel.HIGH:
+                return "-O3"
+            case _: 
+               return"-O0" # default. none

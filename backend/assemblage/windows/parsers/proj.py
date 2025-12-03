@@ -4,6 +4,8 @@ import xml.etree.ElementTree as ET
 import re
 import string
 
+from ...consts import OptLevel
+
 __all__ = ['Project', 'parse']
 
 _MS_BUILD_NAMESPACE = "http://schemas.microsoft.com/developer/msbuild/2003"
@@ -279,15 +281,21 @@ class Project(object):
                          platform="All Configurations",
                          configuration="All Configurations"):
         optimization_mode = ""
-        if "O2" in optimization:
-            optimization_mode = "MaxSpeed"
-        elif "O1" in optimization:
-            optimization_mode = "MinSpace"
-        elif "Ox" in optimization:
-            optimization_mode = "Full"
-            self.set_whole_program_optimization("true")
-        else:
-            optimization_mode = ""
+        match optimization:
+            case OptLevel.NONE:
+                optimization_mode = ""
+            case OptLevel.LOW:
+                optimization_mode = "MinSpace"
+
+            case OptLevel.MEDIUM:
+                optimization_mode = "MaxSpeed"
+
+            case OptLevel.HIGH:
+                optimization_mode = "Full"
+                self.set_whole_program_optimization("true")
+            case _:
+                optimization_mode = ""
+        
         item_name = "ClCompile"
         label = "Optimization"
         property_groups = self.xml.findall("./{" + _MS_BUILD_NAMESPACE +
@@ -325,12 +333,16 @@ class Project(object):
                              platform="All Configurations",
                              configuration="All Configurations"):
         optimization_mode = ""
-        if "Ot" in optimization:
-            optimization_mode = "Speed"
-        elif "Os" in optimization:
-            optimization_mode = "Size"
-        else:
-            optimization_mode = ""
+        match optimization:
+            case OptLevel.LOW:
+                optimization_mode = "Size"     # /Os
+            case OptLevel.MEDIUM:
+                optimization_mode = "Speed"    # /Ot
+            case OptLevel.HIGH:
+                optimization_mode = "Speed"
+            case _:
+                optimization_mode = ""
+
         item_name = "ClCompile"
         label = "FavorSizeOrSpeed"
         property_groups = self.xml.findall("./{" + _MS_BUILD_NAMESPACE +

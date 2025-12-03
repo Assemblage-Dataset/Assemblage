@@ -476,15 +476,19 @@ class WindowsDefaultStrategy(BuildStrategy):
 
                 projobj.write()
                 projobj_saved = Project(projfile)
+                # not sure what this is about ...
                 optimization_mode = ""
-                if "O2" in optimization:
-                    optimization_mode = "MaxSpeed"
-                elif "O1" in optimization:
-                    optimization_mode = "MinSpace"
-                elif "Ox" in optimization:
-                    optimization_mode = "Full"
-                else:
-                    optimization_mode = "Disabled"
+                match optimization:
+                    case OptLevel.NONE:
+                        optimization_mode = ""
+                    case OptLevel.LOW:
+                        optimization_mode = "MinSpace"
+                    case OptLevel.MEDIUM:
+                        optimization_mode = "MaxSpeed"
+                    case OptLevel.HIGH:
+                        optimization_mode = "Full"
+                    case _:
+                        optimization_mode = ""
                 logger.info("Read config: %s, correct: %s",
                             projobj_saved.get_optimization(), optimization_mode)
                 assert optimization_mode == projobj_saved.get_optimization()
@@ -618,23 +622,7 @@ class WindowsDefaultStrategy(BuildStrategy):
         if self.compiler_version in ["v140", "v141"]:
             cmd.append(
                 f"/p:WindowsTargetPlatformVersion={self.compiler_version}")
-            
-        if build_mode == "Release": 
-            match optimization:
-                case OptLevel.NONE:
-                    cmd.append("/p:Optimization=Disable")
-                case OptLevel.LOW:
-                    cmd.append("/p:Optimize=true")
-                    cmd.append("/p:Optimization=MinSpace")
-                case OptLevel.MEDIUM:
-                    cmd.append("/p:Optimize=true")
-                    cmd.append("/p:Optimization=MaxSpeed")
-                case OptLevel.HIGH:
-                    cmd.append("/p:Optimize=true")
-                    cmd.append("/p:Optimization=Full")
-                case _:
-                    # otherwise do nothing
-                    pass     
+        
         cmd.append("/maxcpucount:16")
         # cmd.append("/property:PostBuildEvent= ")
         # if target_dir:
@@ -696,10 +684,10 @@ class WindowsDefaultStrategy(BuildStrategy):
             json_di["Platform"] = self.library
             json_di["Build_mode"] = build_mode
             json_di["Toolset_version"] = toolset
-            json_di["URL"] = repoinfo["url"]
+            json_di["URL"] = repoinfo.url
             json_di["Binary_info_list"] = outer_list
-            json_di["Optimization"] = optimization
-            json_di["Pushed_at"] = repoinfo["updated_at"]
+            json_di["Optimization"] = optimization.name
+            json_di["Pushed_at"] = repoinfo.updated_at
             json_di["commit_sha"] = commit_hexsha
             # fix this
             with open(os.path.join(dest_binfolder, PDBJSONNAME), "w") as outfile:
