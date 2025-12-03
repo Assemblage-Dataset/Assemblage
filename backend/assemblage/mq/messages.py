@@ -2,7 +2,7 @@ import json
 import platform
 import logging
 
-from assemblage.consts import CloneStatus, BuildStatus
+from assemblage.consts import CloneStatus, BuildStatus, ScraperMsgType, ScraperOutputPolicy
 
 class MQMsg:
     def __init__(self):
@@ -120,9 +120,10 @@ class ScraperDataOutBundle(MQMsg):
     '''
         Represents an array of ScraperDataOutSingle (as dicts). Sent from scraper to coordinator
     '''
-    def __init__(self, repo_array=[]): # type of repo_array should be ScraperDataOutSingle[]
+    def __init__(self, repo_array=[], update_time : int | None = None): # type of repo_array should be ScraperDataOutSingle[]
         super().__init__()
         self.repos = repo_array
+        self.update_time = update_time
 
     def to_json(self):
         # returns a json that converts to an array of dictionaries
@@ -183,3 +184,38 @@ class PostAnalysisTaskMsgIn(MQMsg):
         super().__init__()
         self.file_name = file_name
         self.platform = platform
+
+
+
+
+# maybe set up config option that's "pause until setup received on default"?
+
+class ScraperControlTaskOut(MQMsg):
+    '''
+        The type of messages sent from coordinator to scraper. 
+        SETUP: provides setup info to scraper (currently just the start and end scrape times)
+        // UPDATE: change scraper configs (such as requesting a different method of returning scraped repos)
+    '''
+    def __init__(self, 
+            message_type: ScraperMsgType, 
+            start_time : int | None = None,
+            end_time : int | None = None,
+            policy : ScraperOutputPolicy | None = None,
+            request_amount : int = -1,
+            specific_recipient: bool = True
+            ):
+        '''
+            If specific_recipient is false, this message can be handled by any scraper
+        '''
+        super().__init__()
+        self.message_type = message_type
+        self.start_time = start_time
+        self.end_time = end_time
+        self.policy = policy
+        self.request_amount = request_amount
+        self.specific_recipient = specific_recipient
+
+class ScraperControlTaskIn(MQMsg):
+    def __init__(self, 
+            message_type: ScraperMsgType):
+        self.message_type = message_type

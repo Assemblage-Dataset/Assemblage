@@ -21,9 +21,9 @@ services:
       RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: -rabbit consumer_timeout 900000
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
+      interval: 1s
+      timeout: 1s
+      retries: 15
       start_period: 10s
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq

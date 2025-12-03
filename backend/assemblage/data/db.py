@@ -129,18 +129,23 @@ class DBManager:
                 session.add(res)
                 session.flush()
                 
-            query_repo = select(RepoDO)
-            repos: list[RepoDO] = session.execute(query_repo)
-            status_ = []
-            for repo in repos:
-                repo: RepoDO
-                # logging.info("Adding buildopt %s, repo is %s", build_system, repo[0].build_system)
-                if regInfo.build_system in repo[0].build_system or regInfo.build_system == "all":
-                    new_status = Status(
-                        repo_id=repo[0].id,
-                        build_opt_id=res.id
-                    )
-                    status_.append(new_status)
+            if assign_to_unset:
+                query_repo = select(RepoDO)
+                repos: list[RepoDO] = session.execute(query_repo)
+                status_ = []
+                for repo in repos:
+                    repo: RepoDO
+                    # logging.info("Adding buildopt %s, repo is %s", build_system, repo[0].build_system)
+                    if regInfo.build_system in repo[0].build_system or regInfo.build_system == "all":
+                        # try:
+                            new_status = Status(
+                                repo_id=repo[0].id,
+                                build_opt_id=res.id
+                            )
+                            status_.append(new_status)
+                        # except IntegrityError as e:
+                        #     logger.info("Desired behavior")
+                        #     pass # behavior is as wanted
             session.bulk_save_objects(status_)
             session.commit()    
                 
@@ -510,7 +515,7 @@ class DBManager:
                 # logging.info("%s", all_opt)
                 if not repoonly:
                     for opt in all_opt:
-                        if repos_msg['build_system'] in opt[0].build_system:
+                        if repos_msg['build_system'] in opt[0].build_system or opt[0].build_system == "all":
                             _s = Status()
                             _s.clone_status = CloneStatus.NOT_STARTED
                             _s.clone_msg = ''
@@ -523,9 +528,11 @@ class DBManager:
                 session.commit()
             except IntegrityError as e:
                 logger.error("Duplicate Key Error in insert project. Known and need to be fixed. project skipped for now")
+                return 0
             except Exception as e:
                 logger.error(
                     f"Something else when wrong inserting project: {e}")
+                return 0
         return 1
 
     # Used in coordinator
