@@ -63,7 +63,7 @@ class ScraperSettings(AssemblageSettings):
     Scraper specific settings
     """
 
-    git_token: str = Field(os.getenv("GITHUB_TOKEN"))
+    git_token: str = Field(os.getenv("GITHUB_TOKEN", ""))
     # note: must provide GITHUB_TOKEN even if alternative tokens are provided
     alternative_git_tokens: list[str] | None = None 
     # alternative_git_tokens: list[str] | None = Field (
