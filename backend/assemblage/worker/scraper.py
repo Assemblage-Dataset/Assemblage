@@ -287,6 +287,12 @@ class GithubRepositories(DataSource):
         if r.status_code == 404:
             logger.error(f"404 Not Found. Query: {query}:")
             return None, None
+        
+        if r.status_code == 401:
+            logger.error(f"401 Unauthorized. The authentication token provided is not valid. Please provide a valid token.")
+            logger.info("Scraping will proceed unauthenticated.")
+            self.set_token(None)
+            return self.get_request(query=query, payload=payload, headers=headers, proxy=proxy)
 
 
         # The rest of the function checks for rate limits and other potential issues.
@@ -325,13 +331,6 @@ class GithubRepositories(DataSource):
                     if not self.do_cycle_tokens or not success:
                         self.sleep_and_update(
                             SECONDARY_RATE_LIMIT_WAIT, reason="Secondary rate limit reached")
-
-            if "Bad credentials" in rdict["message"]:
-                logger.warning(
-                    "Bad credentials: the authentication token provided is not valid. Please provide a valid token.")
-                logger.info("Scraping will proceed unauthenticated.")
-                self.set_token(None)
-                return self.get_request(query=query, payload=payload, headers=headers, proxy=proxy)
 
         # Check rate limits, handle according to https://docs.github.com/en/rest/using-the-rest-api/
         if remaining_rate_limit == 0:
@@ -396,7 +395,7 @@ class GithubRepositories(DataSource):
     def set_token(self, token):
         ''' Sets the token and updates headers accordingly. '''
         self.token = token
-        if not self.token:
+        if self.token in [None, ""]:
             logger.warning('''No Token is set. Scraper will be severely rate-limited\n.
                                   Please configure a PAT and add it to secrets.env as GITHUB_TOKEN, and then restart.''')
             self.auth_headers = {}
