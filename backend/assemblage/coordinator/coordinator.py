@@ -17,6 +17,7 @@ import boto3  # Only used in AWS mode
 #from pika.exchange_type import ExchangeType
 
 from assemblage.data.db import DBManager
+from assemblage.data.initialize_database import conditional_init_db
 from collections import Counter
 from assemblage.consts import (AWS_AUTO_REBOOT_PREFIX, COORDINATOR_DATABASE_SYNC_TIMEOUT,
                                BIN_DIR, CLEAN_OVERTIME_INTERVAL, WORKER_TIMEOUT_THRESHOLD, BuildStatus,
@@ -83,7 +84,7 @@ class Coordinator:
                                        username='guest', password='guest')
         
 
-
+        self.settings = settings # let's just keep this here
         self.db_addr = settings.databaseURL
         # to do create better session management
         self.db_man = DBManager(self.db_addr)
@@ -525,19 +526,22 @@ class Coordinator:
         except OSError:
             pass
 
-        while True:
-            try:
-                if self.db_man.tables_exist():
-                    break
-                else:
-                    logger.warning('''No tables in database.
-                                        Please use docker exec -it assemblage-coordinator-1;
-                                        alembic upgrade head.
-                                        To create the database to the latest revision. 
-                                        Please note you may have to run docker compose up -d again to start the other containers''')
-                    time.sleep(10)
-            except:
-                logger.error("error checking if tables exist")
+        conditional_init_db(self.settings)
+
+        # while True:
+        #     try:
+        #         if self.db_man.tables_exist():
+        #             break
+        #         else:
+        #             logger.warning('''No tables in database.
+        #                                 Please use docker exec -it assemblage-coordinator-1;
+        #                                 alembic upgrade head.
+        #                                 To create the database to the latest revision. 
+        #                                 Please note you may have to run docker compose up -d again to start the other containers''')
+        #             time.sleep(10)
+        #     except Exception as e:
+        #         logger.error(f"error in database initialization: {e}")
+        #         time.sleep(10)
 
         # we only want to create threads when a builder is actually registered. so the builder has to register,
         # and the thread will be created when it registers
