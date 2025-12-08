@@ -526,39 +526,11 @@ class Coordinator:
         except OSError:
             pass
 
-        conditional_init_db(self.settings)
+        try:
+            conditional_init_db(self.settings)
+        except Exception as e:
+            logger.error(f"An unexpected error occurred in database initialization: {e}")
 
-        # while True:
-        #     try:
-        #         if self.db_man.tables_exist():
-        #             break
-        #         else:
-        #             logger.warning('''No tables in database.
-        #                                 Please use docker exec -it assemblage-coordinator-1;
-        #                                 alembic upgrade head.
-        #                                 To create the database to the latest revision. 
-        #                                 Please note you may have to run docker compose up -d again to start the other containers''')
-        #             time.sleep(10)
-        #     except Exception as e:
-        #         logger.error(f"error in database initialization: {e}")
-        #         time.sleep(10)
-
-        # we only want to create threads when a builder is actually registered. so the builder has to register,
-        # and the thread will be created when it registers
-        # logger.info("%s dispatching thread starts", len(
-        #     [x for x in self.db_man.all_enabled_build_options()]))
-
-        # # Create a dispatch thread for each build option configuration
-        # for build_opt in self.db_man.all_enabled_build_options():
-        #     logger.info("boot dispatching thread for %d ...", build_opt.id)
-        #     self.t_dispatch_map.append(threading.Thread(
-        #         target=self.__dispatch_task, args=(build_opt.id, True)))
-
-        # t_ddisasm = threading.Thread(target=self.__disasm_task)
-        # t_consume_clone = threading.Thread(target=self.__consume_clone)
-        # t_consume_build = threading.Thread(target=self.__consume_build)
-        # t_consume_binary = threading.Thread(target=self.__consume_binary)
-        # t_scrape = threading.Thread(target=self.__consume_scraped_data)
 
         # t_consume_config = threading.Thread(self.__consume_from_queue, args=(QueueName.CONFIG,))
         t_consume_clone = threading.Thread(
