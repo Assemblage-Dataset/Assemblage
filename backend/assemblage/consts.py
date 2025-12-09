@@ -26,11 +26,11 @@ class BuildStatus(str, Enum):
     PROCESSING = "processing"
     FAILED = "failed"
     SUCCESS = "success"
-    TIMEOUT = "timeout"
-    BLACKLIST = "blacklist"
+    TIMEOUT = "timeout"  # i think unused
+    BLACKLIST = "blacklist"  # unused
     OUTDATED_MSG = "outdated_msg"    # a message overtime, not build overtime
-    EXCLUDE = "exclude"
-    COMMAND_FAILED = "command_failed"
+    EXCLUDE = "exclude"  # unused
+    COMMAND_FAILED = "command_failed"  # unused
     def __str__(self):
         return self.name
 
@@ -44,11 +44,11 @@ class CloneStatus(str, Enum):
     FAILED = "failed"
     SUCCESS = "success"
     TIMEOUT = 'timeout'
-    COMMAND_FAILED = "command_failed"
+    COMMAND_FAILED = "command_failed"  # unused
     def __str__(self):
         return self.name
 
-class PriorityStatus(str, Enum):
+class PriorityStatus(str, Enum):  # has no effect?
     LOW = "low"
     MID = "medium"
     HIGH = "high"
@@ -59,18 +59,19 @@ class PriorityStatus(str, Enum):
     
 
 
-PING_INTERVAL = 10
-SUPPORTED_BUILD = ["make", "cmake", "autoconf", "bootstrap", "sln"]
-SUPPORTED_LANGUAGE = ['c', 'c++', 'c#']
+#PING_INTERVAL = 10
+#SUPPORTED_BUILD = ["make", "cmake", "autoconf", "bootstrap", "sln"]
+#SUPPORTED_LANGUAGE = ['c', 'c++', 'c#']
 
+# TODO do we need both BIN_DIR and BINPATH?
 BIN_DIR = '/binaries'
-WORKER_TIMEOUT_THRESHOLD = 600
+#WORKER_TIMEOUT_THRESHOLD = 600
 TASK_TIMEOUT_THRESHOLD = 600
 
 # set this to max worker size for one build type
 MAX_MQ_SIZE = 3600
 
-RATELIMIT_URL = "https://api.github.com/rate_limit"
+# RATELIMIT_URL = "https://api.github.com/rate_limit"
 
 # Windows related constants
 LOG_FILE = "assemblage.log"
@@ -85,7 +86,7 @@ BUILDPATH = "Builds" # is this used
 PDBJSONNAME = "pdbinfo.json"
 
 AWS_AUTO_REBOOT_PREFIX = "auto-worker"
-REPO_SIZE_THRESHOLD = 50
+#REPO_SIZE_THRESHOLD = 50
 
 # Some debug constants. TODO: use the 'debug' vs 'info' states of the logger instead
 DEBUG_SHOW_ALL_MESSAGES_SCRAPER = False  # set to False to quiet some messages
@@ -106,6 +107,8 @@ SCRAPER_REQUEST_TIMEOUT_S = 10 # timeout when waiting for HTTP request reply in 
 # How long to wait when a rate limit is hit before resuming operation
 RATE_LIMIT_WAIT = 60
 SECONDARY_RATE_LIMIT_WAIT = 120
+
+# How often to print update messages (that essentially say "still sleeping") to console
 RATE_LIMIT_UPDATE_INTERVAL = 60
 
 
@@ -125,12 +128,13 @@ DISPATCH_INTERVAL = 0.1  # time between attempting dispatchs.
 
 IDLE_DISPATCH_INTERVAL = 30  # when no dispatches are found, how long to wait until trying again
 
-CLEAN_OVERTIME_INTERVAL = 600 
-AWS_REBOOT_SLEEP_INTERVAL = 1200
+CLEAN_OVERTIME_INTERVAL = 600  # how often the __clean_overtime thread in coordinator runs
+AWS_REBOOT_SLEEP_INTERVAL = 1200  # how often the __reboot_worker thread in coordinator runs
 
 COORDINATOR_DATABASE_SYNC_TIMEOUT = 10  
 # If the coordinator may be reading an outdated entry in the database (see recv_build_info),
 # wait for these many seconds for the database to update before continuing
+
 COORDINATOR_REPO_REQUEST_THRESHOLD = 1
 # How many repositories the coordinator will identify as "too few" and request more to be scraped
 # (for scrapers with the ON_REQUEST policy). Lower is more performant by RabbitMQ standards
@@ -141,6 +145,7 @@ i.e inputs for the cooordinator, will be outputs for the workers
 
 '''
 class InputQueue(str, Enum):
+    ''' Queues that the coordinator consumes from '''
     CLONE = 'clone'
     SCRAPE = 'scrape'
     BUILD = 'build'
@@ -153,24 +158,25 @@ class InputQueue(str, Enum):
         return self.value 
 
 class OutputQueue(str, Enum):
+    ''' Queues that workers consume from '''
     BUILDER_CTRL = "builder_ctrl"
     SCRAPER_CTRL = "scraper_ctrl"
     BUILD_OPT = "build_opt" 
     def __str__(self):
         return self.value
-# Used by the scraper to name a valid source of data (currently just from GitHub)
+    
 class ScrapeSource(str, Enum):
+    ''' Used by the scraper to name a valid source of data (currently just from GitHub) '''
     GITHUB = "github"
     def __str__(self):
         return self.name
     
 class ScraperMsgType(str, Enum):
-    SETUP = "setup"
-    UPDATE = "update"  # update policy/configurations. to be implemented
+    ''' Tags that can be attached to messages to scraper from coordinator to control the scraper '''
+    SETUP = "setup"  # configures initial scrape
+    UPDATE = "update"  # update policy/configurations. unused
     REQUEST_REPOS = "request_repos"  # triggers sending/collection of repos when scraper out policy is ON_REQUEST. to be implemented
-    # REQUEST_PAUSE = "request_stop"
-    # REQUEST_START = "request_start"
-    # REQUEST_QUANTITY = "request_quantity"
+
 
 class ScraperOutputPolicy(str, Enum):
     '''
@@ -182,6 +188,7 @@ class ScraperOutputPolicy(str, Enum):
 
 
 class GithubTimeOrder(Enum):
+    ''' Determines how the scraper's GitHub queries are sorted '''
     CREATED = "created"
     PUSHED = "pushed"
     

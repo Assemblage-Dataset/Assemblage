@@ -23,7 +23,7 @@ from sqlalchemy.exc import IntegrityError
 # from sqlalchemy.sql import Insert
 
 from assemblage.database.models import BuildDO, BuildOpt, RepoDO, Status
-from assemblage.consts import BuildStatus, SUPPORTED_LANGUAGE, CloneStatus, BIN_DIR
+from assemblage.consts import BuildStatus, CloneStatus, BIN_DIR # , SUPPORTED_LANGUAGE
 # from typing import Tuple
 
 

@@ -20,8 +20,8 @@ from assemblage.data.db import DBManager
 from assemblage.data.initialize_database import conditional_init_db
 from collections import Counter
 from assemblage.consts import (AWS_AUTO_REBOOT_PREFIX, COORDINATOR_DATABASE_SYNC_TIMEOUT,
-                               BIN_DIR, CLEAN_OVERTIME_INTERVAL, WORKER_TIMEOUT_THRESHOLD, BuildStatus,
-                               REPO_SIZE_THRESHOLD, CloneStatus, InputQueue, OutputQueue, ScraperMsgType, ScraperOutputPolicy,
+                               BIN_DIR, CLEAN_OVERTIME_INTERVAL,  BuildStatus, #WORKER_TIMEOUT_THRESHOLD,
+                               CloneStatus, InputQueue, OutputQueue, ScraperMsgType, ScraperOutputPolicy,  #REPO_SIZE_THRESHOLD, 
                                DISPATCH_INTERVAL, IDLE_DISPATCH_INTERVAL, AWS_REBOOT_SLEEP_INTERVAL,
                                COORDINATOR_REPO_REQUEST_THRESHOLD
                                )

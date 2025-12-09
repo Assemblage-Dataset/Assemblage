@@ -11,8 +11,8 @@ import json
 import os
 from subprocess import Popen, PIPE, STDOUT, TimeoutExpired
 import hashlib
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import threading
+#from concurrent.futures import ThreadPoolExecutor, as_completed
+#import threading
 import math
 from db import Dataset_DB
 from dataset_orm import *

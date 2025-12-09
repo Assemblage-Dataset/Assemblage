@@ -3,7 +3,7 @@ Rework models for database with SQLModels
 '''
 
 import datetime
-from email.policy import default
+#from email.policy import default
 import json
 from typing import List, Optional
 
