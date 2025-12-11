@@ -163,7 +163,8 @@ class CloneStatusMsgIn(MQMsg):
         
 class BuildStatusMsgIn(MQMsg):
     def __init__(self, url: str, opt_id: int, status: CloneStatus,
-                 msg: str, task_id: int, build_time: int, commit_hexsha: str):
+                 msg: str, task_id: int, build_time: int, commit_hexsha: str, optimization: int | None): 
+        # use the value of the opt
         super().__init__()
         self.url = url 
         self.opt_id = opt_id
@@ -172,6 +173,7 @@ class BuildStatusMsgIn(MQMsg):
         self.task_id = task_id
         self.build_time = build_time 
         self.commit_hexsha = commit_hexsha
+        self.optimization = optimization if optimization else None
 
         
 class BinaryTaskMsgIn(MQMsg):
