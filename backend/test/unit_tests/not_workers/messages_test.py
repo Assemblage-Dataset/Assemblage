@@ -1,17 +1,15 @@
 '''
     [Stub] Tests that messages work as expected (serialize/deserialize appropriately etc)
     todo
-    * test to_json and from_json of every msg
-    * test special methods of scraper msgs
-    * test bundling and unbundling of scraper bundle
 '''
 
 import unittest
 #from unittest.mock import patch, MagicMock
 import logging
 import assemblage.mq.messages as msg
+from assemblage.consts import TEST_MESSAGE_LEVEL
 
-logging.basicConfig(format="%(asctime)s [TEST] %(levelname)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S", level='DEBUG')
+logging.basicConfig(format="%(asctime)s [TEST] %(levelname)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S", level=TEST_MESSAGE_LEVEL)
 
 logger = logging.getLogger(__name__)
 
@@ -244,6 +242,20 @@ class TestMessage(unittest.TestCase):
         self.assertEqual(actual_out.repos[0].__dict__, testmsg1.__dict__)
         self.assertEqual(actual_out.repos[1].__dict__, testmsg2.__dict__)
 
+
+    def test_BuilderTaskOut(self):
+        '''
+            checks both to and from json
+        '''
+
+        input = msg.BuilderTaskOut(
+            name="name", url="url", task_id=50, opt_id=1, output_dir="none", repo_id=1,
+            updated_at="str", build_system="str", msg_time=0.0, commit_hexsha="495"
+        )
+        output = input.to_json()
+        output = msg.BuilderTaskOut.from_json( output )
+        
+        self.assertEqual(output.__dict__, input.__dict__)
 
 
     

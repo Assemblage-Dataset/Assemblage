@@ -91,24 +91,17 @@ REPO_SIZE_THRESHOLD = 50
 DEBUG_SHOW_ALL_MESSAGES_SCRAPER = False  # set to False to quiet some messages
 
 
-# Scraper constants
-SCRAPER_TIMESTAMP_RECORDFILE_PATH = "/binaries/crawled.json"
+SCRAPER_RATE_INTERVAL = 0.1
+# Controls how long between scrapings. Setting to 0 may result in the scraper choking other units if they have CONTINUOUS policy.
 
-SCRAPER_RATE_INTERVAL = 5 
-# Controls how long between scrapings. Setting to 0 may result in the scraper choking other units.
-
-SCRAPER_REPO_BUNDLESIZE = 10
+SCRAPER_REPO_BUNDLESIZE = 25
 # Controls how many repositories should be sent to the coordinator at a time. Lower = lower latency.
 
 SCRAPER_PAGE_SIZE = 100 
 # how many repos per page of search results for the crawler. Unlikely to require changing
 
-#OLDEST_PERMITTED_DATA_TIMESTAMP = 1262322000 # (Jan 1 2010) crawler terminates when it's reached this timestamp
 GITHUB_REPO_URL = "https://api.github.com/search/repositories"
 SCRAPER_REQUEST_TIMEOUT_S = 10 # timeout when waiting for HTTP request reply in seconds
-
-# SCRAPER_RATE_LIMIT = 5000 # how many queries are predicted to be permitted in a QUERY_RATE_LIMIT_TIME interval
-# QUERY_RATE_LIMIT_TIME = 3600 # how often the query limit refreshes: default 1 hour
 
 # How long to wait when a rate limit is hit before resuming operation
 RATE_LIMIT_WAIT = 60
@@ -130,7 +123,7 @@ DISPATCH_INTERVAL = 0.1  # time between attempting dispatchs.
 # 0 is OK except when there is a large dispatch backlog and all workers are on the same machine,
 # as working through the dispatch backlog might choke other workers
 
-IDLE_DISPATCH_INTERVAL = 5  # when no dispatches are found, how long to wait until trying again
+IDLE_DISPATCH_INTERVAL = 30  # when no dispatches are found, how long to wait until trying again
 
 CLEAN_OVERTIME_INTERVAL = 600 
 AWS_REBOOT_SLEEP_INTERVAL = 1200
@@ -138,6 +131,9 @@ AWS_REBOOT_SLEEP_INTERVAL = 1200
 COORDINATOR_DATABASE_SYNC_TIMEOUT = 10  
 # If the coordinator may be reading an outdated entry in the database (see recv_build_info),
 # wait for these many seconds for the database to update before continuing
+COORDINATOR_REPO_REQUEST_THRESHOLD = 1
+# How many repositories the coordinator will identify as "too few" and request more to be scraped
+# (for scrapers with the ON_REQUEST policy). Lower is more performant by RabbitMQ standards
 
 '''
 For the context of the direction of queues. It is from the perspective of the coordinator
@@ -151,6 +147,7 @@ class InputQueue(str, Enum):
     BINARY = 'binary'
     POST_ANALYSIS = 'post_analysis'
     BUILD_REG = 'builder_reg'
+    SCRAPER_REG = 'scraper_reg'
     def __str__(self):
         # to ensure compatibility with the areas where I haven't replaced channels with enums yet
         return self.value 
@@ -166,6 +163,22 @@ class ScrapeSource(str, Enum):
     GITHUB = "github"
     def __str__(self):
         return self.name
+    
+class ScraperMsgType(str, Enum):
+    SETUP = "setup"
+    UPDATE = "update"  # update policy/configurations. to be implemented
+    REQUEST_REPOS = "request_repos"  # triggers sending/collection of repos when scraper out policy is ON_REQUEST. to be implemented
+    # REQUEST_PAUSE = "request_stop"
+    # REQUEST_START = "request_start"
+    # REQUEST_QUANTITY = "request_quantity"
+
+class ScraperOutputPolicy(str, Enum):
+    '''
+        The policy attribute of the scraper determines the behavior with which repositories are sent to the coordinator.
+        Use continuous for all scrapers for a "just works" setup, use on_request for a more controlled setup.
+    '''
+    CONTINUOUS = "continuous" # works constantly, sending repos whenever it has collected SCRAPER_REPO_BUNDLESIZE
+    ON_REQUEST = "on_request" # works until it reaches max bundle size then pauses. sends whenever it has when it receives a request from coordinator
 
 
 class GithubTimeOrder(Enum):
@@ -184,3 +197,8 @@ class OptLevel(Enum):
     HIGH = 3
     def __str__(self):
         return f"opt_{self.name}"
+
+## Testing constants
+
+TEST_MESSAGE_LEVEL = 'DEBUG'
+TEST_DB_ADDR = 'postgresql+psycopg2://assemblage:assemblage@assemblage-test-db:5432/assemblage'

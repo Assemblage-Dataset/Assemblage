@@ -16,6 +16,56 @@ For up to date info and download, please visit the [dataset page](https://assemb
 NOTE. For running builders distrubuted requires the RabbitMQ server to be exposed. Currenlty, the default username/passwords are used, so we reccomend that you set up firewall rules to ensure only your worker host can access the RabbitMQ server.
 
 
+
+
+## Initial Setup (Linux Build)
+
+1. Clone the repo and install Docker. Create and configure a GitHub token (optional).
+
+2. Within the project directory, create a secrets.env file with the following environment variables:
+
+```
+DB_HOST=assemblage-db
+DB_PORT=5432
+POSTGRES_DATABASE=assemblage
+POSTGRES_USER=assemblage
+POSTGRES_PASSWORD=<password>
+MINIO_ROOT_USER=<chosen user>
+MINIO_ROOT_PASSWORD=<chosen password>
+GITHUB_TOKEN=<token>
+```
+
+3. Run Docker, then run the following command in the Assemblage root directory to build and run the Docker images. This will take some time. 
+
+`docker compose up --build -d`
+
+The images should build and start running. Checking the logs will reveal that the database needs to be initialized.
+If the RabbitMQ container is unable to start, restart with `docker compose down` and `docker compose up -d`: sometimes this container has trouble initializing in time. 
+
+4. To initialize the database with Alembic, run the following command with Assemblage still running to build the database from the latest version of the database configuration:
+
+`docker exec -it assemblage-coordinator-1 alembic upgrade head`
+
+To check that the database exists, run
+
+```
+docker exec -it assemblage-db psql -U assemblage
+\dt
+```
+
+and check that tables are displayed. Use `exit` to get out of the database inspector. 
+
+5. Restart Assemblage. 
+
+```
+docker compose down
+docker compose up -d
+```
+
+The program should begin collecting repositories. 
+
+## ENVIRONMENT VARIABLES
+
 You can use one secrets.env, or multiple separate env files, but the following shows what env variables need to be in which container 
 Also, in the compose file, specify the type - Coordinator,Scraper,Builder
 

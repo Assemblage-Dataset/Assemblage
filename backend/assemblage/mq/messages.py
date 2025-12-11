@@ -1,8 +1,7 @@
 import json
-import platform
-import time
 
-from ..consts import OptLevel
+
+from assemblage.consts import CloneStatus, BuildStatus, ScraperMsgType, ScraperOutputPolicy, OptLevel
 
 class MQMsg:
     def __init__(self):
@@ -27,7 +26,10 @@ class MQMsg:
         '''
         return f'{type(self)}:{self.to_json()}'
     
-    
+    def __eq__(self, other):
+        if isinstance(other, self.__class__):
+            return self.__dict__ == other.__dict__
+        return False
 
 
 class BuilderRegIn(MQMsg):
@@ -62,6 +64,35 @@ class BuilderRegOut(MQMsg):
 
 
 
+class BuilderTaskOut(MQMsg):
+    '''
+        Message sent from coordinator to builder to build a repo (clone then build)
+        
+    '''
+    def __init__(self, name: str, url: str, task_id: int, 
+                 opt_id: int, output_dir: str, repo_id: int,
+                 updated_at: str, build_system: str, 
+                 msg_time: float,
+                 optimizations: list[int],
+                 commit_hexsha: str | None = None,
+                 mod_timestamp: str | None = None, 
+                 ):
+        super().__init__()
+        self.name = name
+        self.url = url 
+        self.task_id = task_id
+        self.opt_id = opt_id
+        self.output_dir = output_dir
+        self.repo_id = repo_id
+        self.updated_at = updated_at
+        self.build_system = build_system
+        self.msg_time = msg_time
+        self.commit_hexsha = commit_hexsha if commit_hexsha else ""
+        self.mod_timestamp = mod_timestamp if mod_timestamp else ""
+        self.optimizations = optimizations
+
+
+
 class ScraperDataOutSingle(MQMsg):
     '''
     Format of a single repository message.
@@ -90,9 +121,10 @@ class ScraperDataOutBundle(MQMsg):
     '''
         Represents an array of ScraperDataOutSingle (as dicts). Sent from scraper to coordinator
     '''
-    def __init__(self, repo_array=[]): # type of repo_array should be ScraperDataOutSingle[]
+    def __init__(self, repo_array=[], update_time : int | None = None): # type of repo_array should be ScraperDataOutSingle[]
         super().__init__()
         self.repos = repo_array
+        self.update_time = update_time
 
     def to_json(self):
         # returns a json that converts to an array of dictionaries
@@ -118,22 +150,74 @@ class ScraperDataOutBundle(MQMsg):
     def __len__(self):
         return len(self.repos)
 
-class BuildCloneReq(MQMsg):
-    def __init__(self, name: str, url: str, task_id: int,
-                 opt_id: int, commit_hexsha: str | None,
-                 repo_id: int, updated_at: str, build_system: str,
-                 msg_time: float, optimizations: list[int],
-                 mod_timestamp: float | None = None):
+
+class CloneStatusMsgIn(MQMsg):
+    def __init__(self, url: str, opt_id: int, status: CloneStatus,
+                 msg: str, task_id: int):
         super().__init__()
-        self.name = name
-        self.url = url
-        self.task_id = task_id
+        self.url = url 
         self.opt_id = opt_id
+        self.status = status 
+        self.msg = msg 
+        self.task_id = task_id
+        
+class BuildStatusMsgIn(MQMsg):
+    def __init__(self, url: str, opt_id: int, status: CloneStatus,
+                 msg: str, task_id: int, build_time: int, commit_hexsha: str):
+        super().__init__()
+        self.url = url 
+        self.opt_id = opt_id
+        self.status = status 
+        self.msg = msg 
+        self.task_id = task_id
+        self.build_time = build_time 
         self.commit_hexsha = commit_hexsha
-        self.repo_id = repo_id
-        self.updated_at = updated_at
-        self.build_system = build_system
-        self.msg_time = msg_time
-        self.optimizations = optimizations
-        if mod_timestamp is not None:
-            self.mod_timestamp = mod_timestamp
+
+        
+class BinaryTaskMsgIn(MQMsg):
+    def __init__(self, task_id: int, file_name: str, optimization: OptLevel):
+        super().__init__()
+        self.task_id = task_id
+        self.file_name = file_name
+        optimization: OptLevel.value
+
+class PostAnalysisTaskMsgIn(MQMsg):
+    def __init__(self, file_name: str, platform: str):
+        super().__init__()
+        self.file_name = file_name
+        self.platform = platform
+
+
+
+
+# maybe set up config option that's "pause until setup received on default"?
+
+class ScraperControlTaskOut(MQMsg):
+    '''
+        The type of messages sent from coordinator to scraper. 
+        SETUP: provides setup info to scraper (currently just the start and end scrape times)
+        // UPDATE: change scraper configs (such as requesting a different method of returning scraped repos)
+    '''
+    def __init__(self, 
+            message_type: ScraperMsgType, 
+            start_time : int | None = None,
+            end_time : int | None = None,
+            policy : ScraperOutputPolicy | None = None,
+            request_amount : int = -1,
+            specific_recipient: bool = True
+            ):
+        '''
+            If specific_recipient is false, this message can be handled by any scraper
+        '''
+        super().__init__()
+        self.message_type = message_type
+        self.start_time = start_time
+        self.end_time = end_time
+        self.policy = policy
+        self.request_amount = request_amount
+        self.specific_recipient = specific_recipient
+
+class ScraperControlTaskIn(MQMsg):
+    def __init__(self, 
+            message_type: ScraperMsgType):
+        self.message_type = message_type

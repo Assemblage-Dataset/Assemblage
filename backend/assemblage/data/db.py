@@ -13,7 +13,8 @@ import logging
 from typing import Any, Generator
 
 # import sqlalchemy.exc
-from assemblage.mq.messages import BuilderRegIn
+from assemblage.mq.messages import BuilderRegIn, BuilderTaskOut
+from assemblage.data.url_patch import patch_url
 from sqlalchemy import select, update, create_engine, func, or_, inspect
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.expression import desc, true
@@ -22,7 +23,7 @@ from sqlalchemy.exc import IntegrityError
 # from sqlalchemy.sql import Insert
 
 from assemblage.database.models import BuildDO, BuildOpt, RepoDO, Status
-from assemblage.consts import BuildStatus, SUPPORTED_LANGUAGE, CloneStatus
+from assemblage.consts import BuildStatus, SUPPORTED_LANGUAGE, CloneStatus, BIN_DIR
 # from typing import Tuple
 
 
@@ -128,18 +129,23 @@ class DBManager:
                 session.add(res)
                 session.flush()
                 
-            query_repo = select(RepoDO)
-            repos: list[RepoDO] = session.execute(query_repo)
-            status_ = []
-            for repo in repos:
-                repo: RepoDO
-                # logging.info("Adding buildopt %s, repo is %s", build_system, repo[0].build_system)
-                if regInfo.build_system in repo[0].build_system or regInfo.build_system == "all":
-                    new_status = Status(
-                        repo_id=repo[0].id,
-                        build_opt_id=res.id
-                    )
-                    status_.append(new_status)
+            if assign_to_unset:
+                query_repo = select(RepoDO)
+                repos: list[RepoDO] = session.execute(query_repo)
+                status_ = []
+                for repo in repos:
+                    repo: RepoDO
+                    # logging.info("Adding buildopt %s, repo is %s", build_system, repo[0].build_system)
+                    if regInfo.build_system in repo[0].build_system or regInfo.build_system == "all":
+                        # try:
+                            new_status = Status(
+                                repo_id=repo[0].id,
+                                build_opt_id=res.id
+                            )
+                            status_.append(new_status)
+                        # except IntegrityError as e:
+                        #     logger.info("Desired behavior")
+                        #     pass # behavior is as wanted
             session.bulk_save_objects(status_)
             session.commit()    
                 
@@ -153,19 +159,27 @@ class DBManager:
         """ Close DB connection """
         self.engine.dispose()
 
-    # Used in dispatch task in coordinator
-    def find_repo_by_id(self, repo_id):
-        """ fetch a repo object from database by it's id """
-        with Session(self.engine) as session:
+    # Unused except in tests
+    def get_projects_row_by_id(self, repo_id) -> RepoDO:
+        """ Get the (readonly) project row (containing name, owner, url, etc) matching the given ID"""
+        with self.get_session() as session:
             query = select(RepoDO).where(RepoDO.id == repo_id)
             result = session.execute(query).first()
-            return result[0]
+            project : RepoDO = result[0]
+            session.expunge(project)  # turns "project" into a readonly object w/ no DB connection: prevents errors
+            return project
 
-    def find_status_by_id(self, status_id):
-        with Session(self.engine) as session:
+    def get_status_row_by_id(self, status_id) -> Status:
+        """ Get the (readonly) status row (contains build and clone status, etc) with its primary key id matching the provided ID.
+            Note that the id of a Status entry does NOT correspond to the ID of its corresponding Project entry. 
+            Status.id does match BuildDO.status_id.
+        """
+        with self.get_session() as session:
             query = select(Status).where(Status.id == status_id)
             result = session.execute(query).first()
-            return result[0]
+            status : Status = result[0]
+            session.expunge(status)
+            return status
 
     def find_one_undisasmed_bin(self):
         """ pop first binary haven't run ddisasm """
@@ -182,16 +196,19 @@ class DBManager:
                 disassembled=True).where(BuildDO.id == bin_id)
             session.execute(query)
 
-    def find_build_opt_by_id(self, opt_id):
+    # unused
+    def find_build_opt_by_id(self, opt_id) -> BuildOpt:
         """ fetch a build object from database by it's id """
-        with Session(self.engine) as session:
+        with self.get_session() as session:
             query = select(BuildOpt).where(BuildOpt.id == opt_id)
-            result = session.execute(query).first()
-            return result[0]
+            row = session.execute(query).first()
+            buildopt : BuildOpt = row[0]
+            session.expunge(buildopt)
+            return buildopt
 
     # Used in coordinator in recycler
     def find_repo_by_status(self, clone_status, build_status, build_opt_id=None, limit=-1):
-        """ find possible build target repo by given build/clone info """
+        """ find possible build target repo by given build/clone info. returns array of rows"""
         with Session(self.engine) as session:
             query = select(RepoDO).join_from(RepoDO, Status)
             if build_opt_id is not None:
@@ -225,7 +242,7 @@ class DBManager:
             return statuses
 
     # TODO: refactor to add repodo size limit
-    # Used in dispatch task in coordinator
+    # unused
     def find_status_by_status_code(self, clone_status, build_opt_id, build_status=None, limit=-1):
         """ find lines of record in status table by specific build/clone status code """
         with Session(self.engine) as session:
@@ -265,6 +282,71 @@ class DBManager:
             )
             session.execute(query)
             session.commit()
+
+    
+    def get_dispatch_task(self, build_opt_id: int, reproduce_mode) -> BuilderTaskOut:
+        '''
+            Finds an un-dispatched task in the database and gets all of the matching rows
+        '''
+        with self.get_session() as session:
+            # filter for unstarted tasks using this build config and limit to 1
+            query = select(Status).where(
+                Status.clone_status == CloneStatus.NOT_STARTED,
+                Status.build_status == BuildStatus.INIT,
+                Status.build_opt_id == build_opt_id,
+            ).limit(1)
+            row = session.execute(query).first()
+            if row is None:
+                return None
+            status : Status = row[0]
+            
+            # Get project referred to by the found status 
+            query = select(RepoDO).where(RepoDO.id == status.repo_id)
+            project : RepoDO = session.execute(query).first()[0]
+            
+            # Get the build option of this project
+            query = select(BuildOpt).where(BuildOpt.id == status.build_opt_id)
+            buildopt : BuildOpt = session.execute(query).first()[0]
+
+            ## all below this line isn't strictly db management code. could go in coordinator
+
+            # Format certain fields as required for the BuilderTaskOut
+            _url = patch_url(project.url)
+            _output_dir = f'{BIN_DIR}/{status.id}'
+            _updated_at = project.updated_at.strftime("%m/%d/%Y, %H:%M:%S")
+
+            # Assemble build message
+            build_message = BuilderTaskOut(
+                name = project.name,
+                url = _url, 
+                task_id = status.id,
+                opt_id = buildopt.id,
+                output_dir = _output_dir,
+                repo_id = project.id,
+                updated_at = _updated_at,
+                build_system = project.build_system,
+                msg_time = time.time()
+                #commit_hexsha = status.commit_hexsha
+            )
+            if reproduce_mode:
+                build_message.mod_timestamp = status.mod_timestamp
+        return build_message
+
+    def get_tasks_to_dispatch_on_opt(self, build_opt_id) -> int:
+        '''
+            Get how many tasks are left to dispatch on a given build option
+        '''
+    
+        with self.get_session() as session:
+            q = select(Status).where(
+                Status.clone_status == CloneStatus.NOT_STARTED,
+                Status.build_status == BuildStatus.INIT,
+                Status.build_opt_id == build_opt_id,
+            )
+
+            row = session.query(q.subquery()).count()
+        return row
+
 
     # Unused
 
@@ -313,10 +395,13 @@ class DBManager:
 
     def update_repo_status(self, url=None, opt_id=None, status_id=None, build_time=-1,
                            build_status=None, build_msg='', clone_status=None,
-                           clone_msg='', commit_hexsha=''):
+                           clone_msg='', commit_hexsha='') -> None:
         """ update the build/clone status of a repo for one build option """
         status_val = {'mod_timestamp': time.time(), 'build_time': build_time}
+        if status_id is None:
+            logger.warning("Status ID is required argument for update_repo_status")
         if build_status is None and clone_status is None:
+            logger.info("No build status or clone status given, DB not updated")
             return
         if build_status is not None:
             status_val['build_status'] = build_status
@@ -405,7 +490,7 @@ class DBManager:
 
     # Used in bootstrap and coordinator
 
-    def insert_repos(self, repos_msg, cascade=True, repoonly=False):
+    def insert_repos(self, repos_msg, cascade=True, repoonly=False) -> int:
         """
         Query repo to build on command
         if cascade is `True`, it will also add possible b_status for it
@@ -419,7 +504,6 @@ class DBManager:
             # looking for if a repo exists
             try:
                 
-                
                 repo = RepoDO(**repos_msg)
                 # t_prev = time.time()
                 session.add(repo)
@@ -431,7 +515,7 @@ class DBManager:
                 # logging.info("%s", all_opt)
                 if not repoonly:
                     for opt in all_opt:
-                        if repos_msg['build_system'] in opt[0].build_system:
+                        if repos_msg['build_system'] in opt[0].build_system or opt[0].build_system == "all":
                             _s = Status()
                             _s.clone_status = CloneStatus.NOT_STARTED
                             _s.clone_msg = ''
@@ -444,13 +528,15 @@ class DBManager:
                 session.commit()
             except IntegrityError as e:
                 logger.error("Duplicate Key Error in insert project. Known and need to be fixed. project skipped for now")
+                return 0
             except Exception as e:
                 logger.error(
                     f"Something else when wrong inserting project: {e}")
+                return 0
         return 1
 
     # Used in coordinator
-    def insert_binary(self, file_name, description, status_id):
+    def insert_binary(self, file_name, description, status_id) -> None:
         """
         add a binary record into database, 1 buildopt may have multiple binaries.
         and binaries may already deleted on disk
@@ -471,7 +557,7 @@ class DBManager:
 
     # Used in bootstrap
     def add_build_option(self, id, platform, language, compiler_name, compiler_flag,
-                         build_system, build_command, library, enable=True):
+                         build_system, build_command, library, enable=True) -> None:
         """
         insert build option into BuildOpt table for repo contain certain build system&language
         """
@@ -628,12 +714,13 @@ class DBManager:
     #         for option in repos:
     #             yield option
 
-    # Used in coordinator
-    def all_enabled_build_options(self):
-        """
-        return all enabled build option
-        """
-        with Session(self.engine) as session:
-            build_options = session.query(BuildOpt).where(
-                BuildOpt.enable == true()).all()
-            yield from build_options
+    # Formerly used in coordinator, now unused
+    # def all_enabled_build_options(self):
+    #     """
+    #     return all enabled build option
+    #     """
+    #     with Session(self.engine) as session:
+    #         build_options = session.query(BuildOpt).where(
+    #             BuildOpt.enable == true()).all()
+    #         yield from build_options
+
