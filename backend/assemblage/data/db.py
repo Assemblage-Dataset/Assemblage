@@ -23,7 +23,7 @@ from sqlalchemy.exc import IntegrityError
 # from sqlalchemy.sql import Insert
 
 from assemblage.database.models import BuildDO, BuildOpt, RepoDO, Status
-from assemblage.consts import BuildStatus, SUPPORTED_LANGUAGE, CloneStatus, BIN_DIR
+from assemblage.consts import BuildStatus, SUPPORTED_LANGUAGE, CloneStatus, BIN_DIR, OptLevel
 # from typing import Tuple
 
 
@@ -325,7 +325,8 @@ class DBManager:
                 repo_id = project.id,
                 updated_at = _updated_at,
                 build_system = project.build_system,
-                msg_time = time.time()
+                msg_time = time.time(),
+                optimizations=[level.value for level in OptLevel], # can make this configurable alter
                 #commit_hexsha = status.commit_hexsha
             )
             if reproduce_mode:

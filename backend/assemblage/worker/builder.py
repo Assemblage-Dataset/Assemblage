@@ -26,7 +26,7 @@ from assemblage.worker.base_worker import BasicWorker
 from assemblage.worker.build_method import LinuxBuildStrategy, WindowsDefaultStrategy
 from assemblage.config import BuilderSettings
 from assemblage.mq.messages import (
-    MQMsg, BuildCloneReq, BuilderRegIn, BuilderRegOut, BuildStatusMsgIn, CloneStatusMsgIn, BinaryTaskMsgIn, PostAnalysisTaskMsgIn
+    BuilderTaskOut, MQMsg, BuilderRegIn, BuilderRegOut, BuildStatusMsgIn, CloneStatusMsgIn, BinaryTaskMsgIn, PostAnalysisTaskMsgIn
 )
 from assemblage.mq.client import Connection, MQQueue
 from assemblage.s3.client import S3Client, S3Bucket
@@ -210,7 +210,7 @@ class Builder(BasicWorker):
                                                                         channel_name=f'{self}-ctrl',
                                                                         )
                     conn.create_channel()
-                    self.send_msg(kind=InputQueue.BUILD_REG, task=None)
+                    self.process_send_msg(kind=InputQueue.BUILD_REG, task=None)
                     logger.info(
                         "Registration Message sent. Starting consumption on control queue now")
                     self.mq_client.start_consumer(
@@ -298,14 +298,14 @@ class Builder(BasicWorker):
         """
         self.sleep_job_event.wait()  # way to get the control thread to block
 
-        task = BuildCloneReq.from_json(body)  # TODO: create type for this
+        task = BuilderTaskOut.from_json(body)  # TODO: create type for this
 
         ch.basic_ack(method.delivery_tag)
         # check if this is an duplicate task
         # if time.time() - task['msg_time'] >= TASK_TIMEOUT_THRESHOLD: # not sure on this. is this because of a lag between starting the builder and coordinator??
         #     logger.info("Found duplicate build (%s, %d)",
         #                 task['url'], self.opt_id)
-        #     self.send_msg(repo=task,
+        #     self.process_send_msg(repo=task,
         #                   kind='clone',
         #                   url=task['url'],
         #                   status=BuildStatus.OUTDATED_MSG,
@@ -349,13 +349,15 @@ class Builder(BasicWorker):
                     save_path = f"{self.ProjectBucket}/{username}/{project}/{commit_hexsha}.tar.gz"
                     logger.debug(f"Project saved to {save_path} ")
 
-            self.send_msg(task=task,
+            self.process_send_msg(task=task,
                           kind=InputQueue.CLONE,
                           url=task.url,
                           status=clone_status,
                           msg=self.uuid[:5]+clone_msg.decode(),
                           commit_hexsha=commit_hexsha,
-                          save_path=save_path
+                          save_path=save_path,
+                          build_time=0,
+                          optimization=None
                           )
 
             # this is currently only needed for windows, but linux just reutrns none too, so it wont break
@@ -363,16 +365,16 @@ class Builder(BasicWorker):
 
             all_builds_saved = True
             for opt in task.optimizations:
-                self.send_msg(task=task,
+                optimization = OptLevel(opt)
+                self.process_send_msg(task=task,
                               kind=InputQueue.BUILD,
                               url=task.url,
                               status=BuildStatus.PROCESSING,
                               msg="Received and building",
                               commit_hexsha=commit_hexsha,
-                              optimization=opt,
+                              optimization=optimization,
                               build_time=0)
 
-                optimization = OptLevel(opt)
 
                 logger.debug(
                     f"Starting pre build with optimization: {optimization}")
@@ -417,7 +419,7 @@ class Builder(BasicWorker):
                 else:
                     all_builds_saved = False   # Build itself failed
 
-                self.send_msg(task=task,
+                self.process_send_msg(task=task,
                               kind=InputQueue.BUILD,
                               url=task.url,
                               status=build_status,
@@ -425,7 +427,7 @@ class Builder(BasicWorker):
                               commit_hexsha=commit_hexsha,
                               build_time=(after_build_time -
                                           before_build_time),
-                              optimization=optimization.value
+                              optimization=optimization
                               )
 
             if self.s3_client and all_builds_saved:
@@ -433,7 +435,7 @@ class Builder(BasicWorker):
                 self._clean_folder(os.path.dirname(clone_dir))
 
         else:
-            self.send_msg(task=task,
+            self.process_send_msg(task=task,
                           kind=InputQueue.CLONE,
                           url=task.url,
                           status=clone_status,
@@ -524,16 +526,16 @@ class Builder(BasicWorker):
                             f"Failed to change permissions on {dest_file}")
                         all_saved = False
 
-            self.send_msg(kind=InputQueue.BINARY,
+            self.process_send_msg(kind=InputQueue.BINARY,
                           task=task,
                           file_name=fpath if self.s3_client else dest_file,
-                          optimization=optimization.value)
+                          optimization=optimization)
 
         if not self.s3_client:
             self.build_strategy.own_dir(dest_base_full)
         return dest_base_full, all_saved
 
-    def send_msg(self, kind: InputQueue, task, **kwarg):
+    def process_send_msg(self, kind: InputQueue, task, **kwarg):
         '''
         send message to the coordinator input queue
         Remember input is from the perspective of the coordinator so input == output in builder and output == input
@@ -579,8 +581,6 @@ class Builder(BasicWorker):
                         status=kwarg['status'],
                         msg=kwarg['msg'][-1000:],
                         task_id=task.task_id,
-                        build_time=kwarg['build_time'],
-                        optimization= kwarg['optimization'],
                     )
                 case InputQueue.BUILD:
                     msg = BuildStatusMsgIn(
@@ -591,13 +591,13 @@ class Builder(BasicWorker):
                         task_id=task.task_id,
                         build_time=kwarg['build_time'],
                         commit_hexsha=kwarg['commit_hexsha'],
-                        optimization= kwarg['optimization'],
+                        optimization=kwarg['optimization'].value,
                     )
                 case InputQueue.BINARY:
                     msg = BinaryTaskMsgIn(
-                        task_id=kwarg['task_id'],
+                        task_id=task.task_id,
                         file_name=kwarg['file_name'],
-                        optimization=kwarg['optimization']
+                        optimization=kwarg['optimization'].value
 
                     )
                 case InputQueue.POST_ANALYSIS:
