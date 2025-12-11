@@ -25,7 +25,9 @@ from assemblage.consts import BINPATH, TASK_TIMEOUT_THRESHOLD, BuildStatus, MAX_
 from assemblage.worker.base_worker import BasicWorker
 from assemblage.worker.build_method import LinuxBuildStrategy, WindowsDefaultStrategy
 from assemblage.config import BuilderSettings
-from assemblage.mq.messages import BuildCloneReq, BuilderRegIn, BuilderRegOut
+from assemblage.mq.messages import (
+    MQMsg, BuildCloneReq, BuilderRegIn, BuilderRegOut, BuildStatusMsgIn, CloneStatusMsgIn, BinaryTaskMsgIn, PostAnalysisTaskMsgIn
+)
 from assemblage.mq.client import Connection, MQQueue
 from assemblage.s3.client import S3Client, S3Bucket
 
@@ -36,9 +38,6 @@ logger = logging.getLogger(__name__)
 NON_EXE_MODE = stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH
 
 TEMP_DIR = Path(tempfile.gettempdir())
-
-
-
 
 
 class Builder(BasicWorker):
@@ -97,17 +96,15 @@ class Builder(BasicWorker):
         # these are set in the build_opt tables. not sure what these should be so settign empty for now
         self.compiler_flag = None
         self.build_command = None
-        
-        
+
         self.MAX_WAIT = settings.WAIT_FOR_BUILD_OPT  # 15 minutes in seconds
         self.CHECK_INTERVAL = settings.CONFIG_CHECK_INTERVAL  # check every 5 seconds
-        
-        
+
       # s3 configuration
         if settings.s3_enabled:
             # settings.validate_s3()
             self.s3_client = S3Client(host=settings.S3_HOST, port=settings.S3_PORT, access_key=settings.S3_ACCESS_KEY,
-                                    secret_access_key=settings.S3_SECRET_ACCESS_KEY, https=settings.S3_HTTPS, region_name=settings.S3_REGION)
+                                      secret_access_key=settings.S3_SECRET_ACCESS_KEY, https=settings.S3_HTTPS, region_name=settings.S3_REGION)
             # coordindator creates but then only needs read only ( unless used to delete ) - leave for now.
             # stores cloned projects
             self.ProjectBucket = S3Bucket(self.s3_client, "project-archive")
@@ -136,18 +133,17 @@ class Builder(BasicWorker):
                 f"Running on invalid platform: {self.platform}. Options are Linux or Windows")
             sys.exit(1)
 
-
     def _clean_folder(self, path):
         '''
         Try to clean up the target folder, if it fails, will walk and try adn deelte as much as possible. 
-        
+
         This is required due to the windows file lock on the produced executable. Only called on s3 when the projects are saved separately
         This does not delete the top level folder of the git username, but not worth the time and effort currenly
         '''
         logger.debug(f"Deleting {path}")
         if not os.path.exists(path):
             return
-        
+
         try:
             shutil.rmtree(path)
             return  # success
@@ -168,7 +164,8 @@ class Builder(BasicWorker):
                 try:
                     os.rmdir(dir_path)
                 except Exception as e:
-                    logger.warning(f"Could not delete directory {dir_path}: {e}")
+                    logger.warning(
+                        f"Could not delete directory {dir_path}: {e}")
         try:
             os.rmdir(path)
         except Exception as e:
@@ -181,7 +178,7 @@ class Builder(BasicWorker):
         Only the basename is used; if no known build type or architecture is found, returns the original filename.
 
         '''
-        
+
         prefix = []
         if "debug" in filename.lower():
             prefix.append("debug")
@@ -191,14 +188,14 @@ class Builder(BasicWorker):
             prefix.append("x86")
         if "x64" in filename.lower():
             prefix.append("x64")
-            
+
         if prefix:
             prefix_str = "_".join(prefix)
             dest_file = f"{prefix_str}_{ntpath.basename(filename)}"
             return dest_file
-        else: 
-            return filename # nothing to change
-        
+        else:
+            return filename  # nothing to change
+
     def run_ctrl(self):
         '''
         At the moment, all this does is send a registering message to the coordinator.
@@ -240,7 +237,6 @@ class Builder(BasicWorker):
         logger.info(f"{self} Waiting for build_opt_thread to be set")
         # if not self.build_opt_queue:
         #     logger.info("Waiting for build_opt_thread to be set")
-
 
         start_time = time.time()
 
@@ -301,8 +297,7 @@ class Builder(BasicWorker):
         Callback for when we get a task request from a coordinator to build and clone/pull a project.
         """
         self.sleep_job_event.wait()  # way to get the control thread to block
-        
-        
+
         task = BuildCloneReq.from_json(body)  # TODO: create type for this
 
         ch.basic_ack(method.delivery_tag)
@@ -330,8 +325,7 @@ class Builder(BasicWorker):
         # ch.connection.process_data_events()
 
         if clone_status == CloneStatus.SUCCESS:
-            
-            
+
             logger.info("Clone SUCCESS, Attempting to build `%s`", task.url)
             compiler_flag = self.compiler_flag
             compiler_version = self.build_strategy.compiler_version
@@ -340,61 +334,61 @@ class Builder(BasicWorker):
             else:
                 commit_hexsha = self.build_strategy.get_project_commit(
                     clone_dir)
-            
-            
-            save_path = f'{self}:{clone_dir}' # default save location - will be the host + save dir ( either s3 path or the builder it is on + the path in teh builder)
 
+            # default save location - will be the host + save dir ( either s3 path or the builder it is on + the path in teh builder)
+            save_path = f'{self}:{clone_dir}'
 
             if self.s3_client:
                 # save to s3 client and return location
-                logger.info(f"Uploading {clone_dir} to s3 bucket { self.ProjectBucket}")
+                logger.info(
+                    f"Uploading {clone_dir} to s3 bucket {self.ProjectBucket}")
                 username, project = clone_dir.rstrip("/").split("/")[-2:]
-                saved = self.save_project_to_s3(clone_dir, username, project, commit_hexsha)
+                saved = self.save_project_to_s3(
+                    clone_dir, username, project, commit_hexsha)
                 if saved:
                     save_path = f"{self.ProjectBucket}/{username}/{project}/{commit_hexsha}.tar.gz"
                     logger.debug(f"Project saved to {save_path} ")
-                    
-
 
             self.send_msg(task=task,
-                      kind=InputQueue.CLONE,
-                      url=task.url,
-                      status=clone_status,
-                      msg=self.uuid[:5]+clone_msg.decode(),
-                      commit_hexsha=commit_hexsha,
-                      save_path = save_path
-                      )
+                          kind=InputQueue.CLONE,
+                          url=task.url,
+                          status=clone_status,
+                          msg=self.uuid[:5]+clone_msg.decode(),
+                          commit_hexsha=commit_hexsha,
+                          save_path=save_path
+                          )
 
-          
             # this is currently only needed for windows, but linux just reutrns none too, so it wont break
             # seems cleaner to do it like this , instead of doing if statements here
-            
-            all_builds_saved = True 
+
+            all_builds_saved = True
             for opt in task.optimizations:
                 self.send_msg(task=task,
-                          kind=InputQueue.BUILD,
-                          url=task.url,
-                          status=BuildStatus.PROCESSING,
-                          msg="Received and building",
-                          commit_hexsha=commit_hexsha,
-                          optimization=opt,
-                          build_time=0)
+                              kind=InputQueue.BUILD,
+                              url=task.url,
+                              status=BuildStatus.PROCESSING,
+                              msg="Received and building",
+                              commit_hexsha=commit_hexsha,
+                              optimization=opt,
+                              build_time=0)
 
                 optimization = OptLevel(opt)
 
-                logger.debug(f"Starting pre build with optimization: {optimization}")
+                logger.debug(
+                    f"Starting pre build with optimization: {optimization}")
                 sln_file = self.build_strategy.pre_build(
                     build_mode=self.build_mode,
                     clone_dir=clone_dir,
                     optimization=optimization
                 )
-                logger.debug(f"Pre Build success, now running build for {task.url}")
+                logger.debug(
+                    f"Pre Build success, now running build for {task.url}")
                 before_build_time = int(time.time())
                 build_msg, build_status = self.build_strategy.run_build(
                     repo=task.url,
                     clone_dir=clone_dir,
                     build_mode=self.build_mode,
-                    slnfile=sln_file, 
+                    slnfile=sln_file,
                     optimization=optimization
                 )
 
@@ -404,7 +398,8 @@ class Builder(BasicWorker):
                                                     self.build_mode,
                                                     task, compiler_version,
                                                     optimization, commit_hexsha)
-                logger.info(f"Post build hook done, build_status: {build_status}")
+                logger.info(
+                    f"Post build hook done, build_status: {build_status}")
                 logger.debug(f"Build message: {build_msg}")
 
                 if build_status == BuildStatus.SUCCESS:
@@ -423,34 +418,35 @@ class Builder(BasicWorker):
                     all_builds_saved = False   # Build itself failed
 
                 self.send_msg(task=task,
-                            kind=InputQueue.BUILD,
-                            url=task.url,
-                            status=build_status,
-                            msg="Build Process Finished",
-                            commit_hexsha=commit_hexsha,
-                            build_time=(after_build_time - before_build_time),
-                            optimization=optimization.value
-                            )
-                
+                              kind=InputQueue.BUILD,
+                              url=task.url,
+                              status=build_status,
+                              msg="Build Process Finished",
+                              commit_hexsha=commit_hexsha,
+                              build_time=(after_build_time -
+                                          before_build_time),
+                              optimization=optimization.value
+                              )
+
             if self.s3_client and all_builds_saved:
-                self._clean_folder(os.path.dirname(clone_dir)) # dirname needed to also remove parent folder with username
-            
-                
+                # dirname needed to also remove parent folder with username
+                self._clean_folder(os.path.dirname(clone_dir))
+
         else:
             self.send_msg(task=task,
-                      kind=InputQueue.CLONE,
-                      url=task.url,
-                      status=clone_status,
-                      msg=self.uuid[:5]+clone_msg.decode(),
-                      commit_hexsha="", 
-                      save_path=None)
+                          kind=InputQueue.CLONE,
+                          url=task.url,
+                          status=clone_status,
+                          msg=self.uuid[:5]+clone_msg.decode(),
+                          commit_hexsha="",
+                          save_path=None)
 
             logger.info("Clone FAILURE %s: %s", task.url, clone_msg)
         # build_method.clean(folders)
         logger.debug("Worker %s finished %s", self.uuid[:5], task.url,
                      )
 
-    def save_project_to_s3(self, clone_dir: str, username:str, project_name: str, commit_hexsha: str):
+    def save_project_to_s3(self, clone_dir: str, username: str, project_name: str, commit_hexsha: str):
         '''
         ZIP and save projects to s3 Project-Archive/<github_username>/<github_project>/commit.zip
         '''
@@ -458,26 +454,26 @@ class Builder(BasicWorker):
         try:
 
             archive = shutil.make_archive(f"{TEMP_DIR}/{commit_hexsha}",
-                                "gztar", clone_dir)  # zip up
-            s3_key = f"{username}/{project_name}/{commit_hexsha}.tar.gz"         
-               
-            self.ProjectBucket.upload_file(archive, s3_key )
-            try: 
+                                          "gztar", clone_dir)  # zip up
+            s3_key = f"{username}/{project_name}/{commit_hexsha}.tar.gz"
+
+            self.ProjectBucket.upload_file(archive, s3_key)
+            try:
                 os.remove(archive)
             except Exception as e:
                 # dont want to fail if successfully failed, just hasnt tidied up
-                logger.warning(f"Failed to delete archive: {s3_key} after uploading to s3")
-            
+                logger.warning(
+                    f"Failed to delete archive: {s3_key} after uploading to s3")
+
             return True
         except Exception as e:
-            logger.warning(f"failed to save {clone_dir} as zip archive to {self.ProjectBucket}/{username}/{project_name}/{commit_hexsha}.tar.gz : {e}")
+            logger.warning(
+                f"failed to save {clone_dir} as zip archive to {self.ProjectBucket}/{username}/{project_name}/{commit_hexsha}.tar.gz : {e}")
             return False
-        
-        
+
     def save_binaries(self, target_dir, task, original_files, commit_hexsha, optimization="None"):
         """ Store binaries locally or on S3, and notify coordinator. """
         logger.debug(f"Saving binaries of Repo: {task.url}")
-
 
         self.build_strategy.own_dir(os.path.dirname(target_dir))
 
@@ -496,9 +492,10 @@ class Builder(BasicWorker):
         if self.s3_client:
             dest_base_full = f"{self.ProjectBucket}/{dest_base}"
         else:
-            dest_base_full = os.path.join(BINPATH, "successes", username, project, commit_hexsha)
+            dest_base_full = os.path.join(
+                BINPATH, "successes", username, project, commit_hexsha)
             os.makedirs(dest_base_full, exist_ok=True)
-        all_saved = True 
+        all_saved = True
         for fpath in bin_found:
             base_name = os.path.basename(fpath)
             if self.platform == "windows":
@@ -508,11 +505,12 @@ class Builder(BasicWorker):
                 s3_key = f"{dest_base}/{self.build_strategy.compiler}/{optimization}/{base_name}"
                 if self.ArtifactBucket.upload_file(fpath, s3_key):
                     logger.debug(f"Uploaded {fpath} -> {s3_key}")
-                else: 
+                else:
                     all_saved = False
                     logger.warning(f"Failed to upload {fpath} -> {s3_key}")
             else:
-                dest_file = os.path.join(dest_base_full, optimization, base_name)
+                dest_file = os.path.join(
+                    dest_base_full, optimization, base_name)
                 shutil.copy2(fpath, dest_file)
                 try:
                     os.remove(fpath)
@@ -522,13 +520,14 @@ class Builder(BasicWorker):
                     try:
                         os.chmod(dest_file, NON_EXE_MODE)
                     except Exception:
-                        logger.warning(f"Failed to change permissions on {dest_file}")
+                        logger.warning(
+                            f"Failed to change permissions on {dest_file}")
                         all_saved = False
 
             self.send_msg(kind=InputQueue.BINARY,
-                        task=task,
-                        file_name=fpath if self.s3_client else dest_file,
-                        optimization=optimization.value)
+                          task=task,
+                          file_name=fpath if self.s3_client else dest_file,
+                          optimization=optimization.value)
 
         if not self.s3_client:
             self.build_strategy.own_dir(dest_base_full)
@@ -541,76 +540,86 @@ class Builder(BasicWorker):
         '''
         ret = {}
         queue = MQQueue(kind)
-        match kind:
-            case InputQueue.BUILD_REG:
-                ret = BuilderRegIn(
-                    name=self.name,
-                    uuid=self.uuid,
-                    compiler=self.build_strategy.compiler,
-                    library=self.library,
-                    compiler_version=self.build_strategy.compiler_version,
-                    language=self.build_strategy.language,
-                    save_assembly=self.build_strategy.save_assembly,
-                    platform=self.platform,
-                    compiler_flag=self.compiler_flag,
-                    build_command=self.build_command,
-                    build_system=self.build_system,
-                ).to_json()
-                ctrl_conn = self.mq_client.get_connection(f'{self}-ctrl')
-                logger.debug(
-                    f"Reply to {self.control_queue_in.name}. corr_id {self.uuid}")
-                if ctrl_conn:
-                    logger.info(f"Registering builder with {ret}")
-                    ctrl_conn.send_msg(queue=queue, msg=ret,
-                                       #    exchange='builder.register',
-                                       reply_to=f"{self.control_queue_in.name}",
-                                       corr_id=self.uuid)
-                    return
-                else:
-                    # do we want to create if does not exist then send message?
-                    raise Exception(f"Connection {self}-ctrl does not exist")
-            case InputQueue.CLONE:
-                ret = {
-                    'url': kwarg['url'],
-                    'opt_id': self.opt_id,
-                    'status': kwarg['status'],
-                    'msg': kwarg['msg'][-1000:],
-                    'task_id': task.task_id,
-                    'commit_hexsha': kwarg['commit_hexsha'],
-                    'save_path': kwarg['save_path']
-                }
-            case InputQueue.BUILD:
-                ret = {
-                    'url': kwarg['url'],
-                    'opt_id': self.opt_id,
-                    'status': kwarg['status'],
-                    'msg': kwarg['msg'][-1000:],
-                    'task_id': task.task_id,
-                    'build_time': kwarg['build_time'],
-                    'commit_hexsha': kwarg['commit_hexsha'], 
-                    'optimization': kwarg['optimization'],
-                }
-            case InputQueue.BINARY:
-                ret = {
-                    'task_id': task.task_id,
-                    'file_name': kwarg['file_name'], 
-                    'optimization': kwarg['optimization']
-                }
-            case InputQueue.POST_ANALYSIS:
-                ret = {
-                    'file_name': kwarg['file_name'],
-                    'platform': self.platform
-                }
-                kind = f"post_analysis.{self.opt_id}"
-                # self.mq_client.send_kind_msg(f"post_analysis.{self.opt_id}", json.dumps(ret))
-                logger.info("Send to post analysis channel %s \n data: \n %s",
-                            f"post_analysis.{self.opt_id}", json.dumps(ret))
-            case _:
-                logger.warning(
-                    "Unknown type of message %s, not sending... ", kind)
+        routing_key = None
+        # temporary, to make it more clear that these two messages are logically distinct
+        if kind == InputQueue.BUILD_REG:
+            ret = BuilderRegIn(
+                name=self.name,
+                uuid=self.uuid,
+                compiler=self.build_strategy.compiler,
+                library=self.library,
+                compiler_version=self.build_strategy.compiler_version,
+                language=self.build_strategy.language,
+                save_assembly=self.build_strategy.save_assembly,
+                platform=self.platform,
+                compiler_flag=self.compiler_flag,
+                build_command=self.build_command,
+                build_system=self.build_system,
+            ).to_json()
+            ctrl_conn = self.mq_client.get_connection(f'{self}-ctrl')
+            logger.debug(
+                f"Reply to {self.control_queue_in.name}. corr_id {self.uuid}")
+            if ctrl_conn:
+                logger.info(f"Registering builder with {ret}")
+                ctrl_conn.send_msg(queue=queue, msg=ret,
+                                   #    exchange='builder.register',
+                                   reply_to=f"{self.control_queue_in.name}",
+                                   corr_id=self.uuid)
                 return
-        job_conn = self.mq_client.get_connection(f'{self}')
-        if job_conn:
-            job_conn.send_msg(queue, json.dumps(ret))
+            else:
+                # do we want to create if does not exist then send message?
+                raise Exception(f"Connection {self}-ctrl does not exist")
         else:
-            raise Exception("No connection for job handler exists")
+            msg = None
+            match kind:
+                case InputQueue.CLONE:
+                    msg = CloneStatusMsgIn(
+                        url=kwarg['url'],
+                        opt_id=self.opt_id,
+                        status=kwarg['status'],
+                        msg=kwarg['msg'][-1000:],
+                        task_id=task.task_id,
+                        build_time=kwarg['build_time'],
+                        optimization= kwarg['optimization'],
+                    )
+                case InputQueue.BUILD:
+                    msg = BuildStatusMsgIn(
+                        url=kwarg['url'],
+                        opt_id=self.opt_id,
+                        status=kwarg['status'],
+                        msg=kwarg['msg'][-1000:],
+                        task_id=task.task_id,
+                        build_time=kwarg['build_time'],
+                        commit_hexsha=kwarg['commit_hexsha'],
+                        optimization= kwarg['optimization'],
+                    )
+                case InputQueue.BINARY:
+                    msg = BinaryTaskMsgIn(
+                        task_id=kwarg['task_id'],
+                        file_name=kwarg['file_name'],
+                        optimization=kwarg['optimization']
+
+                    )
+                case InputQueue.POST_ANALYSIS:
+                    msg = PostAnalysisTaskMsgIn(
+                        file_name=kwarg['file_name'],
+                        platform=self.platform
+                    )
+                    routing_key = f"post_analysis.{self.opt_id}"
+
+                    # it's important to redefine the queue in order to include proper routing key
+                    # TODO: test and troubleshoot, the first 2 params were chosen arbitrarily
+                    queue = MQQueue(
+                        name=routing_key, exchange_name=routing_key, routing_key=routing_key)
+                    # self.mq_client.send_kind_msg(f"post_analysis.{self.opt_id}", json.dumps(ret))
+                case _:
+                    logger.warning(
+                        "Unknown type of message %s, not sending... ", kind)
+                    return
+
+            job_conn = self.mq_client.get_connection(f'{self}')
+            assert (isinstance(msg, MQMsg))
+            if job_conn:
+                job_conn.send_msg(queue, msg.to_json())
+            else:
+                raise Exception("No connection for job handler exists")

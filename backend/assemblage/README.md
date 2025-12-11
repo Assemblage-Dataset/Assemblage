@@ -64,22 +64,23 @@ PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python python3 cli.py --server $(docker i
 
 ## Crawler Setup
 
-A crawler is provided with the system, it need a object of data source, which is the website it crawls,the constructor for such data source is provided as `GithubRepositories`, which takes in tokens, query parameters and query time intervals, for example:
+A crawler is integrated with the system, which collects repositories from its DataSource object. Currently, the crawler supports GitHub, as implemented in the `GithubRepositories` class: if desired, another datasource can be configured by extending the [`DataSource`](worker/scraper.py) abstract class. 
 
-```
-GithubRepositories(
-    git_token="some_token_here",
-    qualifier={
-    }, 
-    crawl_time_start=1262322000,
-    crawl_time_interval=86400,
-    proxies=[],
-    build_sys_callback=(lambda files: return "")
-)
+The crawler is configured in the `ScraperSettings` class of the [`config`](config.py) file.
+To use the scraper "out-of-the-box", provide a `GITHUB_TOKEN` in the environment variables. Other environment variables are supported for further customization, but reasonable fallback values are included in the default configuration.
 
-```
+- `SCRAPE_INTERVAL`: Determines the span of time that each query should cover. I.e., at the default of 4 hours, a single search using the GitHub API may request all repositories last updated between January 1st, 12:00 and January 1st, 16:00. Typically the default is fine.
+- `SCRAPE_START_TIME`: Determines the default start time to begin scraping from if no stored data is available (i.e. fresh install or reset). The scraper works backwards. Typically "now" is fine, unless you would like to stagger scrapers or omit recent repos.
+- `SCRAPE_END_TIME`: Determines the date of the oldest repository that the scraper will collect.
+- `SCRAPER_POLICY`: Determines scraper behavior. The CONTINUOUS policy sends repositories to the coordinator without regard to coordinator demand: the ON_REQUEST policy causes the scraper to wait for a request from the coordinator before sending repositories, allowing for better supply-demand balance. 
+    - If you're having trouble getting the scraper to work, set wait_for_config to false and policy to CONTINUOUS, as there are fewer moving parts with this configuration. 
+- `SCRAPE_DATASOURCE`: Determines the data source. 
 
-It is also possible to implement crawler to other websites by extending the [`DataSource`](worker/scraper.py) class
+Note also that the scraper obtains its start and end times from the config file only on a fresh install: on a restart, these values will be overwritten by the values contained in the configuration message sent from the coordinator. This behavior is intended to allow for persistence if the system is restarted before the scraper has completed. It can be modified or disabled if desired by removing fields from the message sent by the coordinator in the [`recv_scraper_reg`](coordinator/coordinator.py) function. 
+
+Other fields of interest in the [scraper](worker/scraper.py) include: the `data_filter` method within the DataSource, which allows one to filter which repositories are selected for further processing e.g. by removing smaller repositories; the `proxies` property of the DataSource, which may be modified to add multiple proxies; and the `qualifiers` property of the DataSource, which allows one to filter by other criteria such as licenses. The latter two properties are most easily modified within the initialization of the Scraper worker. 
+
+
 
 ## Workers API and Deployment
 

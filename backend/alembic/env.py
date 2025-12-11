@@ -22,10 +22,11 @@ db_name: str = os.getenv('POSTGRES_DATABASE','assemblage')
 db_user: str = "assemblage"
 db_pass: str = os.getenv('POSTGRES_PASSWORD', 'assemblage')
 
+# Allows us to optionally overwrite the database URL to our own url (as we do in the integration test setup)
+if config.get_main_option("sqlalchemy.url") in (None, "", "driver://", "driver://user:pass@localhost/dbname"):
+    DATABASE_URL = f"postgresql+psycopg2://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
 
-DATABASE_URL = f"postgresql+psycopg2://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
-
-config.set_main_option("sqlalchemy.url", DATABASE_URL)
+    config.set_main_option("sqlalchemy.url", DATABASE_URL)
 
 
 # add your model's MetaData object here

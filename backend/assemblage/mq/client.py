@@ -78,6 +78,11 @@ class Connection:
     def __str__(self):
         # channel/connection named the same typically
         return f"Connection: {self.conn_name}"
+    
+    def get_queue(self, queue: MQQueue):
+        self.ensure_connection()
+        self.ensure_queue(queue)
+        return self.chan.queue_declare(queue=queue.name, durable=True)
 
     def connect(self, auto_retry: bool = True, retry_attempts: int | None = 10):
 

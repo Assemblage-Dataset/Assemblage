@@ -1,14 +1,15 @@
 services:
-
   tests:
     image: assemblage-gcc:default
     build:
       context: .
       dockerfile: docker/gcc/Dockerfile
-    ## run all tests except the one in assemblage/windows/parsers:
-    command: python -m unittest discover -s test -p '*_test.py'
+    ## run all unit tests except the one in assemblage/windows/parsers:
+    command: python -m unittest discover -s test/unit_tests -p '*_test.py'
     ## run one test:
-    #command: python /app/test/unit_tests/workers/coordinator_test.py TestCoordinator.test_recv_build_info_clone_wait_eventual_success
+    #command: python /app/test/unit_tests/workers/scraper_test.py TestScraper.test_github_time_to_mysql_time_good
+    ## run all tests in one file:
+    #command: python /app/test/unit_tests/workers/scraper_test.py
     environment: # do not remove!!
       PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
       PYTHONUNBUFFERED: 1

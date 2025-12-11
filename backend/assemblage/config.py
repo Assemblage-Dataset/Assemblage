@@ -7,7 +7,7 @@ import os
 import socket
 import logging
 
-from assemblage.consts import RuntimeEnv, ScrapeSource
+from assemblage.consts import RuntimeEnv, ScrapeSource, ScraperOutputPolicy
 
 # set pika to only log warnings. otherwise it gets noisy - maybe this can be removed with better try except on all pika ops
 logging.getLogger("pika").setLevel(logging.WARNING)
@@ -94,11 +94,33 @@ class ScraperSettings(AssemblageSettings):
     """
     Scraper specific settings
     """
-    #git_token: str = Field(..., env="GITHUB_TOKEN")   # ideal, with dotenv
-    git_token: str = Field(os.getenv("GITHUB_TOKEN"))   # not lovin' this, but it DOES prevent dotenv dependency
-    start_time: int = Field(os.getenv("SCRAPE_START_TIME", default=int(datetime.now(timezone.utc).timestamp()))) # default is now
-    end_time: int = Field(os.getenv("SCRAPE_END_TIME", int(datetime.now(timezone.utc).timestamp())-60*60*24*31*12))# default is now - 1 year ish
-    interval: int = Field(os.getenv("SCRAPE_INTERVAL", 14400))
+
+    git_token: str = Field(os.getenv("GITHUB_TOKEN", ""))
+    # note: must provide GITHUB_TOKEN even if alternative tokens are provided
+    alternative_git_tokens: list[str] | None = None 
+    # alternative_git_tokens: list[str] | None = Field (
+    #     [ os.getenv("BACKUP_TOKEN_1") ]
+    # )
+
+    interval: int = Field(os.getenv("SCRAPE_INTERVAL", 14400)) # default is 4 hours
+
+    # The below start and end times are overwritten by coordinator -- see recv_scraper_reg
+    default_start_time: int = Field(os.getenv("SCRAPE_START_TIME", 
+                                    default=int(datetime.now(timezone.utc).timestamp()) )) # default is now
+    default_end_time: int = Field(os.getenv("SCRAPE_END_TIME", 
+                                    default=int(datetime.now(timezone.utc).timestamp())-60*60*24*31*12))# default is now - 1 year ish
+    default_policy: ScraperOutputPolicy = Field(os.getenv("SCRAPER_POLICY", ScraperOutputPolicy.ON_REQUEST ))
+
+    wait_for_config: bool = True 
+    # if true, scrapers don't start scraping until they've received config from coordinator
+    # If false, all scrapers will go with the defaults determined above
+    # Should probably remain true unless you want to disable the coordinator sending start time for some reason
+    
+    qualifiers: set[str] = {
+                "language:c++"
+            }
+    proxies: list[str] = []
+
     source: ScrapeSource = Field(os.getenv("SCRAPE_DATASOURCE", default=ScrapeSource.GITHUB))
 
 
