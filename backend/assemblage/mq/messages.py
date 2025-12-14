@@ -101,7 +101,7 @@ class ScraperDataOutSingle(MQMsg):
     def __init__(self, name: str, url: str, language: str,
                  owner_id: int, description: str,
                  created_at: str, updated_at: str, size: int, 
-                 build_system: str, branch: str):
+                 build_system: str, branch: str, commit_hexsha: str | None):
         super().__init__()
         self.name: str = name
         self.url: str = url
@@ -113,6 +113,7 @@ class ScraperDataOutSingle(MQMsg):
         self.size: int = int(size)
         self.build_system: str = build_system
         self.branch: str = branch
+        self.commit_hexsha: str | None = commit_hexsha
 
     def to_dict(self):
         return self.__dict__
