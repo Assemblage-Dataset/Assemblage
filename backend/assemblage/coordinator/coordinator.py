@@ -152,12 +152,13 @@ class Coordinator:
             exit(1)
         task_count = 0
         while True:
+            
             try:
                 task_count += self._dispatch_to_builder(
                     build_opt_id, conn, control_conn, sleep, task_count
                 )
             except Exception as e:
-                logger.error(f"Dispatch Err:  {e}")
+                logger.error(f"Build opt id : {build_opt_id} Dispatch Err:  {e}")
                 
                 # try to restart thread in case this was a fluke
                 # break
@@ -216,7 +217,7 @@ class Coordinator:
 
             # log progress
             if task_count % 10 == 0:
-                logger.info(f'Placed {task_count}th task on build option build_opt_id')
+                logger.info(f'Placed {task_count}th task on build option {build_opt_id}')
 
             # sleep
             if sleep:
@@ -377,6 +378,9 @@ class Coordinator:
 
     def recv_binary(self, ch, method, _props, body):
         """ collect binary metadata from worker"""
+        
+        logger.debug(f"recv binary: {body}")
+        
         recv_msg = BinaryTaskMsgIn.from_json( body.decode() )
 
         self.db_man.insert_binary(

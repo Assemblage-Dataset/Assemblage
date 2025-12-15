@@ -203,7 +203,7 @@ class Connection:
         '''
         send message into the queue, should only be used on Producer connections
         '''
-        logging.debug("MQ queued length %s", len(msg))
+        logger.debug("MQ queued length %s", len(msg))
   
       # woudl it be better to just pass in mqqueue type and deal with exception later?
         try:
@@ -219,7 +219,7 @@ class Connection:
                                                                     ))
 
         except Exception as err:
-            logging.error(f"failed to send message: {err}")
+            logger.error(f"failed to send message to {queue}: {err}")
 
     def publish_to_exchange(self, exchange_name: str, routing_key: str, body: dict[Any, Any]):
         '''

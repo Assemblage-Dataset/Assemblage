@@ -473,7 +473,7 @@ class Builder(BasicWorker):
                 f"failed to save {clone_dir} as zip archive to {self.ProjectBucket}/{username}/{project_name}/{commit_hexsha}.tar.gz : {e}")
             return False
 
-    def save_binaries(self, target_dir, task, original_files, commit_hexsha, optimization="None"):
+    def save_binaries(self, target_dir, task, original_files, commit_hexsha, optimization: OptLevel):
         """ Store binaries locally or on S3, and notify coordinator. """
         logger.debug(f"Saving binaries of Repo: {task.url}")
 
@@ -526,6 +526,8 @@ class Builder(BasicWorker):
                             f"Failed to change permissions on {dest_file}")
                         all_saved = False
 
+
+            logger.debug(f"optimization: {optimization}")
             self.process_send_msg(kind=InputQueue.BINARY,
                           task=task,
                           file_name=fpath if self.s3_client else dest_file,
@@ -594,6 +596,9 @@ class Builder(BasicWorker):
                         optimization=kwarg['optimization'].value,
                     )
                 case InputQueue.BINARY:
+                    
+                    
+                    
                     msg = BinaryTaskMsgIn(
                         task_id=task.task_id,
                         file_name=kwarg['file_name'],

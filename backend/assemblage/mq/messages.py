@@ -164,7 +164,7 @@ class CloneStatusMsgIn(MQMsg):
         
 class BuildStatusMsgIn(MQMsg):
     def __init__(self, url: str, opt_id: int, status: CloneStatus,
-                 msg: str, task_id: int, build_time: int, commit_hexsha: str, optimization: int | None): 
+                 msg: str, task_id: int, build_time: int, commit_hexsha: str, optimization: int | None = None): 
         # use the value of the opt
         super().__init__()
         self.url = url 
@@ -182,7 +182,7 @@ class BinaryTaskMsgIn(MQMsg):
         super().__init__()
         self.task_id = task_id
         self.file_name = file_name
-        optimization: OptLevel.value
+        self.optimization: OptLevel.value
 
 class PostAnalysisTaskMsgIn(MQMsg):
     def __init__(self, file_name: str, platform: str):
