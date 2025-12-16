@@ -359,86 +359,137 @@ class Coordinator:
     def recv_scrape_info(self, ch: pika.channel.Channel, method: pika.spec.Basic.Deliver, props: pika.BasicProperties, body):
         ''' store scraped message to database page by page '''
         #logger.info("Crawled msg received")
-        ch.basic_ack(delivery_tag=method.delivery_tag)
-        start_time = time.time()
-        successes = 0
-        result = 0
-        bundle = ScraperDataOutBundle.from_json(body.decode())
-        for repo in bundle:
-            # must convert repo from ScrapedDataOutSingle to dict
-            result = self.db_man.insert_repos(repo.to_dict())
-            successes += result
-        if result == 0:
-            logger.info(f"{bundle.repos[0].url} inserted err")
+        try: 
+            start_time = time.time()
+            successes = 0
+            result = 0
+            bundle = ScraperDataOutBundle.from_json(body.decode())
+            for repo in bundle:
+                # must convert repo from ScrapedDataOutSingle to dict
+                result = self.db_man.insert_repos(repo.to_dict())
+                successes += result
+            if result == 0:
+                logger.info(f"{bundle.repos[0].url} inserted err")
 
+            if ch and ch.is_open:
+                ch.basic_ack(delivery_tag=method.delivery_tag)
+                logger.info(f"Received {len(bundle)} / saved {successes} repos in {round(time.time()-start_time, 2)}s")
 
+            else:
+                logger.warning("Channel recv_scrape_info closed before ack, message will be redelivered")
+            
+        except Exception as e:
+            logger.error(f"Error processing recv_scrape_info: {e}")
+            if ch and ch.is_open:
+                try:
+                    ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
+                except Exception as nack_err:
+                    logger.error(f"Failed to nack recv_scrape_info: {nack_err}")
         
         #logger.info(f"Build system counter {Counter(x.build_system for x in bundle)}", )
-        logger.info(f"Received {len(bundle)} / saved {successes} repos in {round(time.time()-start_time, 2)}s")
 
     def recv_binary(self, ch, method, _props, body):
-        """ collect binary metadata from worker"""        
-        recv_msg = BinaryTaskMsgIn.from_json( body.decode() )
+        """ collect binary metadata from worker"""   
+        
+        try:      
+            recv_msg = BinaryTaskMsgIn.from_json( body.decode() )
 
-        self.db_man.insert_binary(
-            file_name=recv_msg.file_name,
-            description='',
-            status_id=recv_msg.task_id
-        )
-        ch.basic_ack(delivery_tag=method.delivery_tag)
+            self.db_man.insert_binary(
+                file_name=recv_msg.file_name,
+                description='',
+                status_id=recv_msg.task_id
+            )
+            if ch and ch.is_open:
+                ch.basic_ack(delivery_tag=method.delivery_tag)
+            else:
+                logger.warning("Channel recv_binary closed before ack, message will be redelivered")
+            
+        except Exception as e:
+            logger.error(f"Error processing recv_binary info: {e}")
+            if ch and ch.is_open:
+                try:
+                    ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
+                except Exception as nack_err:
+                    logger.error(f"Failed to nack recv_binary info: {nack_err}")
 
     def recv_build_info(self, ch, method, _props, body):
         """ collect and update build status of a task """
-        recv_msg = BuildStatusMsgIn.from_json( body.decode() )
-        # task = db_man.get_status_row_by_id(recv_msg['task_id'])
-        if BuildStatus(recv_msg.status) == BuildStatus.OUTDATED_MSG:
-            logger.info("discarding a timeout build msg %s", body.decode())
-            ch.basic_ack(delivery_tag=method.delivery_tag)
-            return
-        task = self.db_man.get_status_row_by_id(recv_msg.task_id)
-        if task.clone_status != CloneStatus.SUCCESS:
-            # If building is extremely quick, there's a small chance that build info will be sent
-            # before the clone status is even updated in the database, so wait for sync if the status is unexpected.
-            # Removing this code won't break anything as of writing, but could introduce bugs in the future.
-            if task.clone_status in [CloneStatus.NOT_STARTED, CloneStatus.PROCESSING]:
-                timeout = COORDINATOR_DATABASE_SYNC_TIMEOUT
-                logger.info("Waiting for database sync...")
-                while (timeout > 0 and task.clone_status in [CloneStatus.NOT_STARTED, CloneStatus.PROCESSING]):
-                    # relatively long wait time to reduce required db accesses
-                    time.sleep(1)
-                    timeout -= 1
-                    task = self.db_man.get_status_row_by_id(recv_msg.task_id)
-            if task.clone_status != CloneStatus.SUCCESS:  # sync attempt timed out or clone was a failure
-                logger.warning(
-                    f"Clone failed but still built: repo id {task.repo_id}")
-        self.db_man.update_repo_status(
-            status_id=recv_msg.task_id,
-            build_time=recv_msg.build_time,
-            build_status=BuildStatus(recv_msg.status),
-            build_msg=recv_msg.msg[-500:],
-            commit_hexsha=recv_msg.commit_hexsha)
-        logger.info("BUILD task on buildopt %s updated to %s: %s",
-                    recv_msg.opt_id, recv_msg.status, " ".join(recv_msg.msg.split())[-500:])
-        ch.basic_ack(delivery_tag=method.delivery_tag)
+        
+        try: 
+            recv_msg = BuildStatusMsgIn.from_json( body.decode() )
+            # task = db_man.get_status_row_by_id(recv_msg['task_id'])
+            if BuildStatus(recv_msg.status) == BuildStatus.OUTDATED_MSG:
+                logger.info("discarding a timeout build msg %s", body.decode())
+                ch.basic_ack(delivery_tag=method.delivery_tag)
+                return
+            task = self.db_man.get_status_row_by_id(recv_msg.task_id)
+            if task.clone_status != CloneStatus.SUCCESS:
+                # If building is extremely quick, there's a small chance that build info will be sent
+                # before the clone status is even updated in the database, so wait for sync if the status is unexpected.
+                # Removing this code won't break anything as of writing, but could introduce bugs in the future.
+                if task.clone_status in [CloneStatus.NOT_STARTED, CloneStatus.PROCESSING]:
+                    timeout = COORDINATOR_DATABASE_SYNC_TIMEOUT
+                    logger.info("Waiting for database sync...")
+                    while (timeout > 0 and task.clone_status in [CloneStatus.NOT_STARTED, CloneStatus.PROCESSING]):
+                        # relatively long wait time to reduce required db accesses
+                        time.sleep(1)
+                        timeout -= 1
+                        task = self.db_man.get_status_row_by_id(recv_msg.task_id)
+                if task.clone_status != CloneStatus.SUCCESS:  # sync attempt timed out or clone was a failure
+                    logger.warning(
+                        f"Clone failed but still built: repo id {task.repo_id}")
+            self.db_man.update_repo_status(
+                status_id=recv_msg.task_id,
+                build_time=recv_msg.build_time,
+                build_status=BuildStatus(recv_msg.status),
+                build_msg=recv_msg.msg[-500:],
+                commit_hexsha=recv_msg.commit_hexsha)
+            logger.info("BUILD task on buildopt %s updated to %s: %s",
+                        recv_msg.opt_id, recv_msg.status, " ".join(recv_msg.msg.split())[-500:])
+
+            if ch and ch.is_open:
+                ch.basic_ack(delivery_tag=method.delivery_tag)
+            else:
+                logger.warning("Channel closed before ack, message will be redelivered")
+            
+        except Exception as e:
+            logger.error(f"Error processing build info: {e}")
+            if ch and ch.is_open:
+                try:
+                    ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
+                except Exception as nack_err:
+                    logger.error(f"Failed to nack recv build info: {nack_err}")
 
     def recv_clone_info(self, ch, method, _props, body):
         """ collect and update clone status of a task """
-        recv_msg = CloneStatusMsgIn.from_json( body.decode() )
-        # if the status code is timeout discard it
-        if recv_msg.status == BuildStatus.OUTDATED_MSG:
-            logger.info("discarding a timeout clone msg %s", body.decode())
-            ch.basic_ack(delivery_tag=method.delivery_tag)
-            return
-        self.db_man.update_repo_status(
-            status_id=recv_msg.task_id,
-            clone_status=BuildStatus(recv_msg.status),
-            clone_msg=recv_msg.msg[-200:])
-        task = self.db_man.get_status_row_by_id(recv_msg.task_id)
-        if task.clone_status != BuildStatus.SUCCESS:
-            logger.info("CLONE task on buildopt %s updated to %s: %s",
-                        recv_msg.opt_id, task.clone_status, recv_msg.msg)
-        ch.basic_ack(delivery_tag=method.delivery_tag)
-
+        try: 
+            recv_msg = CloneStatusMsgIn.from_json( body.decode() )
+            # if the status code is timeout discard it
+            if recv_msg.status == BuildStatus.OUTDATED_MSG:
+                logger.info("discarding a timeout clone msg %s", body.decode())
+                ch.basic_ack(delivery_tag=method.delivery_tag)
+                return
+            self.db_man.update_repo_status(
+                status_id=recv_msg.task_id,
+                clone_status=BuildStatus(recv_msg.status),
+                clone_msg=recv_msg.msg[-200:])
+            task = self.db_man.get_status_row_by_id(recv_msg.task_id)
+            if task.clone_status != BuildStatus.SUCCESS:
+                logger.info("CLONE task on buildopt %s updated to %s: %s",
+                            recv_msg.opt_id, task.clone_status, recv_msg.msg)
+            if ch and ch.is_open:
+                ch.basic_ack(delivery_tag=method.delivery_tag)
+            else:
+                logger.warning("Channel closed before ack, message will be redelivered")
+            
+        except Exception as e:
+            logger.error(f"Error processing clone info: {e}")
+            if ch and ch.is_open:
+                try:
+                    ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
+                except Exception as nack_err:
+                    logger.error(f"Failed to nack recv clone info: {nack_err}")
+                    
     def recv_builder_registration(self, ch, method, props, body):
         '''
         This function receives a registration from the builder. 
@@ -447,89 +498,94 @@ class Coordinator:
         Then a queue is spun up, and the coordinator will message the builder telling it the name of the queue to listen on for 
         build instructions
         '''
+        try: 
+            reg_info: BuilderRegIn = BuilderRegIn.from_json(body)
+            logger.info(
+                f"Recieved registration request from builder: {reg_info.name}, intending to compile {reg_info.language} on {reg_info.platform}:{reg_info.library}")
+            # search for build opt
+            logger.debug(
+                f"Will be replying to {props.reply_to} with corr_id : {props.correlation_id}")
 
-        reg_info: BuilderRegIn = BuilderRegIn.from_json(body)
-        logger.info(
-            f"Recieved registration request from builder: {reg_info.name}, intending to compile {reg_info.language} on {reg_info.platform}:{reg_info.library}")
-        # search for build opt
-        logger.debug(
-            f"Will be replying to {props.reply_to} with corr_id : {props.correlation_id}")
+            build_opt_id = self.db_man.register_build_opt(reg_info)
 
-        build_opt_id = self.db_man.register_build_opt(reg_info)
+            conn: Connection = self.mq_client.create_connection(
+                conn_name=f'{self}-builder-ctrl', channel_name=f'{self}-builder-ctrl')
+            queue = MQQueue(OutputQueue.BUILDER_CTRL)
 
-        conn: Connection = self.mq_client.create_connection(
-            conn_name=f'{self}-builder-ctrl', channel_name=f'{self}-builder-ctrl')
-        queue = MQQueue(OutputQueue.BUILDER_CTRL)
+            conn.send_msg(queue=queue, msg=BuilderRegOut(build_opt_id).to_json(),
+                        exchange="",
+                        reply_to=props.reply_to,
+                        corr_id=props.correlation_id
+                        )
+            if ch and ch.is_open:
 
-        conn.send_msg(queue=queue, msg=BuilderRegOut(build_opt_id).to_json(),
-                      exchange="",
-                      reply_to=props.reply_to,
-                      corr_id=props.correlation_id
-                      )
+                ch.basic_ack(delivery_tag=method.delivery_tag)
+                with self.t_dispatch_map_lock:
+                    alive_count = sum(t.is_alive()
+                                    for t in self.t_dispatch_map.values())
+                    existing = self.t_dispatch_map.get(build_opt_id)
+                    if existing and existing.is_alive():
+                        logger.info(
+                            f"New builder registered, build opt thread {build_opt_id} already running. Currently running {alive_count} build opt threads")
+                        return
 
-        # conn.send_msg(
-        #     exchange='',
-        #     routing_key=props.reply_to,
-        #     properties=pika.BasicProperties(
-        #         correlation_id=props.correlation_id  # echo back
-        #     ),
-        #     body=BuilderRegOut(build_opt_id).to_json()
-        # )
-        # ch.basic_publish(
-        #     exchange='',
-        #     routing_key=props.reply_to,
-        #     properties=pika.BasicProperties(
-        #         correlation_id=props.correlation_id  # echo back
-        #     ),
-        #     body=BuilderRegOut(build_opt_id).to_json()
-        # )
-
-        ch.basic_ack(delivery_tag=method.delivery_tag)
-        with self.t_dispatch_map_lock:
-            alive_count = sum(t.is_alive()
-                              for t in self.t_dispatch_map.values())
-            existing = self.t_dispatch_map.get(build_opt_id)
-            if existing and existing.is_alive():
-                logger.info(
-                    f"New builder registered, build opt thread {build_opt_id} already running. Currently running {alive_count} build opt threads")
-                return
-
-            logger.info("boot dispatching thread for %d ...", build_opt_id)
-            new_build_opt_t = threading.Thread(
-                target=self.__dispatch_task, args=(build_opt_id, True))
-            new_build_opt_t.start()
-            # add to list for management. maybe ( do we need some mutex on this...)
-            self.t_dispatch_map[build_opt_id] = new_build_opt_t
-            logger.info(f"Now running {alive_count+1} build opt threads")
+                    logger.info("boot dispatching thread for %d ...", build_opt_id)
+                    new_build_opt_t = threading.Thread(
+                        target=self.__dispatch_task, args=(build_opt_id, True))
+                    new_build_opt_t.start()
+                    # add to list for management. maybe ( do we need some mutex on this...)
+                    self.t_dispatch_map[build_opt_id] = new_build_opt_t
+                    logger.info(f"Now running {alive_count+1} build opt threads")
+            else:
+                logger.warning("Channel for builder registration closed before ack, message will be redelivered")
+            
+        except Exception as e:
+            logger.error(f"Error processing builder registration info: {e}")
+            if ch and ch.is_open:
+                try:
+                    ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
+                except Exception as nack_err:
+                    logger.error(f"Failed to nack builder registration info: {nack_err}")
 
     def recv_scraper_reg(self, ch, method, props, body):
         '''
             When a scraper requests config (ie asks for start time) send it a start and end time from DB
         '''
-        
-        request_msg: ScraperControlTaskIn = ScraperControlTaskIn.from_json(body)
+        try: 
+            request_msg: ScraperControlTaskIn = ScraperControlTaskIn.from_json(body)
 
-        if (request_msg.message_type == ScraperMsgType.SETUP):
-            logger.debug(f"Received scraper request for setup info, correlation id {props.correlation_id}")
+            if (request_msg.message_type == ScraperMsgType.SETUP):
+                logger.debug(f"Received scraper request for setup info, correlation id {props.correlation_id}")
 
-            # TODO: get data from db
-            starttime = int(time.time())
+                # TODO: get data from db
+                starttime = int(time.time())
 
-            msg = ScraperControlTaskOut(
-                message_type=ScraperMsgType.SETUP,
-                start_time=starttime
+                msg = ScraperControlTaskOut(
+                    message_type=ScraperMsgType.SETUP,
+                    start_time=starttime
+                    )
+                
+
+                conn: Connection = self.mq_client.create_connection(conn_name=f'{self}-scraper-ctrl', channel_name=f'{self}-scraper-ctrl')
+                queue = MQQueue(OutputQueue.SCRAPER_CTRL)
+
+                conn.send_msg(queue=queue, msg=msg.to_json(),
+                        exchange="",
+                        reply_to=props.reply_to,
+                        corr_id=props.correlation_id
                 )
+            if ch and ch.is_open:
+                ch.basic_ack(delivery_tag=method.delivery_tag)
+            else:
+                logger.warning("Channel closed before ack, message will be redelivered")
             
-
-            conn: Connection = self.mq_client.create_connection(conn_name=f'{self}-scraper-ctrl', channel_name=f'{self}-scraper-ctrl')
-            queue = MQQueue(OutputQueue.SCRAPER_CTRL)
-
-            conn.send_msg(queue=queue, msg=msg.to_json(),
-                      exchange="",
-                      reply_to=props.reply_to,
-                      corr_id=props.correlation_id
-            )
-
+        except Exception as e:
+            logger.error(f"Error processing recv_scarper_reg info: {e}")
+            if ch and ch.is_open:
+                try:
+                    ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
+                except Exception as nack_err:
+                    logger.error(f"Failed to nack recv_scraper_reg info: {nack_err}")
             ch.basic_ack(delivery_tag=method.delivery_tag)
 
             
