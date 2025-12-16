@@ -414,7 +414,7 @@ class Builder(BasicWorker):
 
                     if not saved_successfully:
                         all_builds_saved = False
-
+                    
                     logger.info(f"Binaries saved to {dest_binfolder}")
                 else:
                     all_builds_saved = False   # Build itself failed
@@ -485,7 +485,7 @@ class Builder(BasicWorker):
         }
         if not bin_found:
             logger.warning("No binaries found, build may have failed")
-            return None
+            return target_dir, False
 
         logger.info(f"{len(bin_found)} binaries found")
         username, project = target_dir.rstrip("/").split("/")[-2:]
@@ -596,9 +596,6 @@ class Builder(BasicWorker):
                         optimization=kwarg['optimization'].value,
                     )
                 case InputQueue.BINARY:
-                    
-                    
-                    
                     msg = BinaryTaskMsgIn(
                         task_id=task.task_id,
                         file_name=kwarg['file_name'],

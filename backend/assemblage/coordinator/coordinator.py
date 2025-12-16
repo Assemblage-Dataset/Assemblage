@@ -377,10 +377,7 @@ class Coordinator:
         logger.info(f"Received {len(bundle)} / saved {successes} repos in {round(time.time()-start_time, 2)}s")
 
     def recv_binary(self, ch, method, _props, body):
-        """ collect binary metadata from worker"""
-        
-        logger.debug(f"recv binary: {body}")
-        
+        """ collect binary metadata from worker"""        
         recv_msg = BinaryTaskMsgIn.from_json( body.decode() )
 
         self.db_man.insert_binary(

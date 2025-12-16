@@ -164,7 +164,8 @@ class CloneStatusMsgIn(MQMsg):
         
 class BuildStatusMsgIn(MQMsg):
     def __init__(self, url: str, opt_id: int, status: CloneStatus,
-                 msg: str, task_id: int, build_time: int, commit_hexsha: str, optimization: int | None = None): 
+                 msg: str, task_id: int, build_time: int, commit_hexsha: str, optimization: int ): 
+
         # use the value of the opt
         super().__init__()
         self.url = url 
@@ -174,15 +175,15 @@ class BuildStatusMsgIn(MQMsg):
         self.task_id = task_id
         self.build_time = build_time 
         self.commit_hexsha = commit_hexsha
-        self.optimization = optimization if optimization else None
+        self.optimization = optimization  # dont want to send the opt lvel iteslf
 
         
 class BinaryTaskMsgIn(MQMsg):
-    def __init__(self, task_id: int, file_name: str, optimization: OptLevel):
+    def __init__(self, task_id: int, file_name: str, optimization: int): # optimization value, not the enum
         super().__init__()
         self.task_id = task_id
         self.file_name = file_name
-        self.optimization: OptLevel.value
+        self.optimization = optimization
 
 class PostAnalysisTaskMsgIn(MQMsg):
     def __init__(self, file_name: str, platform: str):
