@@ -115,6 +115,9 @@ class Coordinator:
             self.s3_client = None
             self.ProjectBucket = None
             self.ArtifactBucket = None
+            
+            
+        self.sleep_scraper = threading.Event()
 
     def __str__(self):
         return f'Coordinator-{self.cluster_name}'
@@ -141,7 +144,7 @@ class Coordinator:
             
             self._dispatch_queue = MQQueue( name= f'builder.opt.{build_opt_id}', exchange_name='build_opt', routing_key=f'builder.opt.{build_opt_id}')
             conn: Connection = self.mq_client.get_connection(conn_name=f'{self}-build-opt')
-            control_conn: Connection = self.mq_client.create_connection(conn_name=f'{self}-scraper-ctrl', channel_name=f'{self}-scraper-ctrl')
+            # control_conn: Connection = self.mq_client.create_connection(conn_name=f'{self}-scraper-ctrl', channel_name=f'{self}-scraper-ctrl')
             
             num_tasks = self.db_man.get_tasks_to_dispatch_on_opt(build_opt_id)
             
@@ -155,7 +158,7 @@ class Coordinator:
             
             try:
                 task_count += self._dispatch_to_builder(
-                    build_opt_id, conn, control_conn, sleep, task_count
+                    build_opt_id, conn, sleep, task_count
                 )
             except Exception as e:
                 logger.error(f"Build opt id : {build_opt_id} Dispatch Err:  {e}")
@@ -168,7 +171,6 @@ class Coordinator:
 
     def _dispatch_to_builder( self, build_opt_id, 
             conn : Connection, 
-            control_conn: Connection,
             sleep : bool, task_count : int ):
         '''
             Look for and, if present, dispatch unstarted tasks from database to this 
@@ -199,7 +201,7 @@ class Coordinator:
             # if there are not many messages waiting to be consumed, request more repos
             if messages_on_buildopt <= COORDINATOR_REPO_REQUEST_THRESHOLD:
                 logger.info(f"Dispatch thread on build option {build_opt_id} requesting more repos from any scraper...")
-                self._request_repos(control_conn)
+                self._request_repos()
                 time.sleep(1) # long enough to process the request, hopefully w/o too much spam, w/o bottlenecking other processes
             else:
                 logger.info( f"Dispatch thread on build option {build_opt_id} idling ({messages_on_buildopt} tasks waiting to be built)" )
@@ -599,11 +601,6 @@ class Coordinator:
         """
         Run various threads for interacting with queues and RPC.
         """
-        try:
-            os.remove("/tmp/setup_complete.txt")
-        except OSError:
-            pass
-
         while True:
             try:
                 if self.db_man.tables_exist():
@@ -618,24 +615,7 @@ class Coordinator:
             except:
                 logger.error("error checking if tables exist")
 
-        # we only want to create threads when a builder is actually registered. so the builder has to register,
-        # and the thread will be created when it registers
-        # logger.info("%s dispatching thread starts", len(
-        #     [x for x in self.db_man.all_enabled_build_options()]))
 
-        # # Create a dispatch thread for each build option configuration
-        # for build_opt in self.db_man.all_enabled_build_options():
-        #     logger.info("boot dispatching thread for %d ...", build_opt.id)
-        #     self.t_dispatch_map.append(threading.Thread(
-        #         target=self.__dispatch_task, args=(build_opt.id, True)))
-
-        # t_ddisasm = threading.Thread(target=self.__disasm_task)
-        # t_consume_clone = threading.Thread(target=self.__consume_clone)
-        # t_consume_build = threading.Thread(target=self.__consume_build)
-        # t_consume_binary = threading.Thread(target=self.__consume_binary)
-        # t_scrape = threading.Thread(target=self.__consume_scraped_data)
-
-        # t_consume_config = threading.Thread(self.__consume_from_queue, args=(QueueName.CONFIG,))
         t_consume_clone = threading.Thread(
             # note: the comma is important to parse args as tuple
             target=self.__consume_from_queue, args=(InputQueue.CLONE,))
@@ -655,8 +635,6 @@ class Coordinator:
         # t_reboot_worker = threading.Thread(target=self.__reboot_worker)
         t_daemon = threading.Thread(target=self.__daemon)
         logger.info("Processes ready")
-        with open("/tmp/setup_complete.txt", "w") as f:
-            f.write("done")
         t_clean_task.start()
         for t_dispatch in self.t_dispatch_map:
             t_dispatch.start()
