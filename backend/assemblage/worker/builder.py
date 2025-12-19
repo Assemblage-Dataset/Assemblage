@@ -21,7 +21,7 @@ import ntpath
 import tempfile
 from pathlib import Path
 
-from assemblage.consts import BINPATH, TASK_TIMEOUT_THRESHOLD, BuildStatus, MAX_MQ_SIZE, CloneStatus, InputQueue, OptLevel, WorkerType
+from assemblage.consts import BINPATH, TASK_TIMEOUT_THRESHOLD, BuildStatus, MAX_MQ_SIZE, CloneStatus, InputQueue, OptLevel, OutputQueue, WorkerType
 from assemblage.worker.base_worker import BasicWorker
 from assemblage.worker.build_method import LinuxBuildStrategy, WindowsDefaultStrategy
 from assemblage.config import BuilderSettings
@@ -202,13 +202,15 @@ class Builder(BasicWorker):
         Then it waits for a response and then sets the build option queue to listen on.
         '''
         try:
-
+            conn: Connection = self.mq_client.create_connection(conn_name=f'{self}-{OutputQueue.BUILDER_CTRL}',
+                                                                        channel_name=f'{self}-{OutputQueue.BUILDER_CTRL}',
+                                                                        )
             while True:
 
                 if not self.build_opt_queue:  # handle when errors happen in creating hte connectino/ consume without the builder having a queue - could expand to just do some of htis on start up
-                    conn: Connection = self.mq_client.create_connection(conn_name=f'{self}-ctrl',
-                                                                        channel_name=f'{self}-ctrl',
-                                                                        )
+      
+                    
+                    conn.ensure_connection()
                     conn.create_channel()
                     self.process_send_msg(kind=InputQueue.BUILD_REG, task=None)
                     logger.info(
@@ -560,7 +562,7 @@ class Builder(BasicWorker):
                 build_command=self.build_command,
                 build_system=self.build_system,
             ).to_json()
-            ctrl_conn = self.mq_client.get_connection(f'{self}-ctrl')
+            ctrl_conn: Connection | None = self.mq_client.get_connection(f'{self}-{OutputQueue.BUILDER_CTRL}')
             logger.debug(
                 f"Reply to {self.control_queue_in.name}. corr_id {self.uuid}")
             if ctrl_conn:

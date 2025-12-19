@@ -208,7 +208,7 @@ class ScraperControlTaskOut(MQMsg):
             end_time : int | None = None,
             policy : ScraperOutputPolicy | None = None,
             request_amount : int = -1,
-            specific_recipient: bool = True
+            specific_recipient: bool = True, 
             ):
         '''
             If specific_recipient is false, this message can be handled by any scraper
@@ -220,7 +220,7 @@ class ScraperControlTaskOut(MQMsg):
         self.policy = policy
         self.request_amount = request_amount
         self.specific_recipient = specific_recipient
-
+        
 class ScraperControlTaskIn(MQMsg):
     def __init__(self, 
             message_type: ScraperMsgType):

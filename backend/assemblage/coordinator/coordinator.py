@@ -101,6 +101,11 @@ class Coordinator:
 
         # list of dispatched job threads
         self.t_dispatch_map: dict[int, threading.Thread] = {}
+        
+        self.t_empty_built_opt_lock = threading.Lock()
+        self.t_empty_built_opt: dict[int, threading.Event] = {}
+        
+        
 
         if settings.s3_enabled:
             # settings.validate_s3()
@@ -117,7 +122,6 @@ class Coordinator:
             self.ArtifactBucket = None
             
             
-        self.sleep_scraper = threading.Event()
 
     def __str__(self):
         return f'Coordinator-{self.cluster_name}'
@@ -143,9 +147,11 @@ class Coordinator:
             logger.info("__dispatch_task thread on buildopt %s initializing...", build_opt_id)
             
             self._dispatch_queue = MQQueue( name= f'builder.opt.{build_opt_id}', exchange_name='build_opt', routing_key=f'builder.opt.{build_opt_id}')
-            conn: Connection = self.mq_client.get_connection(conn_name=f'{self}-build-opt')
+            conn: Connection = self.mq_client.create_connection(conn_name=f'{self}-build-opt-{build_opt_id}', channel_name=f'{self}-build-opt-{build_opt_id}')
             # control_conn: Connection = self.mq_client.create_connection(conn_name=f'{self}-scraper-ctrl', channel_name=f'{self}-scraper-ctrl')
-            
+            with self.t_empty_built_opt_lock:
+                if build_opt_id not in self.t_empty_built_opt:
+                    self.t_empty_built_opt[build_opt_id] = threading.Event()
             num_tasks = self.db_man.get_tasks_to_dispatch_on_opt(build_opt_id)
             
             logger.info(
@@ -157,6 +163,7 @@ class Coordinator:
         while True:
             
             try:
+                conn.ensure_connection()
                 task_count += self._dispatch_to_builder(
                     build_opt_id, conn, sleep, task_count
                 )
@@ -201,8 +208,11 @@ class Coordinator:
             # if there are not many messages waiting to be consumed, request more repos
             if messages_on_buildopt <= COORDINATOR_REPO_REQUEST_THRESHOLD:
                 logger.info(f"Dispatch thread on build option {build_opt_id} requesting more repos from any scraper...")
-                self._request_repos()
-                time.sleep(1) # long enough to process the request, hopefully w/o too much spam, w/o bottlenecking other processes
+                
+                with self.t_empty_built_opt_lock:
+                    self.t_empty_built_opt[build_opt_id].set()
+                
+                time.sleep(IDLE_DISPATCH_INTERVAL)
             else:
                 logger.info( f"Dispatch thread on build option {build_opt_id} idling ({messages_on_buildopt} tasks waiting to be built)" )
                 time.sleep(IDLE_DISPATCH_INTERVAL)
@@ -228,21 +238,26 @@ class Coordinator:
             return 1
         
 
-    def _request_repos(self, control_conn: Connection):
+    def _request_repos(self, build_opt_id: int, conn: Connection):
             '''
                 Signals to any available scraper that the coordinator has run out of repositories to dispatch.
                 If all scrapers use the on_request policy, this function must be called in order to receive repos.
                 Otherwise it's not necessary to ensure that it's called.
             '''
-        
-            msg = ScraperControlTaskOut(
-                message_type=ScraperMsgType.REQUEST_REPOS,
-                specific_recipient=False
-                )
+            try: 
+                build_opt_lang = self.db_man.get_build_opt_language(build_opt_id)
+                # to do use the above to request 
+                msg = ScraperControlTaskOut(
+                    message_type=ScraperMsgType.REQUEST_REPOS,
+                    specific_recipient=False, 
+                    )
 
-            queue = MQQueue(OutputQueue.SCRAPER_CTRL)
-
-            control_conn.send_msg( queue=queue, msg=msg.to_json(), exchange="" )
+                queue = MQQueue(OutputQueue.SCRAPER_CTRL)
+            
+                conn.send_msg( queue=queue, msg=msg.to_json(), exchange="" )
+            except Exception as e:
+                logger.error(f"Failed to request repos: {e}") 
+                
 
     # TODO: Possibly this runs occasionally at very long time scales, but I think this is a candidate for cutting
     # Appears to be a helper method for the old DB system
@@ -379,6 +394,10 @@ class Coordinator:
 
             else:
                 logger.warning("Channel recv_scrape_info closed before ack, message will be redelivered")
+                
+            # maybe here clear the set flag on each build opt? would also require 
+            #  scraperdataoutbunder from specifying the language and then clearing that way?
+            # 
             
         except Exception as e:
             logger.error(f"Error processing recv_scrape_info: {e}")
@@ -389,6 +408,55 @@ class Coordinator:
                     logger.error(f"Failed to nack recv_scrape_info: {nack_err}")
         
         #logger.info(f"Build system counter {Counter(x.build_system for x in bundle)}", )
+        
+     
+    def __run_builder_ctrl(self):
+        '''
+        Docstring for t_run_ctrl
+        Running the control threads for builder and scraper , 
+        Currently just create and ensure the ctrl connection is alive
+        :param self: Description
+        '''
+        try: 
+            conn: Connection = self.mq_client.create_connection(conn_name=f'{self}-{OutputQueue.BUILDER_CTRL}',
+                                                                        channel_name=f'{self}-{OutputQueue.BUILDER_CTRL}',
+                                                                        )
+            while True: 
+                conn.ensure_connection()
+                time.sleep(30) 
+        except Exception as e:
+            logger.error(f"Builder Control thread failed on coordinator, exec={e}")   
+            
+            
+    def __run_scraper_ctrl(self):
+        '''
+        Docstring for t_run_scraper_ctrl
+        Running the control thread for the scraper. Monitor for flags from build options to request scraper to scraper
+        
+        :param self: Description
+        '''
+        try: 
+            conn: Connection = self.mq_client.create_connection(conn_name=f'{self}-{OutputQueue.SCRAPER_CTRL}',
+                                                                        channel_name=f'{self}-{OutputQueue.SCRAPER_CTRL}',
+                                                                        )
+            while True: 
+                conn.ensure_connection()
+                
+                with self.t_empty_built_opt_lock:
+                    for opt_id, event in self.t_empty_built_opt.items():
+                        if event.is_set():
+                            # request repo
+                            self._request_repos(opt_id, conn)
+                            event.clear() # maybe figure out a better way, ie only clear once repos are actually recieved?
+
+                time.sleep(30) # check this every 30 seconds?
+        # Do whatever you
+                pass
+
+        except Exception as e:
+            logger.error(f"Scraper Control thread failed on coordinator, exec={e}")
+        
+        
 
     def recv_binary(self, ch, method, _props, body):
         """ collect binary metadata from worker"""   
@@ -446,7 +514,7 @@ class Coordinator:
                 build_status=BuildStatus(recv_msg.status),
                 build_msg=recv_msg.msg[-500:],
                 commit_hexsha=recv_msg.commit_hexsha)
-            logger.info("BUILD task on buildopt %s updated to %s: %s",
+            logger.info(f"BUILD task {task} on buildopt %s updated to %s: %s",
                         recv_msg.opt_id, recv_msg.status, " ".join(recv_msg.msg.split())[-500:])
 
             if ch and ch.is_open:
@@ -477,7 +545,7 @@ class Coordinator:
                 clone_msg=recv_msg.msg[-200:])
             task = self.db_man.get_status_row_by_id(recv_msg.task_id)
             if task.clone_status != BuildStatus.SUCCESS:
-                logger.info("CLONE task on buildopt %s updated to %s: %s",
+                logger.info(f"CLONE task {task} on buildopt %s updated to %s: %s",
                             recv_msg.opt_id, task.clone_status, recv_msg.msg)
             if ch and ch.is_open:
                 ch.basic_ack(delivery_tag=method.delivery_tag)
@@ -509,10 +577,15 @@ class Coordinator:
                 f"Will be replying to {props.reply_to} with corr_id : {props.correlation_id}")
 
             build_opt_id = self.db_man.register_build_opt(reg_info)
-
-            conn: Connection = self.mq_client.create_connection(
-                conn_name=f'{self}-builder-ctrl', channel_name=f'{self}-builder-ctrl')
+  
+            conn: Connection = self.mq_client.get_connection(conn_name=f'{self}-{InputQueue.BUILD_REG}')
+            if conn: 
+                conn.ensure_connection()
+            else:
+                conn: Connection = self.mq_client.create_connection(conn_name=f'{self}-{InputQueue.BUILD_REG}', channel_name=f'{self}-{InputQueue.BUILD_REG}')
+            
             queue = MQQueue(OutputQueue.BUILDER_CTRL)
+
 
             conn.send_msg(queue=queue, msg=BuilderRegOut(build_opt_id).to_json(),
                         exchange="",
@@ -568,7 +641,12 @@ class Coordinator:
                     )
                 
 
-                conn: Connection = self.mq_client.create_connection(conn_name=f'{self}-scraper-ctrl', channel_name=f'{self}-scraper-ctrl')
+                conn: Connection = self.mq_client.get_connection(conn_name=f'{self}-{InputQueue.SCRAPER_REG}')
+                if conn: 
+                    conn.ensure_connection()
+                else:
+                    conn = self.mq_client.create_connection(conn_name=f'{self}-{InputQueue.SCRAPER_REG}', channel_name=f'{self}-{InputQueue.SCRAPER_REG}')
+                
                 queue = MQQueue(OutputQueue.SCRAPER_CTRL)
 
                 conn.send_msg(queue=queue, msg=msg.to_json(),
@@ -628,32 +706,22 @@ class Coordinator:
         t_consume_build_reg = threading.Thread(
             target=self.__consume_from_queue, args=(InputQueue.BUILD_REG,))
         t_consume_scraper_reg = threading.Thread(
-            target=self.__consume_from_queue, args=(InputQueue.SCRAPER_REG,))
-
-        t_clean_task = threading.Thread(target=self.__clean_overtime)
-        t_recycle_worker = threading.Thread(target=self.__recycle_clone)
+            target=self.__consume_from_queue, args=(InputQueue.SCRAPER_REG,))        
+        t_run_builder_ctrl = threading.Thread(target=self.__run_builder_ctrl)
+        t_run_scraper_ctrl = threading.Thread(target=self.__run_scraper_ctrl)
         # t_reboot_worker = threading.Thread(target=self.__reboot_worker)
         t_daemon = threading.Thread(target=self.__daemon)
         logger.info("Processes ready")
-        t_clean_task.start()
         for t_dispatch in self.t_dispatch_map:
             t_dispatch.start()
-        t_recycle_worker.start()
         t_consume_clone.start()
         t_consume_build.start()
         t_consume_binary.start()
         t_consume_scrape.start()
         t_consume_build_reg.start()
         t_consume_scraper_reg.start()
+        t_run_builder_ctrl.start()
+        t_run_scraper_ctrl.start()
         t_daemon.start()
-        logger.info("Threads joining")
-        # TODO: No code beyond this point should be run
-        t_clean_task.join()
-        for t_dispatch in self.t_dispatch_map:
-            t_dispatch.join()
-        t_consume_scrape.join()
-        t_consume_binary.join()
-        t_consume_clone.join()
-        t_consume_build.join()
-        t_recycle_worker.join()
-        t_daemon.join()
+        logger.info(f"Threads joining. {self} now running")
+      

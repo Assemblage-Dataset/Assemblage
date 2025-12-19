@@ -154,6 +154,17 @@ class DBManager:
                 raise ValueError("Failed to create build opt ")
             return res.id
 
+    def get_build_opt_language(self, build_opt_id: int):
+        with self.get_session() as session: 
+            query = select(BuildOpt).where(BuildOpt.id == build_opt_id)
+            result = session.execute(query).first()
+            if not result: 
+                raise ValueError(f"Invalid build option: {build_opt_id}")                
+            build_opt: BuildOpt = result[0]
+            return build_opt.language
+        
+
+
 # new code. above to be copied out of this dir eventually into ../database
     def shutdown(self):
         """ Close DB connection """

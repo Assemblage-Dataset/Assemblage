@@ -571,6 +571,7 @@ class Scraper(BasicWorker):
                 conn.create_channel()
 
                 msg = ScraperControlTaskIn(ScraperMsgType.SETUP)
+                logger.debug(msg)
                 send_queue = MQQueue(InputQueue.SCRAPER_REG)
                 conn.send_msg(
                     queue=send_queue, msg=msg.to_json(), corr_id=self.uuid
