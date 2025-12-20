@@ -202,9 +202,7 @@ class Connection:
     def send_msg(self, queue: MQQueue, msg, exchange='', reply_to: str | None = None, corr_id: str | None = None):
         '''
         send message into the queue, should only be used on Producer connections
-        '''
-        logger.debug("MQ queued length %s", len(msg))
-  
+        '''  
       # woudl it be better to just pass in mqqueue type and deal with exception later?
         try:
             self.ensure_connection()

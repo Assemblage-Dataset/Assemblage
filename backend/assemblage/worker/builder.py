@@ -285,7 +285,7 @@ class Builder(BasicWorker):
 
         self.opt_id = msg.build_opt_id
         self.build_opt_queue = MQQueue(msg.build_opt_queue, callback=self.job_handler,
-                                       exchange_name='build_opt', routing_key=f'builder.opt.{self.opt_id}')
+                                       exchange_name=f'{OutputQueue.BUILD_OPT}', routing_key=f'{OutputQueue.BUILD_OPT}_{self.opt_id}')
         ch.basic_ack(delivery_tag=method.delivery_tag)
         logger.info(f"Build {self.name} registered, waking job thread")
         self.sleep_job_event.set()

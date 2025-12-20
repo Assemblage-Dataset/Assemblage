@@ -1,7 +1,7 @@
 import json
 
 
-from assemblage.consts import CloneStatus, BuildStatus, ScraperMsgType, ScraperOutputPolicy, OptLevel
+from assemblage.consts import CloneStatus, BuildStatus, OutputQueue, ScraperMsgType, ScraperOutputPolicy, OptLevel
 
 class MQMsg:
     def __init__(self):
@@ -60,7 +60,7 @@ class BuilderRegOut(MQMsg):
     def __init__(self, build_opt_id: int, build_opt_queue: str | None = None):
         super().__init__()
         self.build_opt_id: int = build_opt_id
-        self.build_opt_queue: str = build_opt_queue if build_opt_queue else f"build_opt_{build_opt_id}"  # what build option queue to listen to for the worker
+        self.build_opt_queue: str = build_opt_queue if build_opt_queue else f"{OutputQueue.BUILD_OPT}_{build_opt_id}"  # what build option queue to listen to for the worker
 
 
 

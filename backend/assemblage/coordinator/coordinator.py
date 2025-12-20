@@ -20,7 +20,7 @@ from assemblage.consts import (AWS_AUTO_REBOOT_PREFIX, COORDINATOR_DATABASE_SYNC
                                BIN_DIR, CLEAN_OVERTIME_INTERVAL, WORKER_TIMEOUT_THRESHOLD, BuildStatus,
                                REPO_SIZE_THRESHOLD, CloneStatus, InputQueue, OutputQueue, ScraperMsgType, ScraperOutputPolicy,
                                DISPATCH_INTERVAL, IDLE_DISPATCH_INTERVAL, AWS_REBOOT_SLEEP_INTERVAL,
-                               COORDINATOR_REPO_REQUEST_THRESHOLD
+                               COORDINATOR_REPO_REQUEST_THRESHOLD, SCRAPER_REPO_BUNDLESIZE
                                )
 
 from assemblage.config import CoordinatorSettings
@@ -146,7 +146,7 @@ class Coordinator:
         try:
             logger.info("__dispatch_task thread on buildopt %s initializing...", build_opt_id)
             
-            self._dispatch_queue = MQQueue( name= f'builder.opt.{build_opt_id}', exchange_name='build_opt', routing_key=f'builder.opt.{build_opt_id}')
+            self._dispatch_queue = MQQueue( name= f'{OutputQueue.BUILD_OPT}_{build_opt_id}', exchange_name=f'{OutputQueue.BUILD_OPT}', routing_key=f'{OutputQueue.BUILD_OPT}_{build_opt_id}')
             conn: Connection = self.mq_client.create_connection(conn_name=f'{self}-build-opt-{build_opt_id}', channel_name=f'{self}-build-opt-{build_opt_id}')
             # control_conn: Connection = self.mq_client.create_connection(conn_name=f'{self}-scraper-ctrl', channel_name=f'{self}-scraper-ctrl')
             with self.t_empty_built_opt_lock:
@@ -191,7 +191,9 @@ class Coordinator:
         '''
 
         # TODO the queue name here should be linked more permanently to the builder's input queue
-        builder_receive_queue = MQQueue(f"build_opt_{build_opt_id}", routing_key=f'builder.opt.{build_opt_id}')
+        # routing key is also slightly reduntant here unless we change to have a single build_opt queue with routing keys wiithin?
+        # or do we want to change the routing key to be the optimization for example if we break out that way? 
+        builder_receive_queue = MQQueue(f"{OutputQueue.BUILD_OPT}_{build_opt_id}", routing_key=f'{OutputQueue.BUILD_OPT}_{build_opt_id}')
         messages_on_buildopt = conn.get_queue(builder_receive_queue).method.message_count
 
         # find an unstarted task
@@ -205,9 +207,9 @@ class Coordinator:
         
         if build_message is None:  # no more scraped repos to dispatch. determine whether to idle or request repos
 
-            # if there are not many messages waiting to be consumed, request more repos
+            # if there are not many messages waiting to be consumed, request more repos 
             if messages_on_buildopt <= COORDINATOR_REPO_REQUEST_THRESHOLD:
-                logger.info(f"Dispatch thread on build option {build_opt_id} requesting more repos from any scraper...")
+                logger.info(f"Dispatch thread on build option {build_opt_id} requesting {SCRAPER_REPO_BUNDLESIZE} more repos from any scraper...")
                 
                 with self.t_empty_built_opt_lock:
                     self.t_empty_built_opt[build_opt_id].set()
