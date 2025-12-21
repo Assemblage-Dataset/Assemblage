@@ -92,7 +92,7 @@ class Coordinator:
         # Appears to be used only in AWS mode for reboots
         self.cluster_name = settings.cluster_name
         self._create_buildopt_exchange()
-        self._dispatch_queue : MQQueue | None = None  # To be set by dispatch thread
+        self._dispatch_queue_map : dict[int, MQQueue]  = {}  # To be set by dispatch thread
 
         self.reproduce_mode = settings.reproduce_mode
         self.aws_flag = settings.aws_mode
@@ -130,9 +130,9 @@ class Coordinator:
 
         # This channel is created exclusively to add the topic exchange
         conn: Connection = self.mq_client.create_connection(
-            conn_name=f'{self}-build-opt', channel_name=f'{self}-build-opt')
+            conn_name=f'{self}-build_opt', channel_name=f'{self}-build_opt')
         conn.create_channel()
-        conn.add_topic_exchange('build_opt')
+        conn.add_topic_exchange(f"{OutputQueue.BUILD_OPT}")
         conn.close()
 
     # def __del__(self):
@@ -146,7 +146,7 @@ class Coordinator:
         try:
             logger.info("__dispatch_task thread on buildopt %s initializing...", build_opt_id)
             
-            self._dispatch_queue = MQQueue( name= f'{OutputQueue.BUILD_OPT}_{build_opt_id}', exchange_name=f'{OutputQueue.BUILD_OPT}', routing_key=f'{OutputQueue.BUILD_OPT}_{build_opt_id}')
+            self._dispatch_queue_map[build_opt_id] = MQQueue( name= f'{OutputQueue.BUILD_OPT}_{build_opt_id}', exchange_name=f'{OutputQueue.BUILD_OPT}', routing_key=f'{OutputQueue.BUILD_OPT}_{build_opt_id}')
             conn: Connection = self.mq_client.create_connection(conn_name=f'{self}-build-opt-{build_opt_id}', channel_name=f'{self}-build-opt-{build_opt_id}')
             # control_conn: Connection = self.mq_client.create_connection(conn_name=f'{self}-scraper-ctrl', channel_name=f'{self}-scraper-ctrl')
             with self.t_empty_built_opt_lock:
@@ -223,9 +223,9 @@ class Coordinator:
         else:
             
             # # Publish this task, to be picked up by a worker with the appropriate build option settings
-            conn.send_msg(queue=self._dispatch_queue, 
+            conn.send_msg(queue=self._dispatch_queue_map[build_opt_id], 
                           msg=build_message.to_json().encode(),
-                          exchange=self._dispatch_queue.exchange_name )
+                          exchange=f"{OutputQueue.BUILD_OPT}")
             
             self.db_man.update_repo_status( status_id=build_message.task_id, clone_status=CloneStatus.PROCESSING )
 

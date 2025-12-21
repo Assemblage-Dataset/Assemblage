@@ -357,6 +357,7 @@ class DBManager:
             )
 
             row = session.query(q.subquery()).count()
+            
         return row
 
 
