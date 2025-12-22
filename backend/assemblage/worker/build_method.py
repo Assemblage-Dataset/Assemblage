@@ -37,8 +37,6 @@ logger = logging.getLogger(__name__)
 # should this be a class function  change this to debug=False by default
 
 
-
-
 class BuildStrategy:
     def __init__(self, compiler: str, language: str, library: str, save_assembly: bool = False, base_path: str = BINPATH):
         self.save_assembly = save_assembly
@@ -52,8 +50,6 @@ class BuildStrategy:
 
         logger.debug(f"Base path set to: {base_path}")
         self.mark_dir_as_safe(base_path)  # remove once other things fixed
-
-
 
     def cmd_with_output(self, cmd: str, timelimit=60, cwd=''):
         """
@@ -204,13 +200,14 @@ class BuildStrategy:
                     continue
                 try:
                     binary_exts = (".pdb", ".exe", ".dll", ".lib")
-                    assembly_exts = (".s", ".ii", ".bc", ".S", ".obj", ".asm", ".cod")
+                    assembly_exts = (".s", ".ii", ".bc", ".S",
+                                     ".obj", ".asm", ".cod")
                     # optional assembly/ other artifacts
                     if self.save_assembly and location_lc.endswith(assembly_exts):
                         file_paths.add(location)
                         continue
 
-                    if file_name == "pdbinfo.json": # not really an artifact, not sure where else to put this though
+                    if file_name == "pdbinfo.json":  # not really an artifact, not sure where else to put this though
                         file_paths.add(location)
                         continue
                     # executables
@@ -310,7 +307,6 @@ class LinuxBuildStrategy(BuildStrategy):
 
         return None
 
-
     def own_dir(self, dir: str):
         # # see above for how i feel about this
         for root, dirs, files in os.walk(dir):
@@ -348,17 +344,15 @@ class LinuxBuildStrategy(BuildStrategy):
         cmd = ""
         opt_level: str
         match optimization:
-           
+
             case OptLevel.LOW:
-                opt_level= "-O1"
+                opt_level = "-O1"
             case OptLevel.MEDIUM:
-                opt_level="-O2"
+                opt_level = "-O2"
             case OptLevel.HIGH:
-                opt_level="-O3"
-            case _: 
-                opt_level= "-O0" # default. none
-
-
+                opt_level = "-O3"
+            case _:
+                opt_level = "-O0"  # default. none
 
         if self.save_assembly:
             cflags = f'$CFLAGS -save-temps=obj {opt_level}'
@@ -366,8 +360,7 @@ class LinuxBuildStrategy(BuildStrategy):
         else:
             cflags = f'$CFLAGS {opt_level}'
             cxxflags = f'$CXXFLAGS {opt_level}'
-    
-    
+
         extra_flags = f'CFLAGS="{cflags}" CXXFLAGS="{cxxflags}"'
         # ideally use LLM/ other to generate the command here based on the files
         if 'bootstrap' in build_tool:
@@ -402,7 +395,6 @@ class WindowsDefaultStrategy(BuildStrategy):
         self.num_p_job = num_p_job
         self.platform = "windows"
 
-
     def _get_compiler_version(self) -> str | None:
         # currently this will only work for msvc. future can add more options
         try:
@@ -417,9 +409,6 @@ class WindowsDefaultStrategy(BuildStrategy):
             logger.warning(f"Failed to get compiler version: {e}")
 
         return None
-
-
-            
 
     def dia_list_binaries(self, dest_binfolder):
         """ get binary file under the binfolder """
@@ -477,14 +466,17 @@ class WindowsDefaultStrategy(BuildStrategy):
                 projobj.write()
                 projobj_saved = Project(projfile)
                 optimization_mode = ""
-                if "O2" in optimization:
-                    optimization_mode = "MaxSpeed"
-                elif "O1" in optimization:
-                    optimization_mode = "MinSpace"
-                elif "Ox" in optimization:
-                    optimization_mode = "Full"
-                else:
-                    optimization_mode = "Disabled"
+        
+                match optimization:
+                    case OptLevel.NONE:
+                        optimization_mode = "Disabled"
+                    case OptLevel.LOW:
+                        optimization_mode = "MinSpace"
+                    case OptLevel.MEDIUM:
+                        optimization_mode = "MaxSpeed"
+                    case OptLevel.HIGH:
+                        optimization_mode = "Full"
+
                 logger.info("Read config: %s, correct: %s",
                             projobj_saved.get_optimization(), optimization_mode)
                 assert optimization_mode == projobj_saved.get_optimization()
@@ -618,8 +610,8 @@ class WindowsDefaultStrategy(BuildStrategy):
         if self.compiler_version in ["v140", "v141"]:
             cmd.append(
                 f"/p:WindowsTargetPlatformVersion={self.compiler_version}")
-            
-        if build_mode == "Release": 
+
+        if build_mode == "Release":
             match optimization:
                 case OptLevel.NONE:
                     cmd.append("/p:Optimization=Disable")
@@ -634,7 +626,7 @@ class WindowsDefaultStrategy(BuildStrategy):
                     cmd.append("/p:Optimization=Full")
                 case _:
                     # otherwise do nothing
-                    pass     
+                    pass
         cmd.append("/maxcpucount:16")
         # cmd.append("/property:PostBuildEvent= ")
         # if target_dir:
@@ -649,8 +641,6 @@ class WindowsDefaultStrategy(BuildStrategy):
         if return_code == BuildStatus.SUCCESS:
             logger.warning(f"BUILD STATUS FOR {repo} succeeded!!!")
         return out.decode() + err.decode(), return_code
-    
-    
 
     def post_build_hook(self, dest_binfolder, build_mode, repoinfo, toolset,
                         optimization, commit_hexsha):
@@ -661,12 +651,13 @@ class WindowsDefaultStrategy(BuildStrategy):
         for _, binfile in enumerate(bin_files):
             binfile_path = os.path.join(dest_binfolder, binfile)
             # logging.info("Checking binary info %s: %s", binfile,
-            #              os.path.isfile(binfile))            
+            #              os.path.isfile(binfile))
             funcs_infos, lines_infos, source_file = self.dia_get_func_funcinfo(
                 binfile_path)
             item_dict = {}
             item_dict["functions"] = []
-            item_dict["file"] = binfile # figure out how to just get filename/ not include C:/binaries/projects/ at least too
+            # figure out how to just get filename/ not include C:/binaries/projects/ at least too
+            item_dict["file"] = binfile
             for func_name, infos in funcs_infos.items():
                 functions_val = {}
                 functions_val["function_name"] = func_name
@@ -696,10 +687,10 @@ class WindowsDefaultStrategy(BuildStrategy):
             json_di["Platform"] = self.library
             json_di["Build_mode"] = build_mode
             json_di["Toolset_version"] = toolset
-            json_di["URL"] = repoinfo["url"]
+            json_di["URL"] = repoinfo.url
             json_di["Binary_info_list"] = outer_list
             json_di["Optimization"] = optimization
-            json_di["Pushed_at"] = repoinfo["updated_at"]
+            json_di["Pushed_at"] = repoinfo.updated_at
             json_di["commit_sha"] = commit_hexsha
             # fix this
             with open(os.path.join(dest_binfolder, PDBJSONNAME), "w") as outfile:
