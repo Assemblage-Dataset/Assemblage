@@ -33,7 +33,7 @@ services:
     env_file:
       - secrets.env
     healthcheck:
-      test: [ "CMD", "bash", "-c", "pgrep -f example_cluster.py > /dev/null ]
+      test: [ "CMD", "bash", "-c", "pgrep -f example_cluster.py > /dev/null" ]
       interval: 10s
       start_period: 5s
     depends_on:

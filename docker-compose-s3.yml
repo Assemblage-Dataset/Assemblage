@@ -42,10 +42,6 @@ services:
       name: coordinator
     env_file:
       - secrets.env
-    healthcheck:
-      test: [ "CMD", "bash", "-c", "pgrep -f start_worker.py > /dev/null" ]
-      interval: 10s
-      start_period: 5s
     depends_on:
       database:
         condition: service_healthy
@@ -64,10 +60,6 @@ services:
     build:
       context: .
       dockerfile: docker/gcc/Dockerfile
-    healthcheck:
-      test: [ "CMD", "bash", "-c", "pgrep -f start_worker.py > /dev/null" ]
-      interval: 10s
-      start_period: 5s
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -91,10 +83,6 @@ services:
       context: .
       dockerfile: docker/clang/Dockerfile
     command: python3 /app/scripts/start_worker.py --type builder --id 0
-    healthcheck:
-      test: [ "CMD", "bash", "-c", "pgrep -f start_worker.py > /dev/null" ]
-      interval: 10s
-      start_period: 5s
     environment:
       PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
       TYPE: builder
@@ -121,10 +109,6 @@ services:
       context: .
       dockerfile: docker/gcc/Dockerfile
     command: python3 /app/scripts/start_worker.py --type builder --id 0
-    healthcheck:
-      test: [ "CMD", "bash", "-c", "pgrep -f start_worker.py > /dev/null" ]
-      interval: 10s
-      start_period: 5s
     environment:
       PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
       TYPE: builder
