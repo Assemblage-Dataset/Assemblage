@@ -4,6 +4,8 @@ import xml.etree.ElementTree as ET
 import re
 import string
 
+from ...consts import OptLevel
+
 __all__ = ['Project', 'parse']
 
 _MS_BUILD_NAMESPACE = "http://schemas.microsoft.com/developer/msbuild/2003"
@@ -279,15 +281,21 @@ class Project(object):
                          platform="All Configurations",
                          configuration="All Configurations"):
         optimization_mode = ""
-        if "O2" in optimization:
-            optimization_mode = "MaxSpeed"
-        elif "O1" in optimization:
-            optimization_mode = "MinSpace"
-        elif "Ox" in optimization:
-            optimization_mode = "Full"
-            self.set_whole_program_optimization("true")
-        else:
-            optimization_mode = ""
+
+        match optimization:
+            case OptLevel.NONE:
+                optimization_mode = ""
+            case OptLevel.LOW:
+
+                optimization_mode = "MinSpace"
+
+            case OptLevel.MEDIUM:
+                optimization_mode = "MaxSpeed"
+
+            case OptLevel.HIGH:
+                optimization_mode = "Full"
+                self.set_whole_program_optimization("true")
+
         item_name = "ClCompile"
         label = "Optimization"
         property_groups = self.xml.findall("./{" + _MS_BUILD_NAMESPACE +
@@ -390,7 +398,7 @@ class Project(object):
                                   upper_label)
             for item in items:
                 subitem = item.find("{" + _MS_BUILD_NAMESPACE + "}" + label)
-                if subitem: 
+                if subitem:
                     return subitem.text
         return None
 
@@ -566,9 +574,10 @@ class Project(object):
         self.__set_property_group_items_for_config(platform, configuration,
                                                    None, 'LinkIncremental',
                                                    string_value)
-    def save_assembly(self, 
-                            platform="All Configurations",
-                            configuration="All Configurations"):
+
+    def save_assembly(self,
+                      platform="All Configurations",
+                      configuration="All Configurations"):
         """Add additional compiler options to the project."""
         # Read current AdditionalOptions
         current_opts = self.general_get("AdditionalOptions", "ClCompile",
@@ -577,7 +586,7 @@ class Project(object):
             option_str = current_opts + " " + option_str
         # Set the flag to save .asm files. If you want .cod instead, using /FA
         self.general_set("AdditionalOptions", "ClCompile", "/Fa",
-                            platform, configuration)
+                         platform, configuration)
 
     def write(self, filename=None):
         """Save project file."""
