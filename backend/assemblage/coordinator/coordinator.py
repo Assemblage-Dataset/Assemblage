@@ -8,6 +8,7 @@ import os
 import sys
 import threading
 import time
+from datetime import datetime , timezone
 import logging
 import json
 # from concurrent.futures import ThreadPoolExecutor
@@ -89,6 +90,9 @@ class Coordinator:
         # to do create better session management
         self.db_man = DBManager(self.db_addr)
 
+        self.info_successes = 0
+        self.info_failures = 0
+
         # Appears to be used only in AWS mode for reboots
         self.cluster_name = settings.cluster_name
         self._create_buildopt_exchange()
@@ -144,7 +148,7 @@ class Coordinator:
     def __dispatch_task(self, build_opt_id, sleep=True, only_run_once=False): # last arg is for tests
         """Sends unbuilt repositories to the worker by enqueueing them with RabbitMQ"""
         try:
-            logger.info("__dispatch_task thread on buildopt %s initializing...", build_opt_id)
+            logger.debug("__dispatch_task thread on buildopt %s initializing...", build_opt_id)
             
             self._dispatch_queue_map[build_opt_id] = MQQueue( name= f'{OutputQueue.BUILD_OPT}_{build_opt_id}', exchange_name=f'{OutputQueue.BUILD_OPT}', routing_key=f'{OutputQueue.BUILD_OPT}_{build_opt_id}')
             conn: Connection = self.mq_client.create_connection(conn_name=f'{self}-build-opt-{build_opt_id}', channel_name=f'{self}-build-opt-{build_opt_id}')
@@ -292,8 +296,17 @@ class Coordinator:
                 logger.info("Recycle thread err %s", err)
             time.sleep(1)
 
+    def __scraper_recv_setup(self):
+        '''
+        Does necessary setup before listening for scraper registration requests
+        '''
+
+        self.db_man.ready_scraper_table()
+
+
+
     def __consume_from_queue(self, queue, only_run_once=False):  # only_run_once is for testing only
-        logger.info(f"__consume_from_queue on {queue} init...")
+        logger.debug(f"__consume_from_queue on {queue} init...")
         match queue:
             case InputQueue.SCRAPE:
                 callback = self.recv_scrape_info
@@ -307,6 +320,7 @@ class Coordinator:
                 callback = self.recv_builder_registration
             case InputQueue.SCRAPER_REG:
                 callback = self.recv_scraper_reg
+                self.__scraper_recv_setup()
             case _:
                 logger.error(
                     f"Error: queue type '%s' is not defined in __consume_from_queue", queue)
@@ -518,6 +532,13 @@ class Coordinator:
                 commit_hexsha=recv_msg.commit_hexsha)
             logger.info(f"BUILD task {task} on buildopt %s updated to %s: %s",
                         recv_msg.opt_id, recv_msg.status, " ".join(recv_msg.msg.split())[-500:])
+        # if (recv_msg.status in [BuildStatus.SUCCESS, BuildStatus.FAILED]):
+        #     if recv_msg.status == BuildStatus.SUCCESS:
+        #         self.info_successes += 1
+        #     elif recv_msg.status == BuildStatus.FAILED:
+        #         self.info_failures += 1
+        #     if (self.info_successes + self.info_failures) % 10 == 0:
+        #         logger.info(f"Build tasks finished: {self.info_successes + self.info_failures} ({self.info_successes} successes, {self.info_failures} failures)")
 
             if ch and ch.is_open:
                 ch.basic_ack(delivery_tag=method.delivery_tag)
@@ -606,7 +627,7 @@ class Coordinator:
                             f"New builder registered, build opt thread {build_opt_id} already running. Currently running {alive_count} build opt threads")
                         return
 
-                    logger.info("boot dispatching thread for %d ...", build_opt_id)
+                    logger.debug("boot dispatching thread for %d ...", build_opt_id)
                     new_build_opt_t = threading.Thread(
                         target=self.__dispatch_task, args=(build_opt_id, True))
                     new_build_opt_t.start()
@@ -634,28 +655,33 @@ class Coordinator:
             if (request_msg.message_type == ScraperMsgType.SETUP):
                 logger.debug(f"Received scraper request for setup info, correlation id {props.correlation_id}")
 
-                # TODO: get data from db
-                starttime = int(time.time())
+            # Checks if an unclaimed config is available: if so, claims it and returns its data,
+            # if not uses the defaults passed in to create a new config row in DB
+            get_config = self.db_man.register_scraper(
+                props.correlation_id,
+                request_msg.start_time,
+                request_msg.end_time
+            )
+            
+            msg = ScraperControlTaskOut(
+                message_type=ScraperMsgType.SETUP,
+                start_time=get_config["start_time"],
+                end_time=get_config["end_time"]
+            )
 
-                msg = ScraperControlTaskOut(
-                    message_type=ScraperMsgType.SETUP,
-                    start_time=starttime
-                    )
-                
+            conn: Connection = self.mq_client.get_connection(conn_name=f'{self}-{InputQueue.SCRAPER_REG}')
+            if conn: 
+                conn.ensure_connection()
+            else:
+                conn = self.mq_client.create_connection(conn_name=f'{self}-{InputQueue.SCRAPER_REG}', channel_name=f'{self}-{InputQueue.SCRAPER_REG}')
+            
+            queue = MQQueue(OutputQueue.SCRAPER_CTRL)
 
-                conn: Connection = self.mq_client.get_connection(conn_name=f'{self}-{InputQueue.SCRAPER_REG}')
-                if conn: 
-                    conn.ensure_connection()
-                else:
-                    conn = self.mq_client.create_connection(conn_name=f'{self}-{InputQueue.SCRAPER_REG}', channel_name=f'{self}-{InputQueue.SCRAPER_REG}')
-                
-                queue = MQQueue(OutputQueue.SCRAPER_CTRL)
-
-                conn.send_msg(queue=queue, msg=msg.to_json(),
-                        exchange="",
-                        reply_to=props.reply_to,
-                        corr_id=props.correlation_id
-                )
+            conn.send_msg(queue=queue, msg=msg.to_json(),
+                    exchange="",
+                    reply_to=props.reply_to,
+                    corr_id=props.correlation_id
+            )
             if ch and ch.is_open:
                 ch.basic_ack(delivery_tag=method.delivery_tag)
             else:
@@ -669,6 +695,16 @@ class Coordinator:
                 except Exception as nack_err:
                     logger.error(f"Failed to nack recv_scraper_reg info: {nack_err}")
             ch.basic_ack(delivery_tag=method.delivery_tag)
+
+        if (request_msg.message_type == ScraperMsgType.UPDATE):
+            # tries to update the existing row in
+            # if not uses the defaults passed in to create a new config row in DB
+            get_config = self.db_man.update_scraper(
+                props.correlation_id,
+                request_msg.start_time,
+                request_msg.end_time
+            )
+
 
             
                 

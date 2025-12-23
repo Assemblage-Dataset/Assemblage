@@ -22,7 +22,7 @@ from sqlalchemy.exc import IntegrityError
 
 # from sqlalchemy.sql import Insert
 
-from assemblage.database.models import BuildDO, BuildOpt, RepoDO, Status
+from assemblage.database.models import BuildDO, BuildOpt, RepoDO, Status, ScraperData
 from assemblage.consts import BuildStatus, SUPPORTED_LANGUAGE, CloneStatus, BIN_DIR, OptLevel
 # from typing import Tuple
 
@@ -360,6 +360,79 @@ class DBManager:
             
         return row
 
+
+    def ready_scraper_table(self) -> None:
+        """
+        Every time the program is restarted, we need to reassociate entries in the scraper
+        table with working scrapers. So clear all owner claims.
+        """
+        with self.get_session() as session:
+            query = update(ScraperData).values(
+                owner_uuid="")
+            session.execute(query)
+            session.commit()
+
+    def register_scraper(self, worker_uuid : str, fallback_starttime : int, fallback_endtime : int) -> dict:
+        """
+        Returns a start time and end time for scraper of given UUID. If there exists an unclaimed row of data in
+        the scraper data, claim it and return that row; otherwise, create a new row with the entered data and 
+        claim it for given UUID. 
+        """
+        with self.get_session() as session:
+
+            query = select(ScraperData).where(ScraperData.owner_uuid == "")
+            result = session.execute(query).scalars().first()
+            
+            if result == None:
+                # must generate a row for this entry
+                logger.info(f"Generating new config option for scraper {worker_uuid}")
+                new_row = ScraperData(
+                    start_time=fallback_starttime, 
+                    end_time=fallback_endtime, 
+                    owner_uuid=worker_uuid
+                )
+                session.add(new_row)
+                result = new_row
+
+            else:
+                # claim the result's row
+                logger.debug(f"Assigning existing config option {result.id} to scraper {worker_uuid}")
+                result.owner_uuid = worker_uuid
+
+            
+            return {
+                "start_time": result.start_time,
+                "end_time": result.end_time,
+            }
+        
+        
+    def update_scraper(self, worker_uuid : str, start_time : int, fallback_endtime : int):
+        """
+        Update the stored start time, presumably progressing it toward the end time. 
+        """
+        with self.get_session() as session:
+
+            query = select(ScraperData).where(ScraperData.owner_uuid == worker_uuid)
+            result = session.execute(query).scalars().first()
+            
+            if result == None:
+                # must generate a row for this entry
+                logger.warning(f"Could not find preexisting row for {worker_uuid}")
+                logger.info(f"Generating new config option for scraper {worker_uuid}")
+                new_row = ScraperData(
+                    start_time=start_time, 
+                    end_time=fallback_endtime, 
+                    owner_uuid=worker_uuid
+                )
+                session.add(new_row)
+
+            else:
+                # update the start time
+                logger.info(f"Old start time is {result.start_time}, new time is {start_time}")
+                result.start_time = start_time
+
+            
+            
 
     # Unused
 

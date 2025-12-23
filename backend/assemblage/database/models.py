@@ -114,9 +114,19 @@ class RepoDO(SQLModel, table=True):
     build_system: str = Field(max_length=255, default="", index=True)
     statuses: List[Status] = Relationship(
         back_populates="project", sa_relationship_kwargs={"cascade": "all, delete"})
+    commit_hexsha: str = Field(max_length=255, default="", nullable=True)
 
     def __repr__(self):
         return f'Repo(id={self._id} ,name={self.name}, url={self.url})'
     class Config:
         use_enum_values = True
         
+class ScraperData(SQLModel, table=True):
+    """
+    Tracks persistent data of the scraper(s) of the project
+    """
+    __tablename__ = 'scrapers'
+    id: int = Field( primary_key=True )
+    start_time: int = 0
+    end_time: int = 0
+    owner_uuid: str = Field(max_length=255, default="")

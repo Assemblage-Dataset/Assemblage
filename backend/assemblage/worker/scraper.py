@@ -120,6 +120,7 @@ class GithubRepositories(DataSource):
         self.crawl_time_interval = crawl_time_interval
         self.crawl_time_start = crawl_time_start
         self.crawl_time_end = crawl_time_end
+        self.current_crawl_time = crawl_time_start
 
         # Determine format of query
         # a set containing the qualifiers to be used in the query
@@ -194,23 +195,26 @@ class GithubRepositories(DataSource):
             branch=repo["default_branch"],
             commit_hexsha=commit_hexsha
             ), files
-
+    
     def fetch_data(self):
         '''Requests search result pages from GitHub's Search API, then extracts the repository information from each result on each search page.'''
         if self.crawl_time_start < self.crawl_time_end:  # if the crawltime is older than permitted
             logger.error(
                 "Warning: start crawl time %s is earlier than the oldest permitted timestamp %s.")
-        crawl_time = self.crawl_time_start
+        self.current_crawl_time = self.crawl_time_start
 
-        while crawl_time > self.crawl_time_end:  # continue until oldest files have been read
-            # crawl_time = self.update_time_record(self.crawl_time_interval) # Update the cache so it's now QUERYLAP ms earlier
-            # TODO: still working on properly setting up the crawl time. for now it restarts from the env variable every time
+        while self.current_crawl_time > self.crawl_time_end:  # continue until oldest files have been read
+            
+            # this code is up here to reduce instances of rescraping the same repos
+            self.current_crawl_time -= self.crawl_time_interval
+            self.current_crawl_time = int(self.current_crawl_time)
+            ## see check_for_update for the code that synchronizes this with the DB
 
             # Build the query to GitHub's servers, according to the last visited data as stored in SCRAPER_TIMESTAMP_RECORDFILE_PATH
             query_time_start = datetime.utcfromtimestamp(
-                crawl_time).isoformat()
+                self.current_crawl_time).isoformat()
             query_time_end = datetime.utcfromtimestamp(
-                crawl_time + self.crawl_time_interval).isoformat()
+                self.current_crawl_time + self.crawl_time_interval).isoformat()
             qualifier_str = " ".join(self.qualifiers)
             query_s = f'{self.sort.value}:{query_time_start}+08:00..{query_time_end}+08:00 {qualifier_str}'
 
@@ -253,12 +257,7 @@ class GithubRepositories(DataSource):
                                 # logger.info("Obtained files %s", str(fs))
                                 yield dt, fs
                 except Exception as err:
-                    logger.info(err)
-
-            # Once all pages are exhausted, move the crawl time earlier
-            crawl_time -= self.crawl_time_interval
-            crawl_time = int(crawl_time)
-            # TODO send update to coordinator
+                     logger.info(err)
         logger.info("scraping finished!")
 
     def get_request(self, query: str, payload: set = None, headers="default", proxy: str = "random"):
@@ -453,26 +452,28 @@ class Scraper(BasicWorker):
     # def __init__(self, rabbitmq_port, rabbitmq_host, workerid, data_source: DataSource):
     def __init__(self, settings: ScraperSettings, workerid: int):
         
-        logger.info("Booting scraper %s", workerid)
         super().__init__(settings.name, settings.mq_host,
                          settings.mq_port, worker_type=WorkerType.Scraper)
         if settings.source != ScrapeSource.GITHUB:
             logger.error(
                 "Scrape source %s not defined: defaulting to setting up a GitHub source", settings.source)
 
-        # as GitHub is the only valid source right now, we fallback to this in any case.
-        # If more sources are added, go ahead and put this into its own if statement.
-        self.data_source = GithubRepositories(
-            workerid,
-            git_token=settings.git_token,
-            alternate_git_tokens=settings.alternative_git_tokens,
-            qualifiers=settings.qualifiers,
-            crawl_time_start=settings.default_start_time,
-            crawl_time_end=settings.default_end_time,
-            crawl_time_interval=settings.interval,
-            proxies=settings.proxies
-        )
-        self.data_source.parent_workerid = workerid
+        if settings.source == ScrapeSource.GITHUB:
+            self.data_source = GithubRepositories(
+                workerid,
+                git_token=settings.git_token,
+                alternate_git_tokens=settings.alternative_git_tokens,
+                qualifiers=settings.qualifiers,
+                crawl_time_start=settings.default_start_time,
+                crawl_time_end=settings.default_end_time,
+                crawl_time_interval=settings.interval,
+                proxies=settings.proxies
+            )
+            self.data_source.parent_workerid = workerid
+
+            self._last_sent_crawltime = self.data_source.crawl_time_start
+            # Used to determine whether we need to send a message to update the DB, based on whether this
+            # number is equal to the data source's current crawl time
 
         # Set up messaging
         self.rabbitmq_port = settings.mq_port
@@ -487,6 +488,37 @@ class Scraper(BasicWorker):
         self.bundle_requested = False 
         # set to True when a message is received from coordinator requesting a bundle, OR when SCRAPER_REPO_BUNDLESIZE repos are
         # collected, depending on current policy
+
+
+    def check_for_update(self):
+        ''' Monitors the data source and checks to see if the current crawl time has changed.
+        If so, sends a message to the coordinator telling it to update the DB.'''
+
+        if self._last_sent_crawltime != self.data_source.current_crawl_time:
+            # must update the DB, as the scraper is now scraping a different time
+            logger.info(f"Updating time from {self._last_sent_crawltime} to {self.data_source.current_crawl_time}")
+                    
+            conn: Connection = self.mq_client.get_connection(conn_name=f'{self}')
+            if conn is None:
+                conn: Connection = self.mq_client.create_connection(conn_name=f'{self}',
+                                                                    channel_name=f'{self}')
+                conn.create_channel()
+
+
+            msg = ScraperControlTaskIn(
+                ScraperMsgType.UPDATE,
+                self.data_source.current_crawl_time,
+                self.data_source.crawl_time_end
+            )
+
+            send_queue = MQQueue(InputQueue.SCRAPER_REG)
+            conn.send_msg(
+                queue=send_queue, msg=msg.to_json(), corr_id=self.uuid
+            )
+
+            self._last_sent_crawltime = self.data_source.current_crawl_time
+        
+
 
     def send_bundle(self):
         conn: Connection = self.mq_client.get_connection(f'{self}')
@@ -538,10 +570,15 @@ class Scraper(BasicWorker):
         if msg.message_type in [ScraperMsgType.SETUP, ScraperMsgType.UPDATE] :
             if msg.start_time != None:
                 self.data_source.crawl_time_start = msg.start_time
+                if msg.message_type == ScraperMsgType.SETUP:
+                    # must initialize last sent crawltime to a real value to prevent a minor bug that requires an extra sync on startup
+                    self._last_sent_crawltime = self.data_source.crawl_time_start
             if msg.end_time != None:
                 self.data_source.crawl_time_end = msg.end_time
             if msg.policy != None:
                 self.policy = msg.policy
+            if msg.qualifiers != None:
+                self.data_source.qualifiers = msg.qualifiers
             debug_starttime = datetime.utcfromtimestamp(self.data_source.crawl_time_start).strftime('%Y-%m-%d')
             debug_endtime = datetime.utcfromtimestamp(self.data_source.crawl_time_end).strftime('%Y-%m-%d')
             self.ready = True
@@ -570,8 +607,11 @@ class Scraper(BasicWorker):
                                                                     channel_name=f'{self}-ctrl')
                 conn.create_channel()
 
-                msg = ScraperControlTaskIn(ScraperMsgType.SETUP)
-                logger.debug(msg)
+                msg = ScraperControlTaskIn(
+                    ScraperMsgType.SETUP,
+                    self.data_source.crawl_time_start,
+                    self.data_source.crawl_time_end,
+                    )
                 send_queue = MQQueue(InputQueue.SCRAPER_REG)
                 conn.send_msg(
                     queue=send_queue, msg=msg.to_json(), corr_id=self.uuid
@@ -593,38 +633,46 @@ class Scraper(BasicWorker):
         '''
 
         try:
-            waited_time = 0
-            while (not self.ready):
-                if not self.ready and (round(waited_time) == round(waited_time, 2)):
-                    logger.info(f"Scraper {self.workerid} waiting for config....")
-                time.sleep(0.1)
-                waited_time += 0.1
+            # wait for config and send update messages until config received
+            waited_time = 0.0
+            next_log_time = 0.0
+            sleep_interval = 0.1
+            while not self.ready:
+                if waited_time >= next_log_time:
+                    logger.info(f"Scraper {self.workerid} waiting for config ({round(waited_time, 2)}s)...")
+                    next_log_time += 10.0
 
-            logger.info(f"Scraper {self.workerid} started.")
+                time.sleep(sleep_interval)
+                waited_time += sleep_interval
+
+            logger.info(f"Scraper {self.workerid} started in {waited_time}s.")
 
             for repo in iter(self.data_source):
-                # continually collect repositories, sending when the SCRAPER_REPO_BUNDLESIZE has been satisfied
+                # collect repositories, sending when the scraper policy has been satisfied
                 self.repocache.append(repo)  # don't put this in any if statements, to avoid losing repos
 
+                self.check_for_update() # checks the data source to see if its current crawl time needs to be updated
+
+                # send more repos whenever enough are collected
                 if self.policy == ScraperOutputPolicy.CONTINUOUS:
                     if len(self.repocache) >= SCRAPER_REPO_BUNDLESIZE:
                         self.send_bundle()
 
-                # continually collect repositories up to SCRAPER_REPO_BUNDLESIZE, then sleep until bundle requested
+                # continually collect repositories until enough are collected, then sleep until bundle requested
                 elif self.policy == ScraperOutputPolicy.ON_REQUEST:
 
-                    # If repositories have been collected and were requested, send them
+                    # If some repositories have been collected and were requested, send them
                     if self.bundle_requested and len(self.repocache) > 0:
                         self.send_bundle()
                         self.bundle_requested = False
                     
                     elif len(self.repocache) >= SCRAPER_REPO_BUNDLESIZE: 
+                        # stop the scraper here until another send request is received
 
                         if len(self.repocache) == SCRAPER_REPO_BUNDLESIZE:
                             logger.info(f"Scraper {self.workerid} has collected max number of repos ({SCRAPER_REPO_BUNDLESIZE}). Sleeping until request to send is received from coordinator.")
 
                         while len(self.repocache) >= SCRAPER_REPO_BUNDLESIZE:
-                            # wait until another request is received
                             time.sleep(0.1)
                             
                             if self.bundle_requested:
@@ -632,6 +680,6 @@ class Scraper(BasicWorker):
                                 self.bundle_requested = False
                 
             logger.info("Crawler %s End Task", self.workerid)
-            # deletes the last crawled time at conclusion of task
+            
         except Exception as e:
             logger.error(f"Failed to Launch Scraper {self} - {e}")
