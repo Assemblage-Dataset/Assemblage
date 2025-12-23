@@ -21,7 +21,7 @@ import ntpath
 import tempfile
 from pathlib import Path
 
-from assemblage.consts import BINPATH, TASK_TIMEOUT_THRESHOLD, BuildStatus, MAX_MQ_SIZE, CloneStatus, InputQueue, OptLevel, WorkerType
+from assemblage.consts import BINPATH, TASK_TIMEOUT_THRESHOLD, BuildStatus, MAX_MQ_SIZE, CloneStatus, InputQueue, OptLevel, OutputQueue, WorkerType
 from assemblage.worker.base_worker import BasicWorker
 from assemblage.worker.build_method import LinuxBuildStrategy, WindowsDefaultStrategy
 from assemblage.config import BuilderSettings
@@ -202,13 +202,15 @@ class Builder(BasicWorker):
         Then it waits for a response and then sets the build option queue to listen on.
         '''
         try:
-
+            conn: Connection = self.mq_client.create_connection(conn_name=f'{self}-{OutputQueue.BUILDER_CTRL}',
+                                                                        channel_name=f'{self}-{OutputQueue.BUILDER_CTRL}',
+                                                                        )
             while True:
 
                 if not self.build_opt_queue:  # handle when errors happen in creating hte connectino/ consume without the builder having a queue - could expand to just do some of htis on start up
-                    conn: Connection = self.mq_client.create_connection(conn_name=f'{self}-ctrl',
-                                                                        channel_name=f'{self}-ctrl',
-                                                                        )
+      
+                    
+                    conn.ensure_connection()
                     conn.create_channel()
                     self.process_send_msg(kind=InputQueue.BUILD_REG, task=None)
                     logger.info(
@@ -283,7 +285,7 @@ class Builder(BasicWorker):
 
         self.opt_id = msg.build_opt_id
         self.build_opt_queue = MQQueue(msg.build_opt_queue, callback=self.job_handler,
-                                       exchange_name='build_opt', routing_key=f'builder.opt.{self.opt_id}')
+                                       exchange_name=f'{OutputQueue.BUILD_OPT}', routing_key=f'{OutputQueue.BUILD_OPT}_{self.opt_id}')
         ch.basic_ack(delivery_tag=method.delivery_tag)
         logger.info(f"Build {self.name} registered, waking job thread")
         self.sleep_job_event.set()
@@ -414,7 +416,7 @@ class Builder(BasicWorker):
 
                     if not saved_successfully:
                         all_builds_saved = False
-
+                    
                     logger.info(f"Binaries saved to {dest_binfolder}")
                 else:
                     all_builds_saved = False   # Build itself failed
@@ -473,7 +475,7 @@ class Builder(BasicWorker):
                 f"failed to save {clone_dir} as zip archive to {self.ProjectBucket}/{username}/{project_name}/{commit_hexsha}.tar.gz : {e}")
             return False
 
-    def save_binaries(self, target_dir, task, original_files, commit_hexsha, optimization="None"):
+    def save_binaries(self, target_dir, task, original_files, commit_hexsha, optimization: OptLevel):
         """ Store binaries locally or on S3, and notify coordinator. """
         logger.debug(f"Saving binaries of Repo: {task.url}")
 
@@ -485,7 +487,7 @@ class Builder(BasicWorker):
         }
         if not bin_found:
             logger.warning("No binaries found, build may have failed")
-            return None
+            return target_dir, False
 
         logger.info(f"{len(bin_found)} binaries found")
         username, project = target_dir.rstrip("/").split("/")[-2:]
@@ -526,6 +528,8 @@ class Builder(BasicWorker):
                             f"Failed to change permissions on {dest_file}")
                         all_saved = False
 
+
+            logger.debug(f"optimization: {optimization}")
             self.process_send_msg(kind=InputQueue.BINARY,
                           task=task,
                           file_name=fpath if self.s3_client else dest_file,
@@ -558,7 +562,7 @@ class Builder(BasicWorker):
                 build_command=self.build_command,
                 build_system=self.build_system,
             ).to_json()
-            ctrl_conn = self.mq_client.get_connection(f'{self}-ctrl')
+            ctrl_conn: Connection | None = self.mq_client.get_connection(f'{self}-{OutputQueue.BUILDER_CTRL}')
             logger.debug(
                 f"Reply to {self.control_queue_in.name}. corr_id {self.uuid}")
             if ctrl_conn:
