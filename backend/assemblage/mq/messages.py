@@ -179,7 +179,7 @@ class BuildStatusMsgIn(MQMsg):
 
         
 class BinaryTaskMsgIn(MQMsg):
-    def __init__(self, task_id: int, file_name: str, optimization: int): # optimization value, not the enum
+    def __init__(self, task_id: int, file_name: str, optimization: OptLevel = OptLevel.NONE):
         super().__init__()
         self.task_id = task_id
         self.file_name = file_name
@@ -208,7 +208,8 @@ class ScraperControlTaskOut(MQMsg):
             end_time : int | None = None,
             policy : ScraperOutputPolicy | None = None,
             request_amount : int = -1,
-            specific_recipient: bool = True, 
+            specific_recipient: bool = True,
+            qualifiers = None
             ):
         '''
             If specific_recipient is false, this message can be handled by any scraper
@@ -220,8 +221,11 @@ class ScraperControlTaskOut(MQMsg):
         self.policy = policy
         self.request_amount = request_amount
         self.specific_recipient = specific_recipient
-        
+        self.qualifiers = None
+
 class ScraperControlTaskIn(MQMsg):
     def __init__(self, 
-            message_type: ScraperMsgType):
+            message_type: ScraperMsgType, start_time: int, end_time: int):
         self.message_type = message_type
+        self.start_time = start_time
+        self.end_time = end_time

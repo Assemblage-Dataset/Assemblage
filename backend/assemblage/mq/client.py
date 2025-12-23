@@ -149,7 +149,7 @@ class Connection:
                 raise Exception(
                     f"Channel is closed, cannot create queue on {self}")
             self.chan.queue_declare(queue=queue.name, durable=True)
-            logger.info(f"Created queue: {queue} on {self}")
+            logger.debug(f"Created queue: {queue} on {self}")
             if queue.exchange_name and queue.routing_key:
                 logger.debug(
                     f"Binding routing key {queue.routing_key}  and exchange {queue.exchange_name}")
