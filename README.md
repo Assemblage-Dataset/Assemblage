@@ -89,7 +89,7 @@ TODO
 
 Often small errors can be fixed by restarting the Docker containers: this is particularly true for fresh installs or configuration changes. Otherwise, changing the `RUNTIME_ENV` environment variable to `development` will expose more logs, which may be handy for troubleshooting. 
 
-The repository contains a suite of unit and integration tests, which may be useful for those looking to expand on Assemblage. Further information can be found in the [README file](test/readme.md) located within the test folder.
+The repository contains a suite of unit and integration tests, which may be useful for those looking to expand on Assemblage. Further information can be found in the [README file](backend/test/readme.md) located within the test folder.
 
 ## ENVIRONMENT VARIABLES
 
