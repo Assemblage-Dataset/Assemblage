@@ -1,7 +1,7 @@
 import json
 
 
-from assemblage.consts import CloneStatus, BuildStatus, ScraperMsgType, ScraperOutputPolicy, OptLevel
+from assemblage.consts import CloneStatus, BuildStatus, OutputQueue, ScraperMsgType, ScraperOutputPolicy, OptLevel
 
 class MQMsg:
     def __init__(self):
@@ -60,7 +60,7 @@ class BuilderRegOut(MQMsg):
     def __init__(self, build_opt_id: int, build_opt_queue: str | None = None):
         super().__init__()
         self.build_opt_id: int = build_opt_id
-        self.build_opt_queue: str = build_opt_queue if build_opt_queue else f"build_opt_{build_opt_id}"  # what build option queue to listen to for the worker
+        self.build_opt_queue: str = build_opt_queue if build_opt_queue else f"{OutputQueue.BUILD_OPT}_{build_opt_id}"  # what build option queue to listen to for the worker
 
 
 
@@ -101,7 +101,7 @@ class ScraperDataOutSingle(MQMsg):
     def __init__(self, name: str, url: str, language: str,
                  owner_id: int, description: str,
                  created_at: str, updated_at: str, size: int, 
-                 build_system: str, branch: str):
+                 build_system: str, branch: str, commit_hexsha: str | None):
         super().__init__()
         self.name: str = name
         self.url: str = url
@@ -113,6 +113,7 @@ class ScraperDataOutSingle(MQMsg):
         self.size: int = int(size)
         self.build_system: str = build_system
         self.branch: str = branch
+        self.commit_hexsha: str | None = commit_hexsha
 
     def to_dict(self):
         return self.__dict__
@@ -163,7 +164,8 @@ class CloneStatusMsgIn(MQMsg):
         
 class BuildStatusMsgIn(MQMsg):
     def __init__(self, url: str, opt_id: int, status: CloneStatus,
-                 msg: str, task_id: int, build_time: int, commit_hexsha: str, optimization: int | None): 
+                 msg: str, task_id: int, build_time: int, commit_hexsha: str, optimization: int ): 
+
         # use the value of the opt
         super().__init__()
         self.url = url 
@@ -173,15 +175,15 @@ class BuildStatusMsgIn(MQMsg):
         self.task_id = task_id
         self.build_time = build_time 
         self.commit_hexsha = commit_hexsha
-        self.optimization = optimization if optimization else None
+        self.optimization = optimization  # dont want to send the opt lvel iteslf
 
         
 class BinaryTaskMsgIn(MQMsg):
-    def __init__(self, task_id: int, file_name: str, optimization: OptLevel):
+    def __init__(self, task_id: int, file_name: str, optimization: int): # optimization value, not the enum
         super().__init__()
         self.task_id = task_id
         self.file_name = file_name
-        optimization: OptLevel.value
+        self.optimization = optimization
 
 class PostAnalysisTaskMsgIn(MQMsg):
     def __init__(self, file_name: str, platform: str):
@@ -206,7 +208,7 @@ class ScraperControlTaskOut(MQMsg):
             end_time : int | None = None,
             policy : ScraperOutputPolicy | None = None,
             request_amount : int = -1,
-            specific_recipient: bool = True
+            specific_recipient: bool = True, 
             ):
         '''
             If specific_recipient is false, this message can be handled by any scraper
@@ -218,7 +220,7 @@ class ScraperControlTaskOut(MQMsg):
         self.policy = policy
         self.request_amount = request_amount
         self.specific_recipient = specific_recipient
-
+        
 class ScraperControlTaskIn(MQMsg):
     def __init__(self, 
             message_type: ScraperMsgType):

@@ -35,5 +35,7 @@ RUN echo '2:clang' >> /conf
 RUN cp /usr/bin/clang /usr/bin/cc && cp /usr/bin/clang++ /usr/bin/cc1plus && \
     cp -f /usr/bin/clang /usr/bin/gcc && cp -f /usr/bin/clang++ /usr/bin/g++
 
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 CMD  [ "CMD", "bash", "-c", "pgrep -f start_worker.py > /dev/null" ]
+
 
 ENTRYPOINT ["python3", "/app/scripts/start_worker.py"]

@@ -174,13 +174,13 @@ class GithubRepositories(DataSource):
                 files.append(record["path"])
         build_tool = self.build_sys_callback(files)
         name = repo["name"]
-        # url = repo["url"]
         language = repo["language"]
         owner_id = repo["owner"]["id"]
         description = repo["description"] or ""
         created_at = github_time_to_mysql_time(repo["created_at"])
         updated_at = github_time_to_mysql_time(repo["pushed_at"])
         size = int(repo['size'])
+        commit_hexsha = repo_page['sha']
         return ScraperDataOutSingle(
             name=name,
             url=url,
@@ -191,7 +191,8 @@ class GithubRepositories(DataSource):
             updated_at=updated_at,
             size=size,
             build_system=build_tool,
-            branch=repo["default_branch"]
+            branch=repo["default_branch"],
+            commit_hexsha=commit_hexsha
             ), files
 
     def fetch_data(self):
@@ -570,6 +571,7 @@ class Scraper(BasicWorker):
                 conn.create_channel()
 
                 msg = ScraperControlTaskIn(ScraperMsgType.SETUP)
+                logger.debug(msg)
                 send_queue = MQQueue(InputQueue.SCRAPER_REG)
                 conn.send_msg(
                     queue=send_queue, msg=msg.to_json(), corr_id=self.uuid
@@ -591,10 +593,12 @@ class Scraper(BasicWorker):
         '''
 
         try:
+            waited_time = 0
             while (not self.ready):
-                time.sleep(0.1)
-                if not self.ready:
+                if not self.ready and (round(waited_time) == round(waited_time, 2)):
                     logger.info(f"Scraper {self.workerid} waiting for config....")
+                time.sleep(0.1)
+                waited_time += 0.1
 
             logger.info(f"Scraper {self.workerid} started.")
 
