@@ -85,7 +85,6 @@ services:
         condition: on-failure
     volumes:
       - ./backend:/app 
-      - scraper-data:/binaries
   builder_0:
     image: assemblage-clang:default
     build:
@@ -135,8 +134,6 @@ volumes:
         type: none
         o: bind
         device: ${PWD}/binaries
-  scraper-data:
-    driver: local
   db-data:
     driver: local
   rabbitmq-data:
