@@ -103,7 +103,7 @@ SCRAPER_PAGE_SIZE = 100
 GITHUB_REPO_URL = "https://api.github.com/search/repositories"
 SCRAPER_REQUEST_TIMEOUT_S = 10 # timeout when waiting for HTTP request reply in seconds
 
-# How long to wait when a rate limit is hit before resuming operation
+# How long to wait when a rate limit is hit before resuming operation, if it cannot be extracted from error message
 RATE_LIMIT_WAIT = 60
 SECONDARY_RATE_LIMIT_WAIT = 120
 RATE_LIMIT_UPDATE_INTERVAL = 60
@@ -166,11 +166,8 @@ class ScrapeSource(str, Enum):
     
 class ScraperMsgType(str, Enum):
     SETUP = "setup"
-    UPDATE = "update"  # update policy/configurations. to be implemented
-    REQUEST_REPOS = "request_repos"  # triggers sending/collection of repos when scraper out policy is ON_REQUEST. to be implemented
-    # REQUEST_PAUSE = "request_stop"
-    # REQUEST_START = "request_start"
-    # REQUEST_QUANTITY = "request_quantity"
+    UPDATE = "update"  # update policy/configurations
+    REQUEST_REPOS = "request_repos"  # triggers sending/collection of repos when scraper out policy is ON_REQUEST
 
 class ScraperOutputPolicy(str, Enum):
     '''

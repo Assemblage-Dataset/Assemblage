@@ -41,7 +41,7 @@ class TestDBManager(unittest.TestCase):
 
         c = Coordinator(patched_settings)
 
-        c._dispatch_queue = MagicMock()  # just to run w/out errors. This func doesn't test dispatch queue functionality at all
+        c._dispatch_queue_map = MagicMock()  # just to run w/out errors. This func doesn't test dispatch queue functionality at all
 
         mock_connection = MagicMock()
 
