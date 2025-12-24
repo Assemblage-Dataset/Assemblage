@@ -364,7 +364,7 @@ class DBManager:
     def ready_scraper_table(self) -> None:
         """
         Every time the program is restarted, we need to reassociate entries in the scraper
-        table with working scrapers. So clear all owner claims.
+        table with working scrapers. So clear all owner claims, as no scrapers are configured yet.
         """
         with self.get_session() as session:
             query = update(ScraperData).values(
@@ -380,12 +380,23 @@ class DBManager:
         """
         with self.get_session() as session:
 
+            # check to see if we already registered this scraper
+            query = select(ScraperData).where(ScraperData.owner_uuid == worker_uuid)
+            result = session.execute(query).scalars().first()
+            if result != None:
+                logger.debug(f"Duplicate scraper registration request sent by {worker_uuid}")
+                
+                return {
+                    "start_time": result.start_time,
+                    "end_time": result.end_time,
+                }
+
             query = select(ScraperData).where(ScraperData.owner_uuid == "")
             result = session.execute(query).scalars().first()
             
             if result == None:
                 # must generate a row for this entry
-                logger.info(f"Generating new config option for scraper {worker_uuid}")
+                logger.info(f"Generating new configuration for scraper {worker_uuid} from environment variables/defaults...")
                 new_row = ScraperData(
                     start_time=fallback_starttime, 
                     end_time=fallback_endtime, 
@@ -417,8 +428,7 @@ class DBManager:
             
             if result == None:
                 # must generate a row for this entry
-                logger.warning(f"Could not find preexisting row for {worker_uuid}")
-                logger.info(f"Generating new config option for scraper {worker_uuid}")
+                logger.warning(f"Could not find preexisting row for scraper {worker_uuid}. Generating new config option.")
                 new_row = ScraperData(
                     start_time=start_time, 
                     end_time=fallback_endtime, 
@@ -428,7 +438,7 @@ class DBManager:
 
             else:
                 # update the start time
-                logger.info(f"Old start time is {result.start_time}, new time is {start_time}")
+                logger.debug(f"Old start time is {result.start_time}, new time is {start_time}")
                 result.start_time = start_time
 
             

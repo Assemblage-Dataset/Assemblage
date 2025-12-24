@@ -314,9 +314,10 @@ class Builder(BasicWorker):
         #                   msg="duplicate")
         #     return
 
-        logger.info("Received a task to build %s. buildsys: %s",
+        logger.debug("Received a task to build %s. buildsys: %s",
                     task.url,
                     task.build_system)
+        logger.info(f" Cloning {task.url}...")
         clone_msg, clone_status, clone_dir = self.build_strategy.clone_data(
             task.url)
 
@@ -328,7 +329,7 @@ class Builder(BasicWorker):
 
         if clone_status == CloneStatus.SUCCESS:
 
-            logger.info("Clone SUCCESS, Attempting to build `%s`", task.url)
+            logger.info(f" Clone SUCCESS for task '{task.name}'.")
             compiler_flag = self.compiler_flag
             compiler_version = self.build_strategy.compiler_version
             if task.commit_hexsha:
@@ -342,7 +343,7 @@ class Builder(BasicWorker):
 
             if self.s3_client:
                 # save to s3 client and return location
-                logger.info(
+                logger.debug(
                     f"Uploading {clone_dir} to s3 bucket {self.ProjectBucket}")
                 username, project = clone_dir.rstrip("/").split("/")[-2:]
                 saved = self.save_project_to_s3(
@@ -386,7 +387,8 @@ class Builder(BasicWorker):
                     optimization=optimization
                 )
                 logger.debug(
-                    f"Pre Build success, now running build for {task.url}")
+                    f"Prebuild SUCCESS. Building {task.url}...")
+                logger.info(f"Building '{task.name}' on optimization {optimization}...")
                 before_build_time = int(time.time())
                 build_msg, build_status = self.build_strategy.run_build(
                     repo=task.url,
@@ -402,9 +404,9 @@ class Builder(BasicWorker):
                                                     self.build_mode,
                                                     task, compiler_version,
                                                     optimization, commit_hexsha)
-                logger.info(
-                    f"Post build hook done, build_status: {build_status}")
                 logger.debug(f"Build message: {build_msg}")
+
+                logger.info(f"Build {build_status} for task '{task.name}' on optimization {optimization}.")
 
                 if build_status == BuildStatus.SUCCESS:
                     dest_binfolder, saved_successfully = self.save_binaries(
@@ -417,7 +419,7 @@ class Builder(BasicWorker):
                     if not saved_successfully:
                         all_builds_saved = False
                     
-                    logger.info(f"Binaries saved to {dest_binfolder}")
+                    logger.debug(f"Binaries saved to {dest_binfolder}")
                 else:
                     all_builds_saved = False   # Build itself failed
 

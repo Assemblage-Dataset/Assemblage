@@ -57,7 +57,7 @@ docker compose up -d
 
 The program should begin collecting repositories. 
 
-## Utilizing S3 Bucket (Optional)
+## Utilizing S3 Bucket (Recommended)
 
 If you plan on using MinIO, for local S3 bucket integration, you will need to select a username and password for the MinIO console. Define them in the secrets.env file with the following environment variables:
 
@@ -81,7 +81,7 @@ Files will no longer be stored in the local binaries folder, and instead can be 
 ## Distributed Builders / Windows Builders (Optional)
 
 
-When building Windows executables, unlike the other components of Assemblage, the builder must run a Windows image: in order to do this, a Windows kernel must be available to the  builder. Due to the restrictions Docker places on running containers with mixed or non-Linux kernels, this typically requires a builder on a separate Windows machine to be connected to the rest of the system. 
+When building Windows executables, unlike the other workers, the builder must run a Windows image: in order to do this, a Windows kernel must be available to the builder. Due to the restrictions Docker places on running containers with mixed or non-Linux kernels, this typically requires a builder on a separate Windows machine to be connected to the rest of the system. 
 
 
 To configure a remote builder:
@@ -96,7 +96,7 @@ To configure a remote builder:
 
 ## Troubleshooting
 
-Often small errors can be fixed by restarting or rebuilding the Docker containers: this is particularly true for fresh installs or configuration changes. Otherwise, changing the `RUNTIME_ENV` environment variable to `development` will expose more logs, which may be handy for troubleshooting. 
+Often small errors can be fixed by restarting or rebuilding the Docker containers: this is particularly true for fresh installs or configuration changes. Otherwise, setting the `RUNTIME_ENV` environment variable to `development` will expose more logs, which may be handy for troubleshooting. 
 
 The repository contains a suite of unit and integration tests, which may be useful for those looking to expand on Assemblage. Further information can be found in the [README file](backend/test/readme.md) located within the test folder.
 
