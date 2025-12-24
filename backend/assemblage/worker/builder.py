@@ -513,8 +513,9 @@ class Builder(BasicWorker):
                     all_saved = False
                     logger.warning(f"Failed to upload {fpath} -> {s3_key}")
             else:
-                dest_file = os.path.join(
-                    dest_base_full, optimization, base_name)
+                dest_folder = os.path.join( dest_base_full, str(optimization))
+                os.makedirs(dest_folder, exist_ok=True)
+                dest_file = os.path.join(dest_folder, base_name)
                 shutil.copy2(fpath, dest_file)
                 try:
                     os.remove(fpath)
