@@ -21,7 +21,7 @@ from assemblage.consts import (AWS_AUTO_REBOOT_PREFIX, COORDINATOR_DATABASE_SYNC
                                BIN_DIR, CLEAN_OVERTIME_INTERVAL, WORKER_TIMEOUT_THRESHOLD, BuildStatus,
                                REPO_SIZE_THRESHOLD, CloneStatus, InputQueue, OutputQueue, ScraperMsgType, ScraperOutputPolicy,
                                DISPATCH_INTERVAL, IDLE_DISPATCH_INTERVAL, AWS_REBOOT_SLEEP_INTERVAL,
-                               COORDINATOR_REPO_REQUEST_THRESHOLD, SCRAPER_REPO_BUNDLESIZE
+                               COORDINATOR_REPO_REQUEST_THRESHOLD, SCRAPER_REPO_BUNDLESIZE, WAIT_AFTER_REQ_INTERVAL
                                )
 
 from assemblage.config import CoordinatorSettings
@@ -90,6 +90,7 @@ class Coordinator:
         # to do create better session management
         self.db_man = DBManager(self.db_addr)
 
+        # Used for status updates
         self.info_successes = 0
         self.info_failures = 0
 
@@ -109,6 +110,9 @@ class Coordinator:
         self.t_empty_built_opt_lock = threading.Lock()
         self.t_empty_built_opt: dict[int, threading.Event] = {}
         
+        # records if any build option has requested repos 
+        # True while waiting for repos but before they've been received
+        self._pending_repos : bool = False
         
 
         if settings.s3_enabled:
@@ -213,8 +217,9 @@ class Coordinator:
 
             # if there are not many messages waiting to be consumed, request more repos 
             if messages_on_buildopt <= COORDINATOR_REPO_REQUEST_THRESHOLD:
-                logger.info(f"Dispatch thread on build option {build_opt_id} requesting {SCRAPER_REPO_BUNDLESIZE} more repos from any scraper...")
+                #logger.info(f"Dispatch thread on build option {build_opt_id} requesting {SCRAPER_REPO_BUNDLESIZE} more repos from any scraper...")
                 
+                logger.debug( f"Dispatch thread on build option {build_opt_id} waiting for dispatch request to be sent" )
                 with self.t_empty_built_opt_lock:
                     self.t_empty_built_opt[build_opt_id].set()
                 
@@ -250,6 +255,11 @@ class Coordinator:
                 If all scrapers use the on_request policy, this function must be called in order to receive repos.
                 Otherwise it's not necessary to ensure that it's called.
             '''
+
+            if self._pending_repos:
+                # another scraper beat this to the punch, or a valid request is still waiting: don't request yet
+                logger.debug("Waiting for repos...")
+                return
             try: 
                 build_opt_lang = self.db_man.get_build_opt_language(build_opt_id)
                 # to do use the above to request 
@@ -257,10 +267,13 @@ class Coordinator:
                     message_type=ScraperMsgType.REQUEST_REPOS,
                     specific_recipient=False, 
                     )
+                
+                self._pending_repos = True
 
                 queue = MQQueue(OutputQueue.SCRAPER_CTRL)
             
                 conn.send_msg( queue=queue, msg=msg.to_json(), exchange="" )
+                logger.info(f"Coordinator requesting repos on {build_opt_id}.")
             except Exception as e:
                 logger.error(f"Failed to request repos: {e}") 
                 
@@ -392,7 +405,9 @@ class Coordinator:
     def recv_scrape_info(self, ch: pika.channel.Channel, method: pika.spec.Basic.Deliver, props: pika.BasicProperties, body):
         ''' store scraped message to database page by page '''
         #logger.info("Crawled msg received")
+        
         try: 
+            self._pending_repos = False
             start_time = time.time()
             successes = 0
             result = 0
@@ -447,7 +462,7 @@ class Coordinator:
     def __run_scraper_ctrl(self):
         '''
         Docstring for t_run_scraper_ctrl
-        Running the control thread for the scraper. Monitor for flags from build options to request scraper to scraper
+        Running the control thread for the scraper. Monitor for flags from build options to request scraper to scrape
         
         :param self: Description
         '''
@@ -465,9 +480,7 @@ class Coordinator:
                             self._request_repos(opt_id, conn)
                             event.clear() # maybe figure out a better way, ie only clear once repos are actually recieved?
 
-                time.sleep(30) # check this every 30 seconds?
-        # Do whatever you
-                pass
+                time.sleep(1) # check this every 30 seconds?
 
         except Exception as e:
             logger.error(f"Scraper Control thread failed on coordinator, exec={e}")
@@ -505,7 +518,7 @@ class Coordinator:
             recv_msg = BuildStatusMsgIn.from_json( body.decode() )
             # task = db_man.get_status_row_by_id(recv_msg['task_id'])
             if BuildStatus(recv_msg.status) == BuildStatus.OUTDATED_MSG:
-                logger.info("discarding a timeout build msg %s", body.decode())
+                logger.debug("discarding a timeout build msg %s", body.decode())
                 ch.basic_ack(delivery_tag=method.delivery_tag)
                 return
             task = self.db_man.get_status_row_by_id(recv_msg.task_id)
@@ -530,15 +543,15 @@ class Coordinator:
                 build_status=BuildStatus(recv_msg.status),
                 build_msg=recv_msg.msg[-500:],
                 commit_hexsha=recv_msg.commit_hexsha)
-            logger.info(f"BUILD task {task} on buildopt %s updated to %s: %s",
+            logger.debug(f"BUILD task {task} on buildopt %s updated to %s: %s",
                         recv_msg.opt_id, recv_msg.status, " ".join(recv_msg.msg.split())[-500:])
-        # if (recv_msg.status in [BuildStatus.SUCCESS, BuildStatus.FAILED]):
-        #     if recv_msg.status == BuildStatus.SUCCESS:
-        #         self.info_successes += 1
-        #     elif recv_msg.status == BuildStatus.FAILED:
-        #         self.info_failures += 1
-        #     if (self.info_successes + self.info_failures) % 10 == 0:
-        #         logger.info(f"Build tasks finished: {self.info_successes + self.info_failures} ({self.info_successes} successes, {self.info_failures} failures)")
+            if (recv_msg.status in [BuildStatus.SUCCESS, BuildStatus.FAILED]):
+                if recv_msg.status == BuildStatus.SUCCESS:
+                    self.info_successes += 1
+                elif recv_msg.status == BuildStatus.FAILED:
+                    self.info_failures += 1
+                if (self.info_successes + self.info_failures) % 10 == 0:
+                    logger.info(f"Build tasks completed: {self.info_successes + self.info_failures} ({self.info_successes} successes, {self.info_failures} failures)")
 
             if ch and ch.is_open:
                 ch.basic_ack(delivery_tag=method.delivery_tag)
@@ -655,19 +668,35 @@ class Coordinator:
             if (request_msg.message_type == ScraperMsgType.SETUP):
                 logger.debug(f"Received scraper request for setup info, correlation id {props.correlation_id}")
 
-            # Checks if an unclaimed config is available: if so, claims it and returns its data,
-            # if not uses the defaults passed in to create a new config row in DB
-            get_config = self.db_man.register_scraper(
-                props.correlation_id,
-                request_msg.start_time,
-                request_msg.end_time
-            )
+                # Checks if an unclaimed config is available: if so, claims it and returns its data,
+                # if not uses the defaults passed in to create a new config row in DB
+                get_config = self.db_man.register_scraper(
+                    props.correlation_id,
+                    request_msg.start_time,
+                    request_msg.end_time
+                )
             
-            msg = ScraperControlTaskOut(
-                message_type=ScraperMsgType.SETUP,
-                start_time=get_config["start_time"],
-                end_time=get_config["end_time"]
-            )
+                msg = ScraperControlTaskOut(
+                    message_type=ScraperMsgType.SETUP,
+                    start_time=get_config["start_time"],
+                    end_time=get_config["end_time"]
+                )
+
+            elif (request_msg.message_type == ScraperMsgType.UPDATE):
+                # tries to update the existing row in DB
+                get_config = self.db_man.update_scraper(
+                    props.correlation_id,
+                    request_msg.start_time,
+                    request_msg.end_time
+                )
+            
+                msg = ScraperControlTaskOut(
+                    message_type=ScraperMsgType.UPDATE,
+                    start_time=None,
+                    end_time=None
+                )
+
+
 
             conn: Connection = self.mq_client.get_connection(conn_name=f'{self}-{InputQueue.SCRAPER_REG}')
             if conn: 
@@ -688,22 +717,13 @@ class Coordinator:
                 logger.warning("Channel closed before ack, message will be redelivered")
             
         except Exception as e:
-            logger.error(f"Error processing recv_scarper_reg info: {e}")
+            logger.error(f"Error processing recv_scraper_reg info: {e}")
             if ch and ch.is_open:
                 try:
                     ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
                 except Exception as nack_err:
                     logger.error(f"Failed to nack recv_scraper_reg info: {nack_err}")
             ch.basic_ack(delivery_tag=method.delivery_tag)
-
-        if (request_msg.message_type == ScraperMsgType.UPDATE):
-            # tries to update the existing row in
-            # if not uses the defaults passed in to create a new config row in DB
-            get_config = self.db_man.update_scraper(
-                props.correlation_id,
-                request_msg.start_time,
-                request_msg.end_time
-            )
 
 
             
@@ -762,5 +782,5 @@ class Coordinator:
         t_run_builder_ctrl.start()
         t_run_scraper_ctrl.start()
         t_daemon.start()
-        logger.info(f"Threads joining. {self} now running")
+        logger.info(f"Processes started. {self} now running successfully.")
       
