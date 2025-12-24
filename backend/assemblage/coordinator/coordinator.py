@@ -218,7 +218,7 @@ class Coordinator:
                 with self.t_empty_built_opt_lock:
                     self.t_empty_built_opt[build_opt_id].set()
                 
-                time.sleep(IDLE_DISPATCH_INTERVAL)
+                time.sleep(WAIT_AFTER_REQ_INTERVAL)
             else:
                 logger.info( f"Dispatch thread on build option {build_opt_id} idling ({messages_on_buildopt} tasks waiting to be built)" )
                 time.sleep(IDLE_DISPATCH_INTERVAL)
@@ -731,6 +731,7 @@ class Coordinator:
             except:
                 logger.error("error checking if tables exist")
 
+        self.db_man.ready_scraper_table()
 
         t_consume_clone = threading.Thread(
             # note: the comma is important to parse args as tuple
