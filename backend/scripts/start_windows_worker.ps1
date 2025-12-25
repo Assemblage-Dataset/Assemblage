@@ -9,7 +9,7 @@ function Invoke-VcVars {
     param(
         [string]$Version = "2022"
     )
-    $batPath = "C:\Program Files (x86)\Microsoft Visual Studio\$Version\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+    $batPath = "C:\Program Files (x86)\Microsoft Visual Studio\$Version\BuildTools\Common7\Tools\VsDevCmd.bat"
     cmd /c "`"$batPath`" && set" | 
     ForEach-Object {
         if ($_ -match "^(.*?)=(.*)$") {
@@ -31,10 +31,11 @@ $diaDlls = @(
 
 foreach ($dll in $diaDlls) {
     if (Test-Path $dll) {
-        Write-Host "Registering $dll ..."
         Start-Process -FilePath "C:\Windows\System32\regsvr32.exe" `
                       -ArgumentList "/s", "`"$dll`"" `
                       -Wait -NoNewWindow
+        Write-Host "$dll Registered"
+
     } else {
         Write-Warning "DIA DLL not found: $dll"
     }
