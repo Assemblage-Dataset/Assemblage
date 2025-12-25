@@ -21,9 +21,6 @@ ENV PYTHONPATH=/app
 ENV PATH="/venv/bin:$PATH"
 RUN pip install --upgrade pip setuptools wheel
 RUN pip install -r requirements.txt
-COPY ./aws /root/.aws
-RUN export AWS_CONFIG_FILE=/root/.aws/config
-RUN export AWS_SHARED_CREDENTIALS_FILE=/root/.aws/credentials
 
 ENV CC='clang'
 ENV CXX='clang++'
