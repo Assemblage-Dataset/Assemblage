@@ -43,6 +43,8 @@ class BuildStrategy:
         self.compiler: str = compiler
         self.language: str = language
         self.compiler_version = self._get_compiler_version()
+        self.toolset_version = self._get_toolset_version()
+
         self.library = library
         self.platform: str
         # either BINPATH/ or TEMP/. defaults to BINPATH ( C:/binaries or /binaries)
@@ -239,7 +241,10 @@ class BuildStrategy:
     @abstractmethod
     def _get_compiler_version(self) -> str:
         pass
-
+    @abstractmethod
+    def _get_compiler_version(self) -> str | None:
+        #only needed for windows
+        pass
     @abstractmethod
     def own_dir(self, dir: str):
         '''' A workaround function to fix ownership of the binaries directory. Owns a particular directory '''
@@ -263,7 +268,7 @@ class BuildStrategy:
         """
 
     @abstractmethod
-    def post_build_hook(self, dest_binfolder, build_mode, repoinfo, toolset,
+    def post_build_hook(self, dest_binfolder, build_mode, repoinfo,
                         optimization, commit_hexsha):
         """ post process hook  """
         pass
@@ -342,17 +347,7 @@ class LinuxBuildStrategy(BuildStrategy):
 
         build_tool = get_build_system(files)
         cmd = ""
-        opt_level: str
-        match optimization:
-
-            case OptLevel.LOW:
-                opt_level = "-O1"
-            case OptLevel.MEDIUM:
-                opt_level = "-O2"
-            case OptLevel.HIGH:
-                opt_level = "-O3"
-            case _:
-                opt_level = "-O0"  # default. none
+        opt_level = optimization.to_gnu_opt()
 
         if self.save_assembly:
             cflags = f'$CFLAGS -save-temps=obj {opt_level}'
@@ -388,6 +383,7 @@ class LinuxBuildStrategy(BuildStrategy):
 
 
 class WindowsDefaultStrategy(BuildStrategy):
+    # for visual studio code + msbuild complimations
     # compiler should be an enum of supported...
     def __init__(self, compiler: str, language: str, library: str, save_assembly: bool, num_p_job=16, base_path: str = BINPATH):
         super().__init__(compiler, language=language,
@@ -397,6 +393,7 @@ class WindowsDefaultStrategy(BuildStrategy):
 
     def _get_compiler_version(self) -> str | None:
         # currently this will only work for msvc. future can add more options
+        # unfortunatley too, dont think this will work with env variables like get toolset version below
         try:
             _, err, code = self.cmd_with_output("cl.exe")
 
@@ -409,6 +406,20 @@ class WindowsDefaultStrategy(BuildStrategy):
             logger.warning(f"Failed to get compiler version: {e}")
 
         return None
+
+    def _get_toolset_version(self) :
+        try:
+            # Get the exact VC Tools version
+            vc_tools_version = os.getenv("VCToolsVersion")
+            
+            if not vc_tools_version:
+                logger.warning("VCToolsVersion environment variable not set")
+                return            
+            logger.info(f"Detected VC toolset version: {vc_tools_version}")
+            return vc_tools_version
+            
+        except Exception as e:
+            logger.warning(f"Failed to get toolset version: {e}")
 
     def dia_list_binaries(self, dest_binfolder):
         """ get binary file under the binfolder """
@@ -499,14 +510,16 @@ class WindowsDefaultStrategy(BuildStrategy):
         return slnfile
 
     def dia_get_func_funcinfo(self, binfile):
-        """ Process the bin to get the info and function"""
+        """ Process the bin to get the info and function
+        source_file functions here need to be debugged and fixed
+        
+        """
         binfile = binfile.replace("\\", "/")
         cmd_args = [
             "powershell", "-Command", "Dia2Dump", "-lines", "*", f"'{binfile}'"
         ]
         file_cache = {}
         out, _err, exit_code = self.cmd_with_output(cmd_args)
-
         try:
             lines_notclean = out.decode().split("\r\n")
         except:
@@ -642,7 +655,7 @@ class WindowsDefaultStrategy(BuildStrategy):
             logger.warning(f"BUILD STATUS FOR {repo} succeeded!!!")
         return out.decode() + err.decode(), return_code
 
-    def post_build_hook(self, dest_binfolder, build_mode, repoinfo, toolset,
+    def post_build_hook(self, dest_binfolder, build_mode, repoinfo,
                         optimization, commit_hexsha):
         """ Postprocess the pdb """
         logger.debug(f"Adding files in {dest_binfolder}")
@@ -686,19 +699,23 @@ class WindowsDefaultStrategy(BuildStrategy):
             json_di = {}
             json_di["Platform"] = self.library
             json_di["Build_mode"] = build_mode
-            json_di["Toolset_version"] = toolset
+            json_di["Toolset_version"] = self.toolset_version
+            json_di["Compiler_version"] = self.compiler_version
             json_di["URL"] = repoinfo.url
             json_di["Binary_info_list"] = outer_list
-            json_di["Optimization"] = optimization
+            json_di["Optimization"] = optimization.to_msvc_opt()
             json_di["Pushed_at"] = repoinfo.updated_at
             json_di["commit_sha"] = commit_hexsha
             # fix this
-            with open(os.path.join(dest_binfolder, PDBJSONNAME), "w") as outfile:
+            with open(os.path.join(dest_binfolder, PDBJSONNAME), "w+") as outfile:
                 json.dump(json_di, outfile, sort_keys=False)
             repoid = dest_binfolder.split("\\")[-1]
-            with open(os.path.join(PDBPATH, f"{repoid}.json"), "w") as outfile:
+            with open(os.path.join(PDBPATH, f"{repoid}.json"), "w+") as outfile:
                 json.dump(json_di, outfile, sort_keys=False, indent=4)
                 logger.debug(f"written to {outfile} ")
 
         except FileNotFoundError:
-            logging.info("Pdbjsonfile not found")
+            logger.warning("Pdbjsonfile not found")
+        
+        except Exception as e:
+            logger.warning("Something else went wrong processing PDBjson...: {e}")

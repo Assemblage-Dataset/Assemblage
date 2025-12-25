@@ -39,7 +39,7 @@ class BuilderRegIn(MQMsg):
     '''
     def __init__(self, name: str, uuid: str, compiler: str,
                  compiler_version: str, library: str,
-                 language: str, save_assembly: bool, platform: str, compiler_flag: str, build_command: str, build_system: str):
+                 language: str, save_assembly: bool, platform: str, compiler_flag: str, build_command: str, build_system: str, toolset_version: str | None = None):
         super().__init__()
         self.name: str = name
         self.uuid: str = uuid
@@ -52,6 +52,7 @@ class BuilderRegIn(MQMsg):
         self.compiler_flag = compiler_flag
         self.build_command: str = build_command
         self.build_system: str = build_system
+        self.toolset_version: str | None = toolset_version
 
 class BuilderRegOut(MQMsg):
     '''
