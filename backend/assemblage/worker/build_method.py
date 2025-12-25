@@ -242,7 +242,7 @@ class BuildStrategy:
     def _get_compiler_version(self) -> str:
         pass
     @abstractmethod
-    def _get_compiler_version(self) -> str | None:
+    def _get_toolset_version(self) -> str | None:
         #only needed for windows
         pass
     @abstractmethod
