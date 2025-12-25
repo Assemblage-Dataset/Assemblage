@@ -554,13 +554,13 @@ class Builder(BasicWorker):
                 compiler=self.build_strategy.compiler,
                 library=self.library,
                 compiler_version=self.build_strategy.compiler_version,
+                toolset_version=self.build_strategy.toolset_version,
                 language=self.build_strategy.language,
                 save_assembly=self.build_strategy.save_assembly,
                 platform=self.platform,
                 compiler_flag=self.compiler_flag,
                 build_command=self.build_command,
                 build_system=self.build_system,
-                toolset_version=self.toolset_version
             ).to_json()
             ctrl_conn: Connection | None = self.mq_client.get_connection(
                 f'{self}-{OutputQueue.BUILDER_CTRL}')
