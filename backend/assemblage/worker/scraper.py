@@ -496,7 +496,7 @@ class Scraper(BasicWorker):
 
         if self._last_sent_crawltime != self.data_source.current_crawl_time:
             # must update the DB, as the scraper is now scraping a different time
-            logger.info(f"Updating time from {self._last_sent_crawltime} to {self.data_source.current_crawl_time}")
+            logger.debug(f"Updating time from {self._last_sent_crawltime} to {self.data_source.current_crawl_time}")
                     
             conn: Connection = self.mq_client.get_connection(conn_name=f'{self}')
             if conn is None:
@@ -661,12 +661,12 @@ class Scraper(BasicWorker):
                 # continually collect repositories until enough are collected, then sleep until bundle requested
                 elif self.policy == ScraperOutputPolicy.ON_REQUEST:
 
-                    # If some repositories have been collected and were requested, send them
-                    if self.bundle_requested and len(self.repocache) > 0:
-                        self.send_bundle()
-                        self.bundle_requested = False
+                    # # If some repositories have been collected and were requested, send them
+                    # if self.bundle_requested and len(self.repocache) > 0:
+                    #     self.send_bundle()
+                    #     self.bundle_requested = False
                     
-                    elif len(self.repocache) >= SCRAPER_REPO_BUNDLESIZE: 
+                    if len(self.repocache) >= SCRAPER_REPO_BUNDLESIZE: 
                         # stop the scraper here until another send request is received
 
                         if len(self.repocache) == SCRAPER_REPO_BUNDLESIZE:

@@ -124,6 +124,7 @@ DISPATCH_INTERVAL = 0.1  # time between attempting dispatchs.
 # as working through the dispatch backlog might choke other workers
 
 IDLE_DISPATCH_INTERVAL = 30  # when no dispatches are found, how long to wait until trying again
+WAIT_AFTER_REQ_INTERVAL = 1  # How long to wait after requesting a dispatch before continuing
 
 CLEAN_OVERTIME_INTERVAL = 600 
 AWS_REBOOT_SLEEP_INTERVAL = 1200

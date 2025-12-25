@@ -138,7 +138,7 @@ class BuildStrategy:
 
         # clone dir exists -- likely project already has been cloned
         if os.path.isdir(clone_dir):
-            logger.info(
+            logger.debug(
                 f"Target clone directory '{clone_dir}' already cloned: attempting to pull... ")
             cmd = 'git pull --recurse-submodules'
             cwd = clone_dir
@@ -336,8 +336,8 @@ class LinuxBuildStrategy(BuildStrategy):
         files = []
         for filename in glob.iglob(clone_dir + '**/**', recursive=True):
             files.append(filename.split("/")[-1])
-        logger.info("%s files in repo: %s", len(files), repo)
-        logger.info(
+        logger.debug("%s files in repo: %s", len(files), repo)
+        logger.debug(
             f"Files found in {clone_dir} {os.listdir(clone_dir)}")
 
         build_tool = get_build_system(files)
@@ -374,7 +374,7 @@ class LinuxBuildStrategy(BuildStrategy):
                 f'timeout 10m  make {extra_flags} -j{self.num_p_job}'
         elif 'make' in build_tool:
             cmd = f'cd {clone_dir} && timeout 10m make {extra_flags} -j{self.num_p_job}'
-        logger.info("Linux cmd generated: %s", cmd)
+        logger.debug("Linux cmd generated: %s", cmd)
 
         if cmd == "":
             logger.warning("No build command created for linux")
@@ -495,7 +495,7 @@ class WindowsDefaultStrategy(BuildStrategy):
             return None
         except AssertionError:
             return None
-        logger.info("Parsing success")
+        logger.debug("Parsing success")
         return slnfile
 
     def dia_get_func_funcinfo(self, binfile):
