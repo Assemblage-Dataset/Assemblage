@@ -201,19 +201,26 @@ class GithubTimeOrder(Enum):
 class SupportedPlatform(str, Enum):
     WINDOWS = 'windows'
     LINUX = 'linux'
-
+    def __str__(self):
+        return self.value
 
 class SupportedLanguage(str, Enum):
     CPP = "c++"
+    def __str__(self):
+        return self.value
     
 class SupportedCompiler(str, Enum):
     CLANG = "clang"
     GCC = "gcc"
     MSVC = "MSVC"
-   
+    
+    def __str__(self):
+        return self.value
 class SupportedArchitecture(str, Enum):
     X64 = "x64"
     X86 = "x86"
+    def __str__(self):
+        return self.value
      
     
 

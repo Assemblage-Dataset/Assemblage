@@ -43,6 +43,9 @@ class BuildStrategy:
         self.compiler: str = compiler
         self.language: str = language
         self.compiler_version = self._get_compiler_version()
+        
+        
+        logger.debug(f"Compiler version: {self.compiler_version}")
         self.toolset_version = self._get_toolset_version()
 
         self.library = library
@@ -305,7 +308,10 @@ class LinuxBuildStrategy(BuildStrategy):
                 output = out.decode(errors="ignore").strip()
                 match = re.search(r"\d+(\.\d+)+", output)
                 if match:
+    
                     return match.group(0)
+                else:
+                    raise ValueError(f"Failed to get compiler version: {output}")
 
         except Exception as e:
             logger.warning(f"Failed to get compiler version: {e}")
