@@ -7,7 +7,7 @@ import os
 import socket
 import logging
 
-from assemblage.consts import RuntimeEnv, ScrapeSource, ScraperOutputPolicy
+from assemblage.consts import RuntimeEnv, ScrapeSource, ScraperOutputPolicy, SupportedArchitecture, SupportedCompiler, SupportedLanguage, SupportedPlatform
 
 # set pika to only log warnings. otherwise it gets noisy - maybe this can be removed with better try except on all pika ops
 logging.getLogger("pika").setLevel(logging.WARNING)
@@ -134,11 +134,11 @@ class BuilderSettings(AssemblageSettings, S3Settings):
         default=True, env="SAVE_ASSEMBLY")
     # detect what platform ( linux, windows, darwin) teh builder is running on. for now just needed in builder
     # not quite perfect but should do for now    platform: str = Field(default_factory=lambda: platform.system().lower())
-    library: str = Field(
+    library: SupportedArchitecture = Field(
         default_factory=lambda: "x64" if '64' in machine() else 'x86')
-    build_os: str = Field(default_factory=lambda: system().lower())
-    compiler: str
-    language: str
+    build_os: SupportedPlatform = Field(default_factory=lambda: system().lower())
+    compiler: SupportedCompiler
+    language: SupportedLanguage
     build_mode: str = Field(default="Release", env="BUILD_MODE")
     # how long to wait in minutes for the build option id from coordinator before exiting (If none, then will wait forever)
     WAIT_FOR_BUILD_OPT: int | None = None

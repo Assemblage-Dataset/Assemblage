@@ -21,7 +21,7 @@ import ntpath
 import tempfile
 from pathlib import Path
 
-from assemblage.consts import BINPATH, TASK_TIMEOUT_THRESHOLD, BuildStatus, MAX_MQ_SIZE, CloneStatus, InputQueue, OptLevel, OutputQueue, WorkerType
+from assemblage.consts import BINPATH, TASK_TIMEOUT_THRESHOLD, BuildStatus, MAX_MQ_SIZE, CloneStatus, InputQueue, OptLevel, OutputQueue, SupportedPlatform, WorkerType
 from assemblage.worker.base_worker import BasicWorker
 from assemblage.worker.build_method import LinuxBuildStrategy, WindowsDefaultStrategy
 from assemblage.config import BuilderSettings
@@ -117,15 +117,16 @@ class Builder(BasicWorker):
             self.ArtifactBucket = None
             base_path = BINPATH
 
-        if self.platform == "linux":
+
+
+        if self.platform == SupportedPlatform.LINUX:
             self.build_system = "all"  # i think this is the default?
             #  maybe filter by language here too
             self.build_strategy = LinuxBuildStrategy(
                 # rename to linux build strat? and add compilier flags but eh for now
                 compiler=settings.compiler, language=settings.language, save_assembly=settings.save_assembly, library=self.library, base_path=base_path)
-        elif self.platform == "windows":
+        elif self.platform == SupportedPlatform.WINDOWS:
             self.build_system = "sln"  # i think this is the default?
-            self.compiler_flag = "o4"
             self.build_strategy = WindowsDefaultStrategy(
                 compiler=settings.compiler, language=settings.language, save_assembly=settings.save_assembly, library=self.library, base_path=base_path)
         else:
@@ -554,13 +555,13 @@ class Builder(BasicWorker):
                 compiler=self.build_strategy.compiler,
                 library=self.library,
                 compiler_version=self.build_strategy.compiler_version,
+                toolset_version=self.build_strategy.toolset_version,
                 language=self.build_strategy.language,
                 save_assembly=self.build_strategy.save_assembly,
                 platform=self.platform,
                 compiler_flag=self.compiler_flag,
                 build_command=self.build_command,
                 build_system=self.build_system,
-                toolset_version=self.toolset_version
             ).to_json()
             ctrl_conn: Connection | None = self.mq_client.get_connection(
                 f'{self}-{OutputQueue.BUILDER_CTRL}')

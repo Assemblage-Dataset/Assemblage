@@ -202,6 +202,21 @@ class SupportedPlatform(str, Enum):
     WINDOWS = 'windows'
     LINUX = 'linux'
 
+
+class SupportedLanguage(str, Enum):
+    CPP = "c++"
+    
+class SupportedCompiler(str, Enum):
+    CLANG = "clang"
+    GCC = "gcc"
+    MSVC = "MSVC"
+   
+class SupportedArchitecture(str, Enum):
+    X64 = "x64"
+    X86 = "x86"
+     
+    
+
 # support optimization levels, roughly translated/made generic
 
 

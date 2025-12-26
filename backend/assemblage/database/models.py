@@ -13,7 +13,7 @@ from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.sql.schema import ForeignKey
 from sqlalchemy_utils import create_database, database_exists
 from sqlmodel import Integer, Enum, Field, Session, SQLModel, create_engine, select, Relationship, Column
-from assemblage.consts import BuildStatus, CloneStatus, PriorityStatus, OptLevel
+from assemblage.consts import BuildStatus, CloneStatus, PriorityStatus, OptLevel, SupportedArchitecture, SupportedCompiler, SupportedLanguage, SupportedPlatform
 from pydantic import HttpUrl
 
 Base = declarative_base()
@@ -23,15 +23,15 @@ class BuildOpt(SQLModel, table=True):
     __tablename__ = 'buildopt'
     id: int = Field( primary_key=True)
     # git = Column(String(length=255), default="")
-    platform: str = Field(max_length=255, default="")
-    language: str = Field(max_length=255, default="")
-    compiler_name: str = Field(max_length=10, default="")
-    compiler_flag: str = Field(max_length=255, default="")
+    platform: SupportedPlatform = Field(max_length=255)
+    language: SupportedLanguage = Field(max_length=255)
+    compiler_name: SupportedCompiler = Field(max_length=10)
+    compiler_flag: str | None = Field(max_length=255)
     compiler_version: str = Field(max_length=25)
     toolset_version: str | None = Field(max_length=255)
-    build_system: str = Field(max_length=255, default="")
-    build_command: str = Field(max_length=255, default="")
-    library: str = Field(max_length=255, default="")
+    build_system: str | None = Field(max_length=255) # ideally this should be a build system  enum. also not sure used
+    build_command: str | None = Field(max_length=255) # Dont think this is used. 
+    library: SupportedArchitecture = Field(max_length=255) # bad name... architecture better? 
     save_assembly: bool = False
     enable: bool = False
     statuses: list["Status"] = Relationship(back_populates="build_opt")
@@ -99,7 +99,7 @@ class RepoDO(SQLModel, table=True):
     owner_id: int = 0 
     name: str = Field(max_length=255, default="")
     description: str = ""
-    language: str = Field(max_length=255, default="")
+    language: SupportedLanguage = Field(max_length=255, default="")
     created_at: datetime.datetime = Field(
         default_factory=datetime.datetime.now(datetime.timezone.utc))
     fork_from: int = 0
