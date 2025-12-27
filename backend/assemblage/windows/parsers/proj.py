@@ -280,21 +280,10 @@ class Project(object):
                          optimization,
                          platform="All Configurations",
                          configuration="All Configurations"):
-        optimization_mode = ""
+        optimization_mode = optimization.to_msvc_opt()
 
-        match optimization:
-            case OptLevel.NONE:
-                optimization_mode = ""
-            case OptLevel.LOW:
-
-                optimization_mode = "MinSpace"
-
-            case OptLevel.MEDIUM:
-                optimization_mode = "MaxSpeed"
-
-            case OptLevel.HIGH:
-                optimization_mode = "Full"
-                self.set_whole_program_optimization("true")
+        if optimization != OptLevel.NONE:
+            self.set_whole_program_optimization("true")
 
         item_name = "ClCompile"
         label = "Optimization"

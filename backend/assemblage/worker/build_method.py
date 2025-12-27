@@ -482,17 +482,7 @@ class WindowsDefaultStrategy(BuildStrategy):
 
                 projobj.write()
                 projobj_saved = Project(projfile)
-                optimization_mode = ""
-        
-                match optimization:
-                    case OptLevel.NONE:
-                        optimization_mode = "Disabled"
-                    case OptLevel.LOW:
-                        optimization_mode = "MinSpace"
-                    case OptLevel.MEDIUM:
-                        optimization_mode = "MaxSpeed"
-                    case OptLevel.HIGH:
-                        optimization_mode = "Full"
+                optimization_mode = optimization.to_msvc_opt()
 
                 logger.info("Read config: %s, correct: %s",
                             projobj_saved.get_optimization(), optimization_mode)
@@ -630,8 +620,11 @@ class WindowsDefaultStrategy(BuildStrategy):
             cmd.append(
                 f"/p:WindowsTargetPlatformVersion={self.compiler_version}")
 
+
+
         if build_mode == "Release":
             match optimization:
+                # this should be updated too with the switch but ran out of time
                 case OptLevel.NONE:
                     cmd.append("/p:Optimization=Disable")
                 case OptLevel.LOW:
@@ -673,6 +666,7 @@ class WindowsDefaultStrategy(BuildStrategy):
             #              os.path.isfile(binfile))
             funcs_infos, lines_infos, source_file = self.dia_get_func_funcinfo(
                 binfile_path)
+            # note to future dev, this seems to only really work for .pdb files
             item_dict = {}
             item_dict["functions"] = []
             # figure out how to just get filename/ not include C:/binaries/projects/ at least too
