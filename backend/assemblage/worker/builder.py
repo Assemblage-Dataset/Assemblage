@@ -21,7 +21,7 @@ import ntpath
 import tempfile
 from pathlib import Path
 
-from assemblage.consts import BINPATH, TASK_TIMEOUT_THRESHOLD, BuildStatus, MAX_MQ_SIZE, CloneStatus, InputQueue, OptLevel, OutputQueue, WorkerType
+from assemblage.consts import BINPATH, TASK_TIMEOUT_THRESHOLD, BuildStatus, MAX_MQ_SIZE, CloneStatus, InputQueue, OptLevel, OutputQueue, SupportedPlatform, WorkerType
 from assemblage.worker.base_worker import BasicWorker
 from assemblage.worker.build_method import LinuxBuildStrategy, WindowsDefaultStrategy
 from assemblage.config import BuilderSettings
@@ -117,15 +117,16 @@ class Builder(BasicWorker):
             self.ArtifactBucket = None
             base_path = BINPATH
 
-        if self.platform == "linux":
+
+
+        if self.platform == SupportedPlatform.LINUX:
             self.build_system = "all"  # i think this is the default?
             #  maybe filter by language here too
             self.build_strategy = LinuxBuildStrategy(
                 # rename to linux build strat? and add compilier flags but eh for now
                 compiler=settings.compiler, language=settings.language, save_assembly=settings.save_assembly, library=self.library, base_path=base_path)
-        elif self.platform == "windows":
+        elif self.platform == SupportedPlatform.WINDOWS:
             self.build_system = "sln"  # i think this is the default?
-            self.compiler_flag = "o4"
             self.build_strategy = WindowsDefaultStrategy(
                 compiler=settings.compiler, language=settings.language, save_assembly=settings.save_assembly, library=self.library, base_path=base_path)
         else:
@@ -203,13 +204,12 @@ class Builder(BasicWorker):
         '''
         try:
             conn: Connection = self.mq_client.create_connection(conn_name=f'{self}-{OutputQueue.BUILDER_CTRL}',
-                                                                        channel_name=f'{self}-{OutputQueue.BUILDER_CTRL}',
-                                                                        )
+                                                                channel_name=f'{self}-{OutputQueue.BUILDER_CTRL}',
+                                                                )
             while True:
 
                 if not self.build_opt_queue:  # handle when errors happen in creating hte connectino/ consume without the builder having a queue - could expand to just do some of htis on start up
-      
-                    
+
                     conn.ensure_connection()
                     conn.create_channel()
                     self.process_send_msg(kind=InputQueue.BUILD_REG, task=None)
@@ -353,15 +353,15 @@ class Builder(BasicWorker):
                     logger.debug(f"Project saved to {save_path} ")
 
             self.process_send_msg(task=task,
-                          kind=InputQueue.CLONE,
-                          url=task.url,
-                          status=clone_status,
-                          msg=self.uuid[:5]+clone_msg.decode(),
-                          commit_hexsha=commit_hexsha,
-                          save_path=save_path,
-                          build_time=0,
-                          optimization=None
-                          )
+                                  kind=InputQueue.CLONE,
+                                  url=task.url,
+                                  status=clone_status,
+                                  msg=self.uuid[:5]+clone_msg.decode(),
+                                  commit_hexsha=commit_hexsha,
+                                  save_path=save_path,
+                                  build_time=0,
+                                  optimization=None
+                                  )
 
             # this is currently only needed for windows, but linux just reutrns none too, so it wont break
             # seems cleaner to do it like this , instead of doing if statements here
@@ -370,14 +370,13 @@ class Builder(BasicWorker):
             for opt in task.optimizations:
                 optimization = OptLevel(opt)
                 self.process_send_msg(task=task,
-                              kind=InputQueue.BUILD,
-                              url=task.url,
-                              status=BuildStatus.PROCESSING,
-                              msg="Received and building",
-                              commit_hexsha=commit_hexsha,
-                              optimization=optimization,
-                              build_time=0)
-
+                                      kind=InputQueue.BUILD,
+                                      url=task.url,
+                                      status=BuildStatus.PROCESSING,
+                                      msg="Received and building",
+                                      commit_hexsha=commit_hexsha,
+                                      optimization=optimization,
+                                      build_time=0)
 
                 logger.debug(
                     f"Starting pre build with optimization: {optimization}")
@@ -402,7 +401,7 @@ class Builder(BasicWorker):
                 # logger.info("Build exit %s", build_msg.replace("\n", " "))
                 self.build_strategy.post_build_hook(clone_dir,
                                                     self.build_mode,
-                                                    task, compiler_version,
+                                                    task,
                                                     optimization, commit_hexsha)
                 logger.debug(f"Build message: {build_msg}")
 
@@ -418,21 +417,21 @@ class Builder(BasicWorker):
 
                     if not saved_successfully:
                         all_builds_saved = False
-                    
-                    logger.debug(f"Binaries saved to {dest_binfolder}")
+
+                    logger.info(f"Binaries saved to {dest_binfolder}")
                 else:
                     all_builds_saved = False   # Build itself failed
 
                 self.process_send_msg(task=task,
-                              kind=InputQueue.BUILD,
-                              url=task.url,
-                              status=build_status,
-                              msg="Build Process Finished",
-                              commit_hexsha=commit_hexsha,
-                              build_time=(after_build_time -
-                                          before_build_time),
-                              optimization=optimization
-                              )
+                                      kind=InputQueue.BUILD,
+                                      url=task.url,
+                                      status=build_status,
+                                      msg="Build Process Finished",
+                                      commit_hexsha=commit_hexsha,
+                                      build_time=(after_build_time -
+                                                  before_build_time),
+                                      optimization=optimization
+                                      )
 
             if self.s3_client and all_builds_saved:
                 # dirname needed to also remove parent folder with username
@@ -440,12 +439,12 @@ class Builder(BasicWorker):
 
         else:
             self.process_send_msg(task=task,
-                          kind=InputQueue.CLONE,
-                          url=task.url,
-                          status=clone_status,
-                          msg=self.uuid[:5]+clone_msg.decode(),
-                          commit_hexsha="",
-                          save_path=None)
+                                  kind=InputQueue.CLONE,
+                                  url=task.url,
+                                  status=clone_status,
+                                  msg=self.uuid[:5]+clone_msg.decode(),
+                                  commit_hexsha="",
+                                  save_path=None)
 
             logger.info("Clone FAILURE %s: %s", task.url, clone_msg)
         # build_method.clean(folders)
@@ -515,12 +514,12 @@ class Builder(BasicWorker):
                     all_saved = False
                     logger.warning(f"Failed to upload {fpath} -> {s3_key}")
             else:
-                dest_folder = os.path.join( dest_base_full, str(optimization))
-                os.makedirs(dest_folder, exist_ok=True)
-                dest_file = os.path.join(dest_folder, base_name)
+                dest_file = os.path.join(
+                    dest_base_full, f"{optimization}", base_name)
                 shutil.copy2(fpath, dest_file)
                 try:
-                    os.remove(fpath)
+                    # os.remove(fpath)
+                    pass
                 except Exception:
                     logger.warning(f"Could not delete {fpath}")
                 if self.platform == 'linux':
@@ -531,12 +530,10 @@ class Builder(BasicWorker):
                             f"Failed to change permissions on {dest_file}")
                         all_saved = False
 
-
-            logger.debug(f"optimization: {optimization}")
             self.process_send_msg(kind=InputQueue.BINARY,
-                          task=task,
-                          file_name=fpath if self.s3_client else dest_file,
-                          optimization=optimization)
+                                  task=task,
+                                  file_name=fpath if self.s3_client else dest_file,
+                                  optimization=optimization)
 
         if not self.s3_client:
             self.build_strategy.own_dir(dest_base_full)
@@ -558,6 +555,7 @@ class Builder(BasicWorker):
                 compiler=self.build_strategy.compiler,
                 library=self.library,
                 compiler_version=self.build_strategy.compiler_version,
+                toolset_version=self.build_strategy.toolset_version,
                 language=self.build_strategy.language,
                 save_assembly=self.build_strategy.save_assembly,
                 platform=self.platform,
@@ -565,7 +563,8 @@ class Builder(BasicWorker):
                 build_command=self.build_command,
                 build_system=self.build_system,
             ).to_json()
-            ctrl_conn: Connection | None = self.mq_client.get_connection(f'{self}-{OutputQueue.BUILDER_CTRL}')
+            ctrl_conn: Connection | None = self.mq_client.get_connection(
+                f'{self}-{OutputQueue.BUILDER_CTRL}')
             logger.debug(
                 f"Reply to {self.control_queue_in.name}. corr_id {self.uuid}")
             if ctrl_conn:

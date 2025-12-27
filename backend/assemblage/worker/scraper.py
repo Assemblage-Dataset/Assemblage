@@ -175,7 +175,7 @@ class GithubRepositories(DataSource):
                 files.append(record["path"])
         build_tool = self.build_sys_callback(files)
         name = repo["name"]
-        language = repo["language"]
+        language = repo["language"].lower()
         owner_id = repo["owner"]["id"]
         description = repo["description"] or ""
         created_at = github_time_to_mysql_time(repo["created_at"])

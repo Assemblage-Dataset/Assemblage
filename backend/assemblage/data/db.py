@@ -87,6 +87,7 @@ class DBManager:
         self.language: str = language
         self.save_assembly: bool = save_assembly
         self.platform: str = platform
+        self.toolset_version: str | None = toolset version
         '''
         with self.get_session() as session:
             filters = []
@@ -100,6 +101,7 @@ class DBManager:
                 ('build_command', BuildOpt.build_command),
                 ('library', BuildOpt.library),
                 ('save_assembly', BuildOpt.save_assembly),
+                ('toolset_version', BuildOpt.toolset_version)
             ]
             # sql alchemy gets funny with none values so creating filters now
             for attr_name, column in attrs:
@@ -119,6 +121,7 @@ class DBManager:
                     compiler_name=regInfo.compiler,
                     compiler_flag=regInfo.compiler_flag,
                     compiler_version=regInfo.compiler_version,
+                    toolset_version=regInfo.toolset_version,
                     build_system=regInfo.build_system, # 100% make this an enum
                     build_command=regInfo.build_command,
                     library=regInfo.library,

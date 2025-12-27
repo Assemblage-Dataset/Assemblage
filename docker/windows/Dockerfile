@@ -15,25 +15,16 @@ ENV VS_VERSION=2022
 
 ADD https://aka.ms/vs/17/release/vs_BuildTools.exe vs_buildtools.exe 
 # Install Build Tools with the Microsoft.VisualStudio.Workload.AzureBuildTools workload, excluding workloads and components with known issues.
-RUN (start /w vs_buildtools.exe --wait --quiet --norestart --nocache `
+RUN start /w vs_buildtools.exe --wait --quiet --norestart --nocache `
     --installPath "%ProgramFiles(x86)%\Microsoft Visual Studio\2022\BuildTools" `
     --add Microsoft.VisualStudio.Workload.VCTools `
-    --add Microsoft.Net.Component.4.8.SDK `
-    --add Microsoft.Net.Component.4.8.TargetingPack `
-    --add Microsoft.Component.MSBuild `
     --add Microsoft.VisualStudio.Workload.MSBuildTools `
-    --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended `
     --add Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
     --add Microsoft.VisualStudio.Component.Windows10SDK.19041 `
     --add Microsoft.VisualStudio.Component.VC.CMake.Project `
-    --add Microsoft.VisualStudio.ComponentGroup.NativeDesktop.Win81 `
-    --add Microsoft.VisualStudio.ComponentGroup.NETFramework `
-    --remove Microsoft.VisualStudio.Component.Windows10SDK.10240 `
-    --remove Microsoft.VisualStudio.Component.Windows10SDK.10586 `
-    --remove Microsoft.VisualStudio.Component.Windows10SDK.14393 `
-    --remove Microsoft.VisualStudio.Component.Windows81SDK `
-    --includeRecommended `
-    || IF "%ERRORLEVEL%"=="3010" EXIT 0) 
+    --add Microsoft.Net.Component.4.8.SDK `
+    --add Microsoft.Net.Component.4.8.TargetingPack `
+    --includeRecommended
 # && del /q vs_buildtools.exe
 
 SHELL ["powershell", "-Command"]
@@ -72,25 +63,26 @@ RUN Expand-Archive -Path ctags.zip -DestinationPath ctags; `
 
 # Register dll file for dia2dump
 
-RUN "Start-Process regsvr32 -ArgumentList '/s', 'C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\Community\\DIA SDK\\bin\\msdia140.dll' `
-    -Wait -NoNewWindow -PassThru | Wait-Process"
-
-
-
-RUN "Start-Process regsvr32 -ArgumentList '/s', 'C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildCommunityTools\\DIA SDK\\bin\\amd64\\msdia140.dll' `
-    -Wait -NoNewWindow -PassThru | Wait-Process"
-
+RUN "C:\\Windows\\System32\\regsvr32.exe /s \"C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildCommunityTools\\DIA SDK\\bin\\amd64\\msdia140.dll\""
 
 
 
 
 # add to path ( note may need to create a script that does this at run time)
 ENV PYTHONPATH=C:\app
-
-# #
+# # #
 COPY ./backend C:\app
 
+
+
+
 WORKDIR C:\app
+
+
+COPY ./backend/assemblage/windows/dia2dump C:\tools\Dia2Dump
+
+
+RUN setx path \"`$env:PATH;C:\tools\Dia2Dump;C:\tools\ctags\"
 ENV PIP_USE_PEP517=1
 RUN python.exe -m pip install --upgrade pip setuptools wheel
 
@@ -99,7 +91,6 @@ RUN python.exe -m pip install --prefer-binary -r requirements.txt
 
 # ENV AWS_CONFIG_FILE="C:\\Administrator\\.aws\\config"
 # ENV AWS_SHARED_CREDENTIALS_FILE="C:\\Administrator\\.aws\\credentials"E
-ENV PYTHONPATH="C:\\app;"
 ENV COMPILER="MSVC"
 ENV LANGUAGE="c++"
 # maybe need to figure out adding ^^ to path via ps1 script ( so might need to add script in this folder to 
