@@ -113,6 +113,7 @@ class Coordinator:
         # records if any build option has requested repos 
         # True while waiting for repos but before they've been received
         self._pending_repos : bool = False
+        self._pending_repos_time : int = 0
         
 
         if settings.s3_enabled:
@@ -239,7 +240,7 @@ class Coordinator:
             self.db_man.update_repo_status( status_id=build_message.task_id, clone_status=CloneStatus.PROCESSING )
 
             # log progress
-            if task_count % 10 == 0:
+            if task_count % 100 == 0:
                 logger.info(f'Placed {task_count}th task on build option {build_opt_id}')
 
             # sleep
@@ -257,9 +258,16 @@ class Coordinator:
             '''
 
             if self._pending_repos:
-                # another scraper beat this to the punch, or a valid request is still waiting: don't request yet
-                logger.debug("Waiting for repos...")
-                return
+                if self._pending_repos_time + 60 < int(time.time()):
+                    # temporary bugfix: sometimes the repo request seems to get lost. 
+                    # Have only seen it once: seems related to multiple buildopts consuming at different rates
+                    # this at least prevents permanent timeouts until I can replicate it + fixx
+                    logger.info("Previous repo request timed out. Sending another.")
+                    pass
+                else:
+                    # another scraper beat this to the punch, or a valid request is still waiting: don't request yet
+                    logger.debug("Waiting for repos...")
+                    return
             try: 
                 build_opt_lang = self.db_man.get_build_opt_language(build_opt_id)
                 # to do use the above to request 
@@ -269,6 +277,7 @@ class Coordinator:
                     )
                 
                 self._pending_repos = True
+                self._pending_repos_time = int(time.time())
 
                 queue = MQQueue(OutputQueue.SCRAPER_CTRL)
             
@@ -528,7 +537,7 @@ class Coordinator:
                 # Removing this code won't break anything as of writing, but could introduce bugs in the future.
                 if task.clone_status in [CloneStatus.NOT_STARTED, CloneStatus.PROCESSING]:
                     timeout = COORDINATOR_DATABASE_SYNC_TIMEOUT
-                    logger.info("Waiting for database sync...")
+                    logger.debug("Waiting for database sync...")
                     while (timeout > 0 and task.clone_status in [CloneStatus.NOT_STARTED, CloneStatus.PROCESSING]):
                         # relatively long wait time to reduce required db accesses
                         time.sleep(1)
@@ -550,8 +559,8 @@ class Coordinator:
                     self.info_successes += 1
                 elif recv_msg.status == BuildStatus.FAILED:
                     self.info_failures += 1
-                if (self.info_successes + self.info_failures) % 10 == 0:
-                    logger.info(f"Build tasks completed: {self.info_successes + self.info_failures} ({self.info_successes} successes, {self.info_failures} failures)")
+                if (self.info_successes + self.info_failures) % 100 == 0:
+                    logger.info(f"Builds completed: {self.info_successes + self.info_failures} ({self.info_successes} successes, {self.info_failures} failures)")
 
             if ch and ch.is_open:
                 ch.basic_ack(delivery_tag=method.delivery_tag)

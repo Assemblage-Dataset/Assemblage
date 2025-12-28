@@ -100,6 +100,10 @@ class Builder(BasicWorker):
         self.MAX_WAIT = settings.WAIT_FOR_BUILD_OPT  # 15 minutes in seconds
         self.CHECK_INTERVAL = settings.CONFIG_CHECK_INTERVAL  # check every 5 seconds
 
+        self.logging_build_fails = 0
+        self.logging_build_successes = 0
+        self.logging_projects_processed = 0
+
       # s3 configuration
         if settings.s3_enabled:
             # settings.validate_s3()
@@ -314,9 +318,13 @@ class Builder(BasicWorker):
         #                   msg="duplicate")
         #     return
 
+        time_start = time.time()
+
         logger.debug("Received a task to build %s. buildsys: %s",
                     task.url,
                     task.build_system)
+        self.logging_projects_processed += 1
+
         logger.info(f" Cloning {task.url}...")
         clone_msg, clone_status, clone_dir = self.build_strategy.clone_data(
             task.url)
@@ -326,6 +334,8 @@ class Builder(BasicWorker):
             original_files.append(filename)
         # respond to events before we pause to build - not sure we need this so removed. better to process with ctrl and pause
         # ch.connection.process_data_events()
+
+        time_clone_end = time.time()
 
         if clone_status == CloneStatus.SUCCESS:
 
@@ -387,7 +397,7 @@ class Builder(BasicWorker):
                 )
                 logger.debug(
                     f"Prebuild SUCCESS. Building {task.url}...")
-                logger.info(f"Building '{task.name}' on optimization {optimization}...")
+                logger.debug(f"Building '{task.name}' on optimization {optimization}...")
                 before_build_time = int(time.time())
                 build_msg, build_status = self.build_strategy.run_build(
                     repo=task.url,
@@ -414,12 +424,14 @@ class Builder(BasicWorker):
                         commit_hexsha=commit_hexsha,
                         optimization=optimization
                     )
+                    self.logging_build_successes += 1
 
                     if not saved_successfully:
                         all_builds_saved = False
 
                     logger.info(f"Binaries saved to {dest_binfolder}")
                 else:
+                    self.logging_build_fails += 1
                     all_builds_saved = False   # Build itself failed
 
                 self.process_send_msg(task=task,
@@ -436,6 +448,13 @@ class Builder(BasicWorker):
             if self.s3_client and all_builds_saved:
                 # dirname needed to also remove parent folder with username
                 self._clean_folder(os.path.dirname(clone_dir))
+            total_time_elapsed = round(time.time() - time_start, 3)
+            clone_time_elapsed = round(time_clone_end - time_start, 3)
+            logger.info(f"""Duration of task {task.name} ({len(task.optimizations)} builds): {total_time_elapsed}s ({clone_time_elapsed}s to clone, {round(total_time_elapsed - clone_time_elapsed, 3)}s to build)""")
+            if (self.logging_projects_processed % 10 == 0):
+                
+                logger.info(f"""{self.logging_projects_processed} repos processed, {self.logging_build_fails+self.logging_build_successes} builds attempted 
+                    ({self.logging_build_successes} successes, {self.logging_build_fails} failures)""")
 
         else:
             self.process_send_msg(task=task,
@@ -447,6 +466,7 @@ class Builder(BasicWorker):
                                   save_path=None)
 
             logger.info("Clone FAILURE %s: %s", task.url, clone_msg)
+            
         # build_method.clean(folders)
         logger.debug("Worker %s finished %s", self.uuid[:5], task.url,
                      )

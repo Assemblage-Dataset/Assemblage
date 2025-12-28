@@ -88,11 +88,8 @@ PDBJSONNAME = "pdbinfo.json"
 AWS_AUTO_REBOOT_PREFIX = "auto-worker"
 REPO_SIZE_THRESHOLD = 50
 
-# Some debug constants. TODO: use the 'debug' vs 'info' states of the logger instead
-DEBUG_SHOW_ALL_MESSAGES_SCRAPER = False  # set to False to quiet some messages
 
-
-SCRAPER_RATE_INTERVAL = 0.1
+SCRAPER_RATE_INTERVAL = 0.01
 # Controls how long between scrapings. Setting to 0 may result in the scraper choking other units if they have CONTINUOUS policy.
 
 SCRAPER_REPO_BUNDLESIZE = 25
@@ -137,6 +134,10 @@ COORDINATOR_DATABASE_SYNC_TIMEOUT = 10
 COORDINATOR_REPO_REQUEST_THRESHOLD = 1
 # How many repositories the coordinator will identify as "too few" and request more to be scraped
 # (for scrapers with the ON_REQUEST policy). Lower is more performant by RabbitMQ standards
+
+COORDINATOR_REPO_REQUEST_TIMEOUT = 60
+# If the coordinator waits more than this many seconds to get a repo bundle, 
+# resend the request
 
 '''
 For the context of the direction of queues. It is from the perspective of the coordinator

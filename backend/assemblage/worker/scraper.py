@@ -37,7 +37,7 @@ from assemblage.mq.client import MQQueue, MessageClient, Connection
 # from assemblage.analyze.tokenchecker import TokenChecker
 from assemblage.analyze.analyze import get_build_system
 from assemblage.consts import (
-    SCRAPER_PAGE_SIZE,  DEBUG_SHOW_ALL_MESSAGES_SCRAPER,
+    SCRAPER_PAGE_SIZE,
     GITHUB_REPO_URL, SCRAPER_REQUEST_TIMEOUT_S, SCRAPER_REPO_BUNDLESIZE,
     SCRAPER_RATE_INTERVAL, RATE_LIMIT_WAIT, SECONDARY_RATE_LIMIT_WAIT, RATE_LIMIT_UPDATE_INTERVAL, InputQueue, OutputQueue,
     ScrapeSource, GithubTimeOrder, WorkerType, ScraperMsgType, ScraperOutputPolicy
@@ -240,9 +240,8 @@ class GithubRepositories(DataSource):
                         # update total query results count in case it has changed
                         total_query_results_count = min(
                             rdict["total_count"], total_query_results_count)
-                        if DEBUG_SHOW_ALL_MESSAGES_SCRAPER:
-                            logger.info("Successful search result obtained by crawler %s. GitHub responded with %s repos",
-                                    self.parent_workerid, total_query_results_count)
+                        logger.debug("Successful search result obtained by crawler %s. GitHub responded with %s repos",
+                                self.parent_workerid, total_query_results_count)
                         # logger.info("Crawler query: %s ... ; page: %s; GitHub responded with %s repos",
                         #             query_time_start[:-7], payload['page'], total_query_results_count) # not sure about the query_time_start[:-7] line
                         repos_on_page = rdict["items"]
@@ -250,9 +249,7 @@ class GithubRepositories(DataSource):
                             dt, fs = self._process_repo_message(repo)
                             # dt is metadata, fs is all files in repo
                             if dt and fs:
-                                if DEBUG_SHOW_ALL_MESSAGES_SCRAPER:
-                                    logger.info("Crawler %s got %s",
-                                                self.parent_workerid, repo["name"])
+                                #logger.info("Crawler %s got %s", self.parent_workerid, repo["name"])
                                 # logger.info("Obtained metadata: %s", str(dt))
                                 # logger.info("Obtained files %s", str(fs))
                                 yield dt, fs
@@ -579,17 +576,16 @@ class Scraper(BasicWorker):
                 self.policy = msg.policy
             if msg.qualifiers != None:
                 self.data_source.qualifiers = msg.qualifiers
-            debug_starttime = datetime.utcfromtimestamp(self.data_source.crawl_time_start).strftime('%Y-%m-%d')
-            debug_endtime = datetime.utcfromtimestamp(self.data_source.crawl_time_end).strftime('%Y-%m-%d')
+            debug_starttime = datetime.utcfromtimestamp(self.data_source.crawl_time_start).strftime('%Y-%m-%d-%H')
+            debug_endtime = datetime.utcfromtimestamp(self.data_source.crawl_time_end).strftime('%Y-%m-%d-%H')
             self.ready = True
-            if msg.message_type == ScraperMsgType.SETUP and DEBUG_SHOW_ALL_MESSAGES_SCRAPER:
-                logger.debug(f"Configured scraper {self.workerid} to start scraping backward from {debug_endtime} to {debug_starttime} on policy '{self.policy}'")
+            if msg.message_type == ScraperMsgType.SETUP:
+                logger.debug(f"Configured scraper {self.workerid} to start scraping from {debug_starttime} to {debug_endtime} on policy '{self.policy}'")
 
         elif msg.message_type == ScraperMsgType.REQUEST_REPOS:
             # should we restrict this type of message to only being handled by scrapers with the on_request policy?
             self.bundle_requested = True
-            if DEBUG_SHOW_ALL_MESSAGES_SCRAPER:
-                logger.info(f"Repo bundle request accepted by scraper {self.workerid}")
+            logger.debug(f"Repo bundle request accepted by scraper {self.workerid}")
             
 
         ch.basic_ack(delivery_tag=method.delivery_tag)
