@@ -6,7 +6,7 @@ Alex Duly
 from dataclasses import dataclass
 import logging
 import time
-from typing import Callable
+from typing import Any, Callable
 import pika
 from pika.adapters.blocking_connection import BlockingChannel, BlockingConnection
 import pika.exceptions
@@ -69,7 +69,6 @@ class Connection:
         self.username = username
         self.password = password
         self.conn_name = conn_name
-        self.exchange_name = None 
         self.chan_name = channel_name
         self.conn: BlockingConnection | None = None
         self.chan: BlockingChannel | None = None  #  actually stores the MQ shcnanel
@@ -150,10 +149,10 @@ class Connection:
                 raise Exception(
                     f"Channel is closed, cannot create queue on {self}")
             self.chan.queue_declare(queue=queue.name, durable=True)
-            logger.info(f"Created queue: {queue} on {self}")
+            logger.debug(f"Created queue: {queue} on {self}")
             if queue.exchange_name and queue.routing_key:
                 logger.debug(
-                    f"Binding routing key {queue.routing_key}  and exchagne {queue.exchange_name}")
+                    f"Binding routing key {queue.routing_key}  and exchange {queue.exchange_name}")
                 self.chan.queue_bind(
                     queue.name, queue.exchange_name, queue.routing_key)
             self.queues[queue.name] = queue
@@ -182,15 +181,13 @@ class Connection:
 
     def add_topic_exchange(self, exchange_name):
         ''' add a topic exchanger to channel '''
-        self.exchange_name = exchange_name
         self.chan.exchange_declare(exchange=exchange_name,
                                    exchange_type=ExchangeType.topic)
-    def ensure_exchange(self, exchange_name):
-        if self.exchange_name and exchange_name != "":
+    def ensure_exchange(self, exchange_name, exchange_type=ExchangeType.topic):
+        if exchange_name != "":
             self.chan.exchange_declare(exchange=exchange_name,
-                                   exchange_type=ExchangeType.topic)
+                                   exchange_type=exchange_type)
         
-
     def ensure_queue(self, queue: MQQueue):
         '''
         Ensures a queue exists
@@ -205,9 +202,7 @@ class Connection:
     def send_msg(self, queue: MQQueue, msg, exchange='', reply_to: str | None = None, corr_id: str | None = None):
         '''
         send message into the queue, should only be used on Producer connections
-        '''
-        logging.debug("MQ queued length %s", len(msg))
-  
+        '''  
       # woudl it be better to just pass in mqqueue type and deal with exception later?
         try:
             self.ensure_connection()
@@ -222,7 +217,23 @@ class Connection:
                                                                     ))
 
         except Exception as err:
-            logging.error(f"failed to send message: {err}")
+            logger.error(f"failed to send message to {queue}: {err}")
+
+    def publish_to_exchange(self, exchange_name: str, routing_key: str, body: dict[Any, Any]):
+        '''
+        Send message to an exchange instead of a queue
+        
+        '''
+        try: 
+            self.ensure_connection()
+            self.ensure_exchange(exchange_name)
+            self.chan.basic_publish(
+                        exchange=exchange_name, routing_key=routing_key,
+                        body=body,
+                        properties=pika.BasicProperties(delivery_mode=2))
+        except Exception as e:
+            logger.error(f"Failed to publish message to exchange: {e}") 
+            
 
     def consume(self, queue: MQQueue, auto_ack=False):
         """Consume from specified queue."""
@@ -339,15 +350,22 @@ class MessageClient:
 
     def start_consumer(self, conn: Connection, queue: MQQueue, auto_ack=False, retry_delay=10):
         """Run a consumer loop with reconnection + retry."""
-        conn = self.get_connection(conn.conn_name)
-        if not conn:
-            raise ValueError(
-                f"Connection {conn.conn_name} not found in client")
-
         while True:
             try:
+                # Always construct a fresh connection
+                conn.connect()
+                conn.create_channel()
                 conn.consume(queue, auto_ack=auto_ack)
+
+            except pika.exceptions.AMQPConnectionError as e:
+                logger.error(f"Connection error: {e}. Retrying in {retry_delay}s...")
             except Exception as e:
-                logger.error(f"Consumer on {queue} failed: {e}", exc_info=True)
-                logger.info(f"Retrying in {retry_delay}s...")
-                time.sleep(retry_delay)
+                logger.error(f"Unexpected consumer error: {e}. Retrying in {retry_delay}s...")
+
+            # clean shutdown
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+            time.sleep(retry_delay)

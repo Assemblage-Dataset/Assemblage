@@ -8,7 +8,7 @@ from assemblage.config import CoordinatorSettings
 # TODO: could definitely use fewer plain SQL queries, if desired
 # Will also break if we move from Postgres. 
 
-def conditional_init_db(settings: CoordinatorSettings):
+def conditional_init_db(db_name : str, db_url : str):
 
     # We connect to the template1 database instead of the assemblage database
     # because template1 is guaranteed to exist
@@ -21,21 +21,21 @@ def conditional_init_db(settings: CoordinatorSettings):
     with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
         db_exists = conn.execute(
             text("select exists (SELECT datname FROM pg_catalog.pg_database WHERE datname=:db)"),
-            {"db": settings.db_name}
+            {"db": db_name}
         ).scalar()
         
         if not db_exists:
-            logging.info(f"No database '{settings.db_name}' found. Automatically setting up database...")
-            conn.execute(text(f"CREATE DATABASE {settings.db_name}"))
+            logging.info(f"No database '{db_name}' found. Automatically setting up database...")
+            conn.execute(text(f"CREATE DATABASE {db_name}"))
 
-    assemblage_engine = create_engine(settings.databaseURL)
+    assemblage_engine = create_engine(db_url)
     table_count = 0
     with assemblage_engine.connect() as conn:
 
         table_count = len( inspect(conn).get_table_names() )
 
     if table_count == 0:
-        logging.info(f"No tables found in database {settings.db_name}. Running Alembic migration...")
+        logging.info(f"No tables found in database {db_name}. Running Alembic migration...")
         subprocess.run(
             ["alembic", "upgrade", "head"],
             check=True,

@@ -22,8 +22,8 @@ from sqlalchemy.exc import IntegrityError
 
 # from sqlalchemy.sql import Insert
 
-from assemblage.database.models import BuildDO, BuildOpt, RepoDO, Status
-from assemblage.consts import BuildStatus, CloneStatus, BIN_DIR # , SUPPORTED_LANGUAGE
+from assemblage.database.models import BuildDO, BuildOpt, RepoDO, Status, ScraperData
+from assemblage.consts import BuildStatus, SUPPORTED_LANGUAGE, CloneStatus, BIN_DIR, OptLevel
 # from typing import Tuple
 
 
@@ -87,6 +87,7 @@ class DBManager:
         self.language: str = language
         self.save_assembly: bool = save_assembly
         self.platform: str = platform
+        self.toolset_version: str | None = toolset version
         '''
         with self.get_session() as session:
             filters = []
@@ -100,6 +101,7 @@ class DBManager:
                 ('build_command', BuildOpt.build_command),
                 ('library', BuildOpt.library),
                 ('save_assembly', BuildOpt.save_assembly),
+                ('toolset_version', BuildOpt.toolset_version)
             ]
             # sql alchemy gets funny with none values so creating filters now
             for attr_name, column in attrs:
@@ -119,6 +121,7 @@ class DBManager:
                     compiler_name=regInfo.compiler,
                     compiler_flag=regInfo.compiler_flag,
                     compiler_version=regInfo.compiler_version,
+                    toolset_version=regInfo.toolset_version,
                     build_system=regInfo.build_system, # 100% make this an enum
                     build_command=regInfo.build_command,
                     library=regInfo.library,
@@ -137,15 +140,20 @@ class DBManager:
                     repo: RepoDO
                     # logging.info("Adding buildopt %s, repo is %s", build_system, repo[0].build_system)
                     if regInfo.build_system in repo[0].build_system or regInfo.build_system == "all":
-                        # try:
+                        # check that a task for this project on this repo doesn't already exist (avoid duplicates)
+                        query = select(Status).where(
+                            Status.repo_id == repo[0].id,
+                            Status.build_opt_id == res.id,
+                            Status.commit_hexsha == repo[0].commit_hexsha
+                        )
+                        row = session.execute(query).first()
+                        if row is None:
                             new_status = Status(
                                 repo_id=repo[0].id,
-                                build_opt_id=res.id
+                                build_opt_id=res.id,
+                                commit_hexsha=repo[0].commit_hexsha
                             )
                             status_.append(new_status)
-                        # except IntegrityError as e:
-                        #     logger.info("Desired behavior")
-                        #     pass # behavior is as wanted
             session.bulk_save_objects(status_)
             session.commit()    
                 
@@ -153,6 +161,17 @@ class DBManager:
             if not res.id:
                 raise ValueError("Failed to create build opt ")
             return res.id
+
+    def get_build_opt_language(self, build_opt_id: int):
+        with self.get_session() as session: 
+            query = select(BuildOpt).where(BuildOpt.id == build_opt_id)
+            result = session.execute(query).first()
+            if not result: 
+                raise ValueError(f"Invalid build option: {build_opt_id}")                
+            build_opt: BuildOpt = result[0]
+            return build_opt.language
+        
+
 
 # new code. above to be copied out of this dir eventually into ../database
     def shutdown(self):
@@ -283,6 +302,7 @@ class DBManager:
             session.execute(query)
             session.commit()
 
+
     
     def get_dispatch_task(self, build_opt_id: int, reproduce_mode) -> BuilderTaskOut:
         '''
@@ -325,7 +345,8 @@ class DBManager:
                 repo_id = project.id,
                 updated_at = _updated_at,
                 build_system = project.build_system,
-                msg_time = time.time()
+                msg_time = time.time(),
+                optimizations=[level.value for level in OptLevel], # can make this configurable alter
                 #commit_hexsha = status.commit_hexsha
             )
             if reproduce_mode:
@@ -345,8 +366,92 @@ class DBManager:
             )
 
             row = session.query(q.subquery()).count()
+            
         return row
 
+
+    def ready_scraper_table(self) -> None:
+        """
+        Every time the program is restarted, we need to reassociate entries in the scraper
+        table with working scrapers. So clear all owner claims, as no scrapers are configured yet.
+        """
+        with self.get_session() as session:
+            query = update(ScraperData).values(
+                owner_uuid="")
+            session.execute(query)
+            session.commit()
+
+    def register_scraper(self, worker_uuid : str, fallback_starttime : int, fallback_endtime : int) -> dict:
+        """
+        Returns a start time and end time for scraper of given UUID. If there exists an unclaimed row of data in
+        the scraper data, claim it and return that row; otherwise, create a new row with the entered data and 
+        claim it for given UUID. 
+        """
+        with self.get_session() as session:
+
+            # check to see if we already registered this scraper
+            query = select(ScraperData).where(ScraperData.owner_uuid == worker_uuid)
+            result = session.execute(query).scalars().first()
+            if result != None:
+                logger.debug(f"Duplicate scraper registration request sent by {worker_uuid}")
+                
+                return {
+                    "start_time": result.start_time,
+                    "end_time": result.end_time,
+                }
+
+            query = select(ScraperData).where(ScraperData.owner_uuid == "")
+            result = session.execute(query).scalars().first()
+            
+            if result == None:
+                # must generate a row for this entry
+                logger.info(f"Generating new configuration for scraper {worker_uuid} from environment variables/defaults...")
+                new_row = ScraperData(
+                    start_time=fallback_starttime, 
+                    end_time=fallback_endtime, 
+                    owner_uuid=worker_uuid
+                )
+                session.add(new_row)
+                result = new_row
+
+            else:
+                # claim the result's row
+                logger.debug(f"Assigning existing config option {result.id} to scraper {worker_uuid}")
+                result.owner_uuid = worker_uuid
+
+            
+            return {
+                "start_time": result.start_time,
+                "end_time": result.end_time,
+            }
+        
+        
+    def update_scraper(self, worker_uuid : str, start_time : int, fallback_endtime : int):
+        """
+        Update the stored start time, presumably progressing it toward the end time. 
+        """
+        with self.get_session() as session:
+
+            query = select(ScraperData).where(ScraperData.owner_uuid == worker_uuid)
+            result = session.execute(query).scalars().first()
+            
+            if result == None:
+                # must generate a row for this entry
+                logger.warning(f"Could not find preexisting row for scraper {worker_uuid}. Generating new config option.")
+                new_row = ScraperData(
+                    start_time=start_time, 
+                    end_time=fallback_endtime, 
+                    owner_uuid=worker_uuid
+                )
+                session.add(new_row)
+
+            else:
+                # update the start time
+                logger.debug(f"Old start time is {result.start_time}, new time is {start_time}")
+                result.start_time = start_time
+
+            
+            
 
     # Unused
 

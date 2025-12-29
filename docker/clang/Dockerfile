@@ -21,9 +21,6 @@ ENV PYTHONPATH=/app
 ENV PATH="/venv/bin:$PATH"
 RUN pip install --upgrade pip setuptools wheel
 RUN pip install -r requirements.txt
-COPY ./aws /root/.aws
-RUN export AWS_CONFIG_FILE=/root/.aws/config
-RUN export AWS_SHARED_CREDENTIALS_FILE=/root/.aws/credentials
 
 ENV CC='clang'
 ENV CXX='clang++'
@@ -34,6 +31,8 @@ RUN echo '2:clang' >> /conf
 
 RUN cp /usr/bin/clang /usr/bin/cc && cp /usr/bin/clang++ /usr/bin/cc1plus && \
     cp -f /usr/bin/clang /usr/bin/gcc && cp -f /usr/bin/clang++ /usr/bin/g++
+
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 CMD  [ "CMD", "bash", "-c", "pgrep -f start_worker.py > /dev/null" ]
 
 
 ENTRYPOINT ["python3", "/app/scripts/start_worker.py"]

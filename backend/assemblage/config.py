@@ -1,19 +1,48 @@
 from datetime import datetime, timezone
 from typing import Any, Literal
 from pydantic_settings import BaseSettings
-from pydantic import computed_field, Field
+from pydantic import computed_field, Field, model_validator
 from platform import machine, system
 import os
 import socket
 import logging
 
-from assemblage.consts import RuntimeEnv, ScrapeSource, ScraperOutputPolicy
+from assemblage.consts import RuntimeEnv, ScrapeSource, ScraperOutputPolicy, SupportedArchitecture, SupportedCompiler, SupportedLanguage, SupportedPlatform
 
 # set pika to only log warnings. otherwise it gets noisy - maybe this can be removed with better try except on all pika ops
 logging.getLogger("pika").setLevel(logging.WARNING)
 
 # dotenv.load_dotenv()
 
+
+class S3Settings(BaseSettings):
+    S3_HOST: str | None = None # if s3 host is set then we treat s3 as enabled
+    S3_ACCESS_KEY: str | None = None
+    S3_SECRET_ACCESS_KEY: str | None = None
+    S3_PORT: int = 9000
+    S3_HTTPS: bool  = True
+    S3_REGION: str  = "us-east-1" # maybe do enum, but fine for
+
+    @property
+    def s3_enabled(self) -> bool:
+        """Check if S3 mode is considered enabled"""
+        return self.S3_HOST is not None
+
+    @model_validator(mode="after")
+    def validate_s3_fields(cls, values):
+        # Convert values dict to an object for property access        
+        if values.s3_enabled:
+            missing = []
+            if not values.S3_ACCESS_KEY:
+                missing.append("S3_ACCESS_KEY") 
+                pass
+            if not values.S3_SECRET_ACCESS_KEY: 
+                missing.append("S3_SECRET_ACCESS_KEY") 
+            if missing:
+                raise ValueError(f"S3 HOST is set {values.S3_HOST} but missing required fields: {missing}")
+
+        return values
+    
 class AssemblageSettings(BaseSettings):
     """
     Core env variables and settings
@@ -24,6 +53,9 @@ class AssemblageSettings(BaseSettings):
     mq_port: int = Field(default=5672, env="MQ_PORT")
     name: str = Field(default_factory=lambda: os.getenv(
         "NAME") or socket.gethostname())
+    
+    # is there a way to delete 
+    
 
     @computed_field
     @property
@@ -35,7 +67,7 @@ class AssemblageSettings(BaseSettings):
         return f"{self.__class__.__name__}:\n" + "\n".join(
             f"  {key}: {value}" for key, value in items.items()
         )
-class CoordinatorSettings(AssemblageSettings):
+class CoordinatorSettings(AssemblageSettings, S3Settings):
     """
     Coordinator specific settings
     """
@@ -92,7 +124,7 @@ class ScraperSettings(AssemblageSettings):
     source: ScrapeSource = Field(os.getenv("SCRAPE_DATASOURCE", default=ScrapeSource.GITHUB))
 
 
-class BuilderSettings(AssemblageSettings):
+class BuilderSettings(AssemblageSettings, S3Settings):
     """
     Builder specific settings
     This populates
@@ -102,9 +134,12 @@ class BuilderSettings(AssemblageSettings):
         default=True, env="SAVE_ASSEMBLY")
     # detect what platform ( linux, windows, darwin) teh builder is running on. for now just needed in builder
     # not quite perfect but should do for now    platform: str = Field(default_factory=lambda: platform.system().lower())
-    library: str = Field(
+    library: SupportedArchitecture = Field(
         default_factory=lambda: "x64" if '64' in machine() else 'x86')
-    build_os: str = Field(default_factory=lambda: system().lower())
-    compiler: str
-    language: str
+    build_os: SupportedPlatform = Field(default_factory=lambda: system().lower())
+    compiler: SupportedCompiler
+    language: SupportedLanguage
     build_mode: str = Field(default="Release", env="BUILD_MODE")
+    # how long to wait in minutes for the build option id from coordinator before exiting (If none, then will wait forever)
+    WAIT_FOR_BUILD_OPT: int | None = None
+    CONFIG_CHECK_INTERVAL: int = 5 # time in seconds to poll coordinator for build options ( defaults to 5 seconds)

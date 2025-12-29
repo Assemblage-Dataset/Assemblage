@@ -11,9 +11,9 @@ services:
       - db-data:/var/lib/postgresql
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "assemblage"]
-      interval: 5s
+      interval: 10s
       timeout: 5s
-      retries: 10
+      retries: 5
 
   rabbitmq:
     image: rabbitmq:3-management
@@ -21,9 +21,9 @@ services:
       RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: -rabbit consumer_timeout 900000
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
-      interval: 1s
-      timeout: 1s
-      retries: 15
+      interval: 5s
+      timeout: 10s
+      retries: 25
       start_period: 10s
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
@@ -35,7 +35,6 @@ services:
     build:
       context: .
       dockerfile: docker/gcc/Dockerfile
-    command: python3 /app/scripts/start_worker.py --type coordinator
     environment: # do not remove!!
       PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
       PYTHONUNBUFFERED: 1
@@ -48,6 +47,8 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+      minio: 
+        condition: service_healthy
     deploy:
       restart_policy:
         condition: on-failure
@@ -59,7 +60,6 @@ services:
     build:
       context: .
       dockerfile: docker/gcc/Dockerfile
-    command: python3 /app/scripts/start_worker.py --type scraper --id 0
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -94,24 +94,65 @@ services:
     depends_on:
       rabbitmq: 
         condition: service_healthy
+      minio: 
+        condition: service_healthy
     deploy:
       restart_policy:
         condition: on-failure
     volumes:
       - ./backend:/app 
-      - builder-data:/binaries
     mem_limit: 250g
 
+  builder_1:
+    image: assemblage-gcc:default
+    build:
+      context: .
+      dockerfile: docker/gcc/Dockerfile
+    command: python3 /app/scripts/start_worker.py --type builder --id 0
+    environment:
+      PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
+      TYPE: builder
+      compiler: gcc
+      language: c++
+      name: gcc-builder
+    env_file:
+      - secrets.env
+    depends_on:
+      rabbitmq: 
+        condition: service_healthy
+      minio: 
+        condition: service_healthy
+    deploy:
+      restart_policy:
+        condition: on-failure
+    volumes:
+      - ./backend:/app 
+    mem_limit: 250g
+
+# self host s3 bucket 
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    healthcheck: 
+      test: ["CMD-SHELL", "curl -l -f http://127.0.0.1:9001/minio/healthcheck/live || exit 1"]
+      interval: 10s
+      start_period: 5s
+    ports:
+      - "9000:9000"      # API port
+      - "9001:9001"      # Console port
+    env_file:
+      - secrets.env
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    restart: unless-stopped
+  
 
 volumes:
-  builder-data:
-    driver: local
-    driver_opts:
-        type: none
-        o: bind
-        device: ${PWD}/binaries
   db-data:
     driver: local
   rabbitmq-data:
+    driver: local
+  minio_data:
     driver: local
 

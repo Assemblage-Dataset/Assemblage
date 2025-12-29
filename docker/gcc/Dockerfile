@@ -50,9 +50,6 @@ ENV PYTHONPATH=/app
 RUN pip install --upgrade pip setuptools wheel
 RUN pip install -r requirements.txt
 
-COPY ./aws /root/.aws
-RUN export AWS_CONFIG_FILE=/root/.aws/config
-RUN export AWS_SHARED_CREDENTIALS_FILE=/root/.aws/credentials
 
 ENV CC 'gcc'
 ENV CXX 'g++'
@@ -62,4 +59,6 @@ ENV LANGUAGE="c++"
 
 RUN echo '1:gcc' >> /conf
 
+
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 CMD  [ "CMD", "bash", "-c", "pgrep -f start_worker.py > /dev/null" ]
 ENTRYPOINT ["python3", "/app/scripts/start_worker.py"]
