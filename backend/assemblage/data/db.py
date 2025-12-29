@@ -140,15 +140,20 @@ class DBManager:
                     repo: RepoDO
                     # logging.info("Adding buildopt %s, repo is %s", build_system, repo[0].build_system)
                     if regInfo.build_system in repo[0].build_system or regInfo.build_system == "all":
-                        # try:
+                        # check that a task for this project on this repo doesn't already exist (avoid duplicates)
+                        query = select(Status).where(
+                            Status.repo_id == repo[0].id,
+                            Status.build_opt_id == res.id,
+                            Status.commit_hexsha == repo[0].commit_hexsha
+                        )
+                        row = session.execute(query).first()
+                        if row is None:
                             new_status = Status(
                                 repo_id=repo[0].id,
-                                build_opt_id=res.id
+                                build_opt_id=res.id,
+                                commit_hexsha=repo[0].commit_hexsha
                             )
                             status_.append(new_status)
-                        # except IntegrityError as e:
-                        #     logger.info("Desired behavior")
-                        #     pass # behavior is as wanted
             session.bulk_save_objects(status_)
             session.commit()    
                 
@@ -296,6 +301,7 @@ class DBManager:
             )
             session.execute(query)
             session.commit()
+
 
     
     def get_dispatch_task(self, build_opt_id: int, reproduce_mode) -> BuilderTaskOut:

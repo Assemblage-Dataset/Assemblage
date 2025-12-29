@@ -483,6 +483,7 @@ class Scraper(BasicWorker):
         self.ready = not settings.wait_for_config
         self.policy = settings.default_policy
         self.bundle_requested = False 
+        self._last_bundled_time = time.time()
         # set to True when a message is received from coordinator requesting a bundle, OR when SCRAPER_REPO_BUNDLESIZE repos are
         # collected, depending on current policy
 
@@ -538,6 +539,8 @@ class Scraper(BasicWorker):
         logger.info("Scraper %s bundled and sent %s repos to coordinator. Total repos sent by this scraper: %s",
                     self.workerid, len(self.repocache), self.total_repos_sent)
         self.repocache = []
+        
+        self._last_bundled_time = time.time()
         return 1  # does nothing but indicate successful execution for testing
 
     def control_message_handler(self, ch, method, props, body):
@@ -656,17 +659,12 @@ class Scraper(BasicWorker):
 
                 # continually collect repositories until enough are collected, then sleep until bundle requested
                 elif self.policy == ScraperOutputPolicy.ON_REQUEST:
-
-                    # # If some repositories have been collected and were requested, send them
-                    # if self.bundle_requested and len(self.repocache) > 0:
-                    #     self.send_bundle()
-                    #     self.bundle_requested = False
                     
                     if len(self.repocache) >= SCRAPER_REPO_BUNDLESIZE: 
                         # stop the scraper here until another send request is received
 
                         if len(self.repocache) == SCRAPER_REPO_BUNDLESIZE:
-                            logger.info(f"Scraper {self.workerid} has collected max number of repos ({SCRAPER_REPO_BUNDLESIZE}). Sleeping until request to send is received from coordinator.")
+                            logger.info(f"Scraper {self.workerid} has collected max number of repos ({SCRAPER_REPO_BUNDLESIZE}) in {round( time.time() - self._last_bundled_time, 3 )}s. Sleeping until request to send is received from coordinator.")
 
                         while len(self.repocache) >= SCRAPER_REPO_BUNDLESIZE:
                             time.sleep(0.1)
