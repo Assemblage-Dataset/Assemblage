@@ -74,6 +74,7 @@ S3_HOST=minio
 S3_HTTPS=false
 ```
 
+Failing to include these environment variables will cause the program to fail quietly. 
 Assemblage must then be launched with a MinIO bucket running. An example deployment configuration can be found in `docker-compose-s3.yml`.
 
 Files will no longer be stored in the local binaries folder, and instead can be accessed via the MinIO interface. To access this interface, start Assemblage, view the logs of the `minio` container, and look for the links labelled "API" and "WebUI". Log in with the credentials defined in secrets.env. Further resources can be found in the MinIO documentation. 
@@ -92,7 +93,7 @@ To configure a remote builder:
 2. On your remote host, use a new docker compose file that only contains a builder. See `docker-compose-windows.yml` for reference.
 3. Modify the remote host's environment variables: set the `S3_HOST` and the `MQ_HOST` address to be the IP  or DNS name (if set) of your main host. If you have enabled https on the S3 host, then make sure to set `S3_HTTPS = true` on the remote host as well. 
 4. If you are using a non-standard port for RabbitMQ and/or S3, then you must additionally set `S3_PORT` and `MQ_PORT`.
-5. Start the main Assemblage system on the local host, then the remote host. 
+5. Start the main Assemblage system on the local host, then the remote host. Follow the instructions above under "Running the Linux builder" to run the local host, and execute the Powershell script located at `backend/scripts/start_windows_worker.ps1` to run the remote host.
 
 ## Troubleshooting
 
