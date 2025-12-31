@@ -28,7 +28,7 @@ def setup():
     tables = set(inspector.get_table_names())
 
     print(f"SETUP: Found tables: {tables}")
-    expected_tables = {'b_status', 'projects', 'alembic_version', 'binaries', 'buildopt'}
+    expected_tables = {'b_status', 'projects', 'alembic_version', 'binaries', 'buildopt', 'scrapers'}
     assert expected_tables == tables
     print("SETUP: Success. Exit and restart with proper command.")
     print("OK")

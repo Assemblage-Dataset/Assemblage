@@ -1,9 +1,16 @@
+'''
+Deprecated
+'''
+
+
+
 """
 a bootstrap program to let user define and boot a cluster
 chain call style
 
 Yihao Sun
 """
+
 import __main__
 
 import argparse

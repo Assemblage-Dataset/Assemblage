@@ -6,13 +6,13 @@ New Entry Point for Assemblage Functions
 import os
 import logging
 import logging.config
+import time
 import sys
 from assemblage.consts import WorkerType
 from assemblage.config import BuilderSettings, CoordinatorSettings, ScraperSettings
 from assemblage.coordinator.coordinator import Coordinator
 from assemblage.worker.builder import Builder
 from assemblage.worker.scraper import Scraper
-import threading
 
 
 
@@ -56,17 +56,8 @@ if __name__ == "__main__":
             logging.basicConfig(format="%(asctime)s %(levelname)s:%(message)s", datefmt="%Y-%m-%d %H:%M:%S", level=settings.logLevel) # if i could figure out how to set this in the config that would be much better but alas. no
             scraper.run()
             # call start scraper
+        case WorkerType.Test:
+            while True:
+                time.sleep(1)
 
-            # multithread staggered execution example
-            '''
-            scraper1 = Scraper(settings=settings, workerid=0)
-            settings2 = ScraperSettings()
-            settings2.start_time -= 31556952 # have this scraper start a year earlier than the other
-            scraper2 = Scraper(settings=settings2, workerid=1)
-            t1 = threading.Thread(target=scraper1.run)
-            t2 = threading.Thread(target=scraper2.run)
-            t1.start()
-            t2.start()
-            t1.join()
-            t2.join()
-            '''
+        # to run multiple instances of the same worker, add multiple instances in docker compose

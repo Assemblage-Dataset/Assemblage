@@ -42,6 +42,7 @@ build_msgs.txt
 # data
 *.csv
 *.json
+!example_search_github.json
 *.out
 *.txt
 db-data/

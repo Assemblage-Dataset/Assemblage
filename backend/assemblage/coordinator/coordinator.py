@@ -16,10 +16,11 @@ import pika
 # from pika.exchange_type import ExchangeType
 
 from assemblage.data.db import DBManager
+from assemblage.data.initialize_database import conditional_init_db
 from collections import Counter
 from assemblage.consts import (AWS_AUTO_REBOOT_PREFIX, COORDINATOR_DATABASE_SYNC_TIMEOUT,
-                               BIN_DIR, CLEAN_OVERTIME_INTERVAL, WORKER_TIMEOUT_THRESHOLD, BuildStatus,
-                               REPO_SIZE_THRESHOLD, CloneStatus, InputQueue, OutputQueue, ScraperMsgType, ScraperOutputPolicy,
+                               BIN_DIR, CLEAN_OVERTIME_INTERVAL,  BuildStatus, #WORKER_TIMEOUT_THRESHOLD,
+                               CloneStatus, InputQueue, OutputQueue, ScraperMsgType, ScraperOutputPolicy,  #REPO_SIZE_THRESHOLD, 
                                DISPATCH_INTERVAL, IDLE_DISPATCH_INTERVAL, AWS_REBOOT_SLEEP_INTERVAL,
                                COORDINATOR_REPO_REQUEST_THRESHOLD, SCRAPER_REPO_BUNDLESIZE, WAIT_AFTER_REQ_INTERVAL
                                )
@@ -87,6 +88,7 @@ class Coordinator:
                                        username='guest', password='guest')
 
         self.db_addr = settings.databaseURL
+        self.db_name = settings.db_name
         # to do create better session management
         self.db_man = DBManager(self.db_addr)
 
@@ -747,18 +749,18 @@ class Coordinator:
         Run various threads for interacting with queues and RPC.
         """
         while True:
-            try:
                 if self.db_man.tables_exist():
                     break
                 else:
-                    logger.warning('''No tables in database.
+                    try:
+                        conditional_init_db(self.db_name, self.db_addr)
+                    except:
+                        logger.warning('''No tables in database.
                                         Please use docker exec -it assemblage-coordinator-1;
                                         alembic upgrade head.
                                         To create the database to the latest revision. 
                                         Please note you may have to run docker compose up -d again to start the other containers''')
                     time.sleep(10)
-            except:
-                logger.error("error checking if tables exist")
 
         self.db_man.ready_scraper_table()
 

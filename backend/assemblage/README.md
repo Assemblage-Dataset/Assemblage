@@ -1,3 +1,5 @@
+## Legacy: see the README.md in the root directory for updated instructions
+
 # Assemblage AWS Deployment Instructions 
 
 Assemblage is mainly tested on AWS. If you plan to use AWS services, please copy your confidential file to `$ASSEMBLAGE_HOME/aws` before system initialization, which should contains the private key and geo information.

@@ -446,16 +446,19 @@ class Scraper(BasicWorker):
     scraper class, wrap all github operation
     '''
 
-    # def __init__(self, rabbitmq_port, rabbitmq_host, workerid, data_source: DataSource):
     def __init__(self, settings: ScraperSettings, workerid: int):
         
         super().__init__(settings.name, settings.mq_host,
                          settings.mq_port, worker_type=WorkerType.Scraper)
-        if settings.source != ScrapeSource.GITHUB:
-            logger.error(
-                "Scrape source %s not defined: defaulting to setting up a GitHub source", settings.source)
+        
+        if settings.source == "insert new scraper source here":
+            pass
 
-        if settings.source == ScrapeSource.GITHUB:
+        else:
+            
+            if settings.source != ScrapeSource.GITHUB:
+                logger.error(f"Scrape source {settings.source} not defined.")
+
             self.data_source = GithubRepositories(
                 workerid,
                 git_token=settings.git_token,
@@ -467,7 +470,6 @@ class Scraper(BasicWorker):
                 proxies=settings.proxies
             )
             self.data_source.parent_workerid = workerid
-
             self._last_sent_crawltime = self.data_source.crawl_time_start
             # Used to determine whether we need to send a message to update the DB, based on whether this
             # number is equal to the data source's current crawl time
@@ -483,6 +485,7 @@ class Scraper(BasicWorker):
         self.ready = not settings.wait_for_config
         self.policy = settings.default_policy
         self.bundle_requested = False 
+        self._last_bundled_time = time.time()
         self._last_bundled_time = time.time()
         # set to True when a message is received from coordinator requesting a bundle, OR when SCRAPER_REPO_BUNDLESIZE repos are
         # collected, depending on current policy

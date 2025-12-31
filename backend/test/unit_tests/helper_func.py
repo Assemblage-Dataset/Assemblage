@@ -139,8 +139,8 @@ def scr_skeleton_404_response():
 
 def scr_doom_messagestr():
     return json.dumps(json.loads('''{"name": "DOOM", "url": "https://api.github.com/repos/id-Software/DOOM", 
-    "language": "C++", "owner_id": 1395534, "description": "DOOM Open Source Release", "created_at": "2012-01-31 21:28:06", 
-    "updated_at": "2024-05-24 13:18:59", "size": 149, "build_system": "others", "branch": "master"}'''))
+    "language": "c++", "owner_id": 1395534, "description": "DOOM Open Source Release", "created_at": "2012-01-31 21:28:06", 
+    "updated_at": "2024-05-24 13:18:59", "size": 149, "build_system": "others", "branch": "master", "commit_hexsha": "a77d"}'''))
 
 
 
