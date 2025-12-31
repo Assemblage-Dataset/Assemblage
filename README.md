@@ -119,11 +119,17 @@ To configure a remote builder:
 4. If you are using a non-standard port for RabbitMQ and/or S3, then you must additionally set `S3_PORT` and `MQ_PORT`.
 5. Start the main Assemblage system on the local host, then the remote host. Follow the instructions above under "Running the Linux builder" to run the local host. On the remote host, use a new docker compose file that only contains a builder. See `docker-compose-windows.yml` for a usable example.
 
-## Troubleshooting
+
+
+## Troubleshooting and Development
 
 Often small errors can be fixed by restarting or rebuilding the Docker containers: this is particularly true for fresh installs or configuration changes. Otherwise, setting the `RUNTIME_ENV` environment variable to `development` will expose more logs, which may be handy for troubleshooting. 
 
 The repository contains a suite of unit and integration tests, which may be useful for those looking to expand on Assemblage. Further information can be found in the [README file](backend/test/readme.md) located within the test folder.
+
+To create a new Windows-based builder, consult `docker-compose-windows.yml`. For all other workers, consult `docker-compose-s3.yml`. 
+
+A slightly more technical explanation of Assemblage's features can be found in `backend/assemblage/readme-developer.md`. 
 
 ## ENVIRONMENT VARIABLES
 
