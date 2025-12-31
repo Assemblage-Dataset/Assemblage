@@ -93,8 +93,8 @@ class TestCoordinator(unittest.TestCase):
         input_method = MagicMock()
         input_props = MagicMock()
         # Bundle of 2
-        single_msg1_json : str = '{"name": "DOOM", "url": "https://api.github.com/repos/id-Software/DOOM", "language": "C++", "owner_id": 1395534, "description": "DOOM Open Source Release", "created_at": "2012-01-31 21:28:06", "updated_at": "2024-05-24 13:18:59", "size": 149, "build_system": "others", "branch": "master"}'
-        single_msg2_json : str = '{"name": "DEFINITELY_NOT_DOOM", "url": "urlhere", "language": "C++", "owner_id": 1, "description": "", "created_at": "2012-01-31 21:28:06", "updated_at": "2024-05-24 13:18:59", "size": 149, "build_system": "others", "branch": "master"}'
+        single_msg1_json : str = '{"name": "DOOM", "url": "https://api.github.com/repos/id-Software/DOOM", "language": "C++", "owner_id": 1395534, "description": "DOOM Open Source Release", "created_at": "2012-01-31 21:28:06", "updated_at": "2024-05-24 13:18:59", "size": 149, "build_system": "others", "branch": "master", "commit_hexsha": "a77d"}'
+        single_msg2_json : str = '{"name": "DEFINITELY_NOT_DOOM", "url": "urlhere", "language": "C++", "owner_id": 1, "description": "", "created_at": "2012-01-31 21:28:06", "updated_at": "2024-05-24 13:18:59", "size": 149, "build_system": "others", "branch": "master", "commit_hexsha": "a77d"}'
         single_msg1 = msg.ScraperDataOutSingle.from_json(single_msg1_json)
         single_msg2 = msg.ScraperDataOutSingle.from_json(single_msg2_json)
         bundle = msg.ScraperDataOutBundle([single_msg1, single_msg2])
@@ -712,7 +712,8 @@ class TestCoordinator(unittest.TestCase):
             repo_id = 7921,
             updated_at = "placeholder_updatetime",
             build_system = "MaybeClangOrSomething",
-            msg_time = MockTime.time()
+            msg_time = MockTime.time(),
+            optimizations=[0,1,2,3]
         )
         mock_db.get_dispatch_task.return_value = expected_build_message
 

@@ -180,6 +180,7 @@ class TestScraper(unittest.TestCase):
             ['LICENSE.TXT', 'README.TXT', 'README.TXT', 'sndserv'],
             "Returned files were not as expected"
             )
+        self.maxDiff = None
         self.assertEqual( 
             message.to_json(),
             helper.scr_doom_messagestr(),

@@ -21,13 +21,11 @@ services:
       dockerfile: docker/gcc/Dockerfile
 
     ## setup command (run before first time testing, or whenever you delete the db)
-    #command: python /app/test/integration_tests/setup.py
+    #entrypoint: ['python', '/app/test/integration_tests/setup.py']
     ## run all integration tests:
-    command: python -m unittest discover -s test/integration_tests -p '*_test.py'
+    entrypoint: ['python', '-m', 'unittest', 'discover', '-s', 'test/integration_tests', '-p', '*_test.py']
     ## run one test:
-    #command: python /app/test/integration_tests/db_manager_test.py TestDBManager.test_get_projects_row_by_id
-    ## run all tests in one file:
-    #command: python /app/test/integration_tests/db_manager_test.py
+    #entrypoint: ['python', '/app/test/integration_tests/db_manager_test.py', 'TestDBManager.test_get_projects_row_by_id']
     environment: # do not remove!!
       PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
       PYTHONUNBUFFERED: 1

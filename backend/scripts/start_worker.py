@@ -6,6 +6,7 @@ New Entry Point for Assemblage Functions
 import os
 import logging
 import logging.config
+import time
 import sys
 from assemblage.consts import WorkerType
 from assemblage.config import BuilderSettings, CoordinatorSettings, ScraperSettings
@@ -55,5 +56,8 @@ if __name__ == "__main__":
             logging.basicConfig(format="%(asctime)s %(levelname)s:%(message)s", datefmt="%Y-%m-%d %H:%M:%S", level=settings.logLevel) # if i could figure out how to set this in the config that would be much better but alas. no
             scraper.run()
             # call start scraper
+        case WorkerType.Test:
+            while True:
+                time.sleep(1)
 
         # to run multiple instances of the same worker, add multiple instances in docker compose

@@ -1,9 +1,11 @@
 Tests are a work in progress. The goal is good unit test coverage (ideally for everything), plus integration tests
 ensuring that all parts of the program work together as expected. 
 
+<i>Note from maintainers: maintaining tests fell by the wayside for a bit, a few of them error now due to changes in arguments, functionality, database design etc. Unit tests have mostly been repaired, beyond a basic_ack failure that fails five tests incorrectly: if you manage to run them and get 'failures=5, skipped=4', congrats, it's working as expected. Integration tests have not been repaired, but largely just need adding commit_hexsha fields to test data.</i>
+
 ## TL;DR:
 
-* run unit tests with `docker compose -f docker-compose-unittests.yml up`: no further setup necessary
+* run unit tests with `docker compose -f docker-compose-unittests.yml up`: remove MinIO variables
   * modify `docker-compose-unittests.yml` to run particular unit tests, or a particular subset of unit tests
 * run integration tests with `docker compose -f docker-compose-integrationtests.yml up` after setting up the test database
   * the relevant commands, to be run in the `tests` container, are 
@@ -15,7 +17,18 @@ ensuring that all parts of the program work together as expected.
 
 ## Running unit tests
 
-Assuming you've gotten the main system up and running, you can run unit tests with simply 
+Assuming you've gotten the main system up and running, setting up unit tests is relatively easy. Right now, MinIO isn't supported by unit tests, so strip out the MinIO variables from your secrets.env file so it looks like this:
+
+```
+DB_HOST=assemblage-db
+DB_PORT=5432
+POSTGRES_DATABASE=assemblage
+POSTGRES_USER=assemblage
+POSTGRES_PASSWORD=assemblage
+GITHUB_TOKEN=<token>
+```
+
+Then run this command:
 ```
 docker compose -f docker-compose-unittests.yml up
 ```
@@ -31,6 +44,8 @@ or run all tests with the command
 ```
 python -m unittest discover -s test/unit_tests -p '*_test.py'
 ```
+
+<i> New updated note: the compose file no longer takes commands and instead you have to change the entrypoint. This just involves converting the commands above to a new format -- see the docker compose files for examples.</i>
 If you discover inside of the full test folder instead of looking inside the unit_tests subfolder, you'll also run the integration tests, which you don't want and won't work, because the integration tests depend on test services that aren't created for the unit tests. 
 As of right now, there shouldn't be direct conflicts if you try to run the
 tests at the same time as the main compose file, since RabbitMQ and the database are dummied out, but I don't recommend this for two reasons:
@@ -44,13 +59,14 @@ that these tests will also fail if the GitHub API changes, which is good, becaus
 
 ## Running integration tests
 
-Integration tests are a little more complex because you also need to set up the test database. There's a setup script to help with setting up the database. Set command of 'tests' container in docker-compose-integrationtests.yml to:
+Integration tests are a little more complex because you also need to set up the test database. There's a setup script to help with setting up the database. Strip out all MinIO env variables first. Set entry point of 'tests' container in docker-compose-integrationtests.yml to:
 ```
-python /app/test/integration_tests/setup.py
+entrypoint: ['python', '/app/test/integration_tests/setup.py']
 ```
+You <i>may</i> have to set the password to 'assemblage' before creating the test DB, maybe not. If you run into a password authentication error, delete the test-db volume, change password to 'assemblage', then retry.
 Run, ascertain that the output is OK, then change the command to your desired tests, e.g. if you want to run all integration tests use:
 ```
-python -m unittest discover -s test/integration_tests -p '*_test.py'
+entrypoint: ['python', '-m', 'unittest', 'discover', '-s', 'test/integration_tests', '-p', '*_test.py']
 ```
 
 ### Old instructions (if the above doesn't work)
