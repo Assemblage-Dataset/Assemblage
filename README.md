@@ -83,9 +83,26 @@ docker compose down
 docker compose up -d
 ```
 
+## S3 Bucket
+The reccomended way to run Assemblage is with an S3 bucket. The provided docker-compose-s3.yml created a minio server, but Assemblage should still be compatible with an AWS S3 bucket, though this is not tested. 
+
+Two buckets are created, project-archive, and artifcats. The project-archive contains compressed archives of each cloned project: 
+e.g. assemblage would be saved at: `project-archive/Assemblage-Dataset/Assemblage/<COMMIT_HASH>.tar.gz`.  The filename is the commit hash of the clone to allow for multiple versions of the same project to be saved 
+
+Successfully built project binaries ( and the pdbinfo.json) are saved in the artifacts bucket: `artifacts/Assemblage-Dataset/Assemblage/<COMMIT_HASH>/<COMPILER_NAME>/<opt_LEVEL>/<file_name>`. Where the compiler name would be gcc, clang or MSVC, the opt level will be opt_NONE, opt_LOW, opt_MEDIUM, opt_HIGH. 
+
+
 ## Running w/out S3 Bucket (Not Recommended)
 
-The default `docker-compose` file can be used to run without MinIO. This will deposit the files directly into the filesystem of the host machine, in the `Assemblage/binaries` folder. This configuration is not tested with the latest work on Assemblage. 
+The default `docker-compose` file can be used to run without MinIO. This will deposit the files directly into the filesystem of the host machine, in the `Assemblage/binaries` folder. This configuration is not tested with the latest work on Assemblage. You must make sure that the below file structure is implemented in your local file system where the builder volume is specified: 
+```
+- binaries/
+    - Pdbs/
+    - projects/
+    - successes/
+```
+The projects are cloned to binaries/projects/ , and are placed in folders that detail the GitHub username and project: e.g. assemblage would be cloned to:  binaries/projects/Assemblage-Dataset/Assemblage. Succesfully built binaires are placed in binaries/successes/, they are placed in folders separated by commit hash and optimization used like in the s3 bucket mode
+
 
 ## Distributed Builders / Windows Builders (Optional)
 
@@ -110,7 +127,7 @@ The repository contains a suite of unit and integration tests, which may be usef
 
 ## ENVIRONMENT VARIABLES
 
-You can use one secrets.env, or multiple separate env files, but the following shows what env variables need to be in which container 
+You can use one secrets.env, or multiple separate env files, but the following shows what env variables need to be in which container. Also check backend/assemblage/config.py for general configurations.
 Also, in the compose file, specify the type - Coordinator,Scraper,Builder
 
 ## ENVIRONMENT VARIABLES FOR coordinator
@@ -148,5 +165,9 @@ MQ_PORT=<mq_port>
 You will also need to expose the rabbitmq port. TODO: add proper authentication
 
 
-Note to future developers with builder - 
-On windows, there is an issue where Windows places a lock on all the built executables, this lock will not get lifted until the python program ( ie the worker script) stops and the container is downed. This means that it cannot be moved only copied to the volume ( or s3 bucket if implemented). Therefore it will progressively take more space so may have to be perioditically stopped, cleaned, and recreated.
+## Note to future developers - 
+On windows, there is an issue where Windows places a lock on all the built executables, this lock will not get lifted until the python program ( ie the worker script) stops and the container is downed. This means that it cannot be moved only copied to the volume ( or s3 bucket if implemented). Therefore it will progressively take more space so may have to be periodically stopped, cleaned, and recreated. To do this, every now and then, you should stop and remove the container. The repositories are cloned to C:/temp folder first if in s3 move, and so removing the container should automatically remove them. If it doesn't, or you are running in nons3 mode then leave the container running, exec into it, and manually remove them. Once the container has been stopped, the lock should be removed, so any extant binaries should be removable at this point. 
+
+
+
+Also suggested improvements: The commit hash is now sent with the scraper, so we would recommend sending that to the builder instead of using more subprocess commands to extract it. Rabbitmq is currently unsecured and uses the default credentials. Either setup firewall rules to ensure only the distributed builder can access the server, or implement security using the RabbitMQ access control guide [here](https://www.rabbitmq.com/docs/access-control). Adding a reverse proxy should also be on the list, to allow https connections to minio. There are also no security policies included with the minio buckets, that should be in a production environment
