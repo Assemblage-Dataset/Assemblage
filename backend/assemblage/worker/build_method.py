@@ -356,11 +356,11 @@ class LinuxBuildStrategy(BuildStrategy):
         opt_level = optimization.to_gnu_opt()
 
         if self.save_assembly:
-            cflags = f'$CFLAGS -save-temps=obj {opt_level}'
-            cxxflags = f'$CXXFLAGS -save-temps=obj {opt_level}'
+            cflags = f'$CFLAGS -g -save-temps=obj {opt_level}'
+            cxxflags = f'$CXXFLAGS -g -save-temps=obj {opt_level}'
         else:
-            cflags = f'$CFLAGS {opt_level}'
-            cxxflags = f'$CXXFLAGS {opt_level}'
+            cflags = f'$CFLAGS -g {opt_level}'
+            cxxflags = f'$CXXFLAGS -g {opt_level}'
 
         extra_flags = f'CFLAGS="{cflags}" CXXFLAGS="{cxxflags}"'
         # ideally use LLM/ other to generate the command here based on the files
@@ -386,6 +386,283 @@ class LinuxBuildStrategy(BuildStrategy):
         self.own_dir(os.path.dirname(clone_dir))
 
         return out.decode() + err.decode(), return_code
+
+    def _get_toolset_version(self):
+        return None
+
+    def pre_build(self, build_mode, clone_dir, optimization=None,
+                  favorsizeorspeed=None, inlinefunctionexpansion=None,
+                  intrinsicfunctions=False):
+        return None
+
+    def post_build_hook(self, dest_binfolder, build_mode, repoinfo,
+                        optimization, commit_hexsha):
+        """Extract DWARF debug info from ELF binaries and match source code to RVAs."""
+        bin_files = self.find_binaries(dest_binfolder)
+        if not bin_files:
+            return
+
+        outer_list = []
+        for binfile in bin_files:
+            try:
+                item = self._extract_dwarf_info(binfile)
+                if item:
+                    outer_list.append(item)
+            except Exception as e:
+                logger.warning(f"DWARF extraction failed for {binfile}: {e}")
+
+        if not outer_list:
+            logger.info("No DWARF debug info found in any binary")
+            return
+
+        json_data = {
+            "Platform": self.library,
+            "Build_mode": build_mode,
+            "Compiler": self.compiler,
+            "Compiler_version": self.compiler_version,
+            "URL": repoinfo.url,
+            "Binary_info_list": outer_list,
+            "Optimization": optimization.to_gnu_opt(),
+            "Pushed_at": getattr(repoinfo, 'updated_at', ''),
+            "commit_sha": commit_hexsha
+        }
+
+        try:
+            outpath = os.path.join(dest_binfolder, PDBJSONNAME)
+            with open(outpath, "w") as f:
+                json.dump(json_data, f, sort_keys=False, indent=4)
+            logger.info(f"DWARF info JSON written to {outpath}")
+        except Exception as e:
+            logger.warning(f"Failed to write DWARF info JSON: {e}")
+
+    def _get_elf_base_address(self, elf):
+        """Get the lowest PT_LOAD virtual address as the base for RVA computation."""
+        base = None
+        for seg in elf.iter_segments():
+            if seg['p_type'] == 'PT_LOAD':
+                if base is None or seg['p_vaddr'] < base:
+                    base = seg['p_vaddr']
+        return base if base is not None else 0
+
+    def _build_dwarf_file_table(self, line_program, comp_dir):
+        """Build mapping from DWARF file index to full file path."""
+        file_table = {}
+        if line_program is None:
+            return file_table
+
+        file_entries = line_program.header.get('file_entry', [])
+        include_dirs = line_program.header.get('include_directory', [])
+
+        for i, entry in enumerate(file_entries):
+            name = entry.name
+            if isinstance(name, bytes):
+                name = name.decode('utf-8', errors='replace')
+
+            dir_index = entry.dir_index
+            if dir_index > 0 and dir_index <= len(include_dirs):
+                dir_name = include_dirs[dir_index - 1]
+                if isinstance(dir_name, bytes):
+                    dir_name = dir_name.decode('utf-8', errors='replace')
+                if os.path.isabs(name):
+                    full_path = name
+                else:
+                    full_path = os.path.join(dir_name, name)
+            elif comp_dir:
+                if os.path.isabs(name):
+                    full_path = name
+                else:
+                    full_path = os.path.join(comp_dir, name)
+            else:
+                full_path = name
+
+            # DWARF v5: 0-indexed, DWARF v4: 1-indexed
+            version = line_program.header.get('version', 4)
+            if version >= 5:
+                file_table[i] = full_path
+            else:
+                file_table[i + 1] = full_path
+
+        return file_table
+
+    def _collect_functions_from_die(self, die, functions_dict, base_addr, file_table):
+        """Recursively collect DW_TAG_subprogram entries with address ranges."""
+        if die.tag == 'DW_TAG_subprogram':
+            name_attr = die.attributes.get('DW_AT_name')
+            low_pc_attr = die.attributes.get('DW_AT_low_pc')
+
+            if name_attr and low_pc_attr:
+                func_name = name_attr.value
+                if isinstance(func_name, bytes):
+                    func_name = func_name.decode('utf-8', errors='replace')
+
+                low_pc = low_pc_attr.value
+                high_pc_attr = die.attributes.get('DW_AT_high_pc')
+                if high_pc_attr:
+                    if high_pc_attr.form.startswith('DW_FORM_addr'):
+                        high_pc = high_pc_attr.value
+                    else:
+                        # high_pc is an offset from low_pc
+                        high_pc = low_pc + high_pc_attr.value
+                else:
+                    high_pc = low_pc
+
+                rva_start = low_pc - base_addr
+                rva_end = high_pc - base_addr
+                hex_len = max(8, len(format(rva_end, 'x')))
+
+                source_file = ""
+                decl_file = die.attributes.get('DW_AT_decl_file')
+                if decl_file:
+                    source_file = file_table.get(decl_file.value, "")
+
+                range_info = {
+                    'rva_start': format(rva_start, 'x').rjust(hex_len, '0'),
+                    'rva_end': format(rva_end, 'x').rjust(hex_len, '0'),
+                    'start_int': rva_start,
+                    'end_int': rva_end,
+                }
+
+                if func_name not in functions_dict:
+                    functions_dict[func_name] = {
+                        'source_file': source_file,
+                        'ranges': [range_info],
+                        'lines': []
+                    }
+                else:
+                    functions_dict[func_name]['ranges'].append(range_info)
+
+        for child in die.iter_children():
+            self._collect_functions_from_die(child, functions_dict, base_addr, file_table)
+
+    def _extract_dwarf_info(self, binfile):
+        """Extract DWARF debug info from a single ELF binary."""
+        with open(binfile, 'rb') as f:
+            try:
+                elf = ELFFile(f)
+            except ELFError:
+                return None
+
+            if not elf.has_dwarf_info():
+                return None
+
+            dwarf_info = elf.get_dwarf_info()
+            base_addr = self._get_elf_base_address(elf)
+
+            all_functions = {}
+            file_cache = {}
+
+            for CU in dwarf_info.iter_CUs():
+                top_die = CU.get_top_DIE()
+                comp_dir = ""
+                comp_dir_attr = top_die.attributes.get('DW_AT_comp_dir')
+                if comp_dir_attr:
+                    comp_dir = comp_dir_attr.value
+                    if isinstance(comp_dir, bytes):
+                        comp_dir = comp_dir.decode('utf-8', errors='replace')
+
+                line_program = dwarf_info.line_program_for_CU(CU)
+                file_table = self._build_dwarf_file_table(line_program, comp_dir)
+
+                # Collect function address ranges from DIEs
+                self._collect_functions_from_die(top_die, all_functions, base_addr, file_table)
+
+                # Collect line entries and assign to functions
+                if line_program:
+                    raw_entries = []
+                    for entry in line_program.get_entries():
+                        state = entry.state
+                        if state is None or state.end_sequence:
+                            continue
+
+                        rva = state.address - base_addr
+                        file_idx = state.file
+                        line_num = state.line
+                        source_file = file_table.get(file_idx, "")
+
+                        source_code = ""
+                        if source_file and os.path.isfile(source_file):
+                            if source_file not in file_cache:
+                                try:
+                                    with open(source_file, 'r', encoding='utf-8', errors='replace') as sf:
+                                        file_cache[source_file] = sf.readlines()
+                                except Exception:
+                                    file_cache[source_file] = []
+                            cached = file_cache[source_file]
+                            if 0 < line_num <= len(cached):
+                                source_code = cached[line_num - 1].rstrip('\n')
+
+                        raw_entries.append({
+                            'line_number': line_num,
+                            'rva': format(rva, 'x').rjust(16, '0'),
+                            'rva_int': rva,
+                            'length': 0,
+                            'source_code': source_code,
+                            'source_file': source_file,
+                        })
+
+                    # Sort by address and compute lengths from consecutive entries
+                    raw_entries.sort(key=lambda x: x['rva_int'])
+                    for i in range(len(raw_entries) - 1):
+                        raw_entries[i]['length'] = raw_entries[i + 1]['rva_int'] - raw_entries[i]['rva_int']
+
+                    # Assign line entries to their containing functions
+                    for entry in raw_entries:
+                        entry_rva = entry['rva_int']
+                        for func_data in all_functions.values():
+                            matched = False
+                            for r in func_data['ranges']:
+                                if r['start_int'] <= entry_rva < r['end_int']:
+                                    func_data['lines'].append(entry)
+                                    matched = True
+                                    break
+                            if matched:
+                                break
+
+            # Build output
+            item_dict = {
+                "file": os.path.basename(binfile),
+                "functions": []
+            }
+
+            for func_name, func_data in all_functions.items():
+                if not func_data['ranges']:
+                    continue
+
+                clean_lines = []
+                for line in func_data['lines']:
+                    clean_lines.append({
+                        'line_number': line['line_number'],
+                        'rva': line['rva'],
+                        'length': line['length'],
+                        'source_code': line['source_code'],
+                        'source_file': line['source_file'],
+                    })
+
+                function_info = []
+                for r in func_data['ranges']:
+                    function_info.append({
+                        'rva_start': r['rva_start'],
+                        'rva_end': r['rva_end'],
+                    })
+
+                if len(func_data['ranges']) <= 1:
+                    intersect_ratio = "0%"
+                else:
+                    ranges_sorted = sorted(func_data['ranges'], key=lambda x: x['start_int'])
+                    total_len = ranges_sorted[-1]['end_int'] - ranges_sorted[0]['start_int']
+                    gap = sum(ranges_sorted[i + 1]['start_int'] - ranges_sorted[i]['end_int']
+                              for i in range(len(ranges_sorted) - 1))
+                    intersect_ratio = f"{(gap / total_len * 100):.2f}%" if total_len > 0 else "0%"
+
+                item_dict["functions"].append({
+                    "function_name": func_name,
+                    "source_file": func_data['source_file'],
+                    "intersect_ratio": intersect_ratio,
+                    "function_info": function_info,
+                    "lines": clean_lines,
+                })
+
+            return item_dict if item_dict["functions"] else None
 
 
 class WindowsDefaultStrategy(BuildStrategy):

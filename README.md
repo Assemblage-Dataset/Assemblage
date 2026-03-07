@@ -45,7 +45,7 @@ We include __**only**__ the subset of binaries for which permissive licenses can
 
 3. Run Docker, then run the following command in the Assemblage root directory to build and run the Docker images. This will take some time. 
 
-    `docker compose up -f docker-compose-s3.yml up --build -d`
+    `docker compose -f docker-compose-s3.yml up --build -d`
 
     This uses the example S3 bucket configuration: you can use this dockerfile as a base from which you can customize or add builders. 
 

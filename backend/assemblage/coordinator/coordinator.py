@@ -112,10 +112,14 @@ class Coordinator:
         self.t_empty_built_opt_lock = threading.Lock()
         self.t_empty_built_opt: dict[int, threading.Event] = {}
         
-        # records if any build option has requested repos 
+        # records if any build option has requested repos
         # True while waiting for repos but before they've been received
         self._pending_repos : bool = False
         self._pending_repos_time : int = 0
+
+        # per-scraper reply queues (populated during registration)
+        self._scraper_queues_lock = threading.Lock()
+        self._scraper_queues: list[str] = []
         
 
         if settings.s3_enabled:
@@ -270,20 +274,23 @@ class Coordinator:
                     # another scraper beat this to the punch, or a valid request is still waiting: don't request yet
                     logger.debug("Waiting for repos...")
                     return
-            try: 
+            try:
                 build_opt_lang = self.db_man.get_build_opt_language(build_opt_id)
-                # to do use the above to request 
+                # to do use the above to request
                 msg = ScraperControlTaskOut(
                     message_type=ScraperMsgType.REQUEST_REPOS,
-                    specific_recipient=False, 
+                    specific_recipient=False,
                     )
-                
+
                 self._pending_repos = True
                 self._pending_repos_time = int(time.time())
 
-                queue = MQQueue(OutputQueue.SCRAPER_CTRL)
-            
-                conn.send_msg( queue=queue, msg=msg.to_json(), exchange="" )
+                with self._scraper_queues_lock:
+                    targets = list(self._scraper_queues) if self._scraper_queues else [OutputQueue.SCRAPER_CTRL]
+
+                for queue_name in targets:
+                    queue = MQQueue(queue_name)
+                    conn.send_msg( queue=queue, msg=msg.to_json(), exchange="" )
                 logger.info(f"Coordinator requesting repos on {build_opt_id}.")
             except Exception as e:
                 logger.error(f"Failed to request repos: {e}") 
@@ -631,8 +638,9 @@ class Coordinator:
             else:
                 conn: Connection = self.mq_client.create_connection(conn_name=f'{self}-{InputQueue.BUILD_REG}', channel_name=f'{self}-{InputQueue.BUILD_REG}')
             
-            queue = MQQueue(OutputQueue.BUILDER_CTRL)
-
+            # Respond on the caller-provided reply queue (unique per builder)
+            reply_queue_name = props.reply_to if props and props.reply_to else OutputQueue.BUILDER_CTRL
+            queue = MQQueue(reply_queue_name)
 
             conn.send_msg(queue=queue, msg=BuilderRegOut(build_opt_id).to_json(),
                         exchange="",
@@ -710,18 +718,27 @@ class Coordinator:
 
 
             conn: Connection = self.mq_client.get_connection(conn_name=f'{self}-{InputQueue.SCRAPER_REG}')
-            if conn: 
+            if conn:
                 conn.ensure_connection()
             else:
                 conn = self.mq_client.create_connection(conn_name=f'{self}-{InputQueue.SCRAPER_REG}', channel_name=f'{self}-{InputQueue.SCRAPER_REG}')
-            
-            queue = MQQueue(OutputQueue.SCRAPER_CTRL)
+
+            reply_queue_name = props.reply_to if props and props.reply_to else OutputQueue.SCRAPER_CTRL
+            queue = MQQueue(reply_queue_name)
 
             conn.send_msg(queue=queue, msg=msg.to_json(),
-                    exchange="",
-                    reply_to=props.reply_to,
-                    corr_id=props.correlation_id
+                exchange="",
+                reply_to=props.reply_to,
+                corr_id=props.correlation_id
             )
+
+            # Track scraper queue for REQUEST_REPOS broadcasts
+            if request_msg.message_type == ScraperMsgType.SETUP:
+                with self._scraper_queues_lock:
+                    if reply_queue_name not in self._scraper_queues:
+                        self._scraper_queues.append(reply_queue_name)
+                        logger.info(f"Registered scraper queue: {reply_queue_name}")
+
             if ch and ch.is_open:
                 ch.basic_ack(delivery_tag=method.delivery_tag)
             else:

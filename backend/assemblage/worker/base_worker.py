@@ -39,10 +39,14 @@ class BasicWorker(ABC):
         self.t_ctrl: threading.Thread | None = None
         self.t_job: threading.Thread | None = None
         self.type = worker_type
+        # Give each worker its own control queue so stale or unrelated
+        # messages can't block startup (e.g. old correlation_ids sitting on a
+        # shared queue). The coordinator will reply to the queue name supplied
+        # in `reply_to`.
         if self.type == WorkerType.Builder:
-            control_queue_in_name = OutputQueue.BUILDER_CTRL
+            control_queue_in_name = f"{OutputQueue.BUILDER_CTRL}_{self.uuid}"
         elif self.type == WorkerType.Scraper:
-            control_queue_in_name = OutputQueue.SCRAPER_CTRL
+            control_queue_in_name = f"{OutputQueue.SCRAPER_CTRL}_{self.uuid}"
         else: 
             control_queue_in_name = "Unknown-type" # probably should sys exit/ return
         

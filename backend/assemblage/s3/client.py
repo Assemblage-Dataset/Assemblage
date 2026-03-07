@@ -41,13 +41,19 @@ class S3Client:
             self._s3.head_bucket(Bucket=bucket_name)
             logger.info(f"Bucket '{bucket_name}' already exists.")
         except ClientError as e:
-            error_code = int(e.response['Error']['Code'])
-            if error_code == 404:
+            error_code = e.response['Error']['Code']
+            if str(error_code) == '404':
                 logger.info(f"Creating bucket '{bucket_name}'...")
-                self._s3.create_bucket(
-                    Bucket=bucket_name,
-                    CreateBucketConfiguration={'LocationConstraint': self._s3.meta.region_name}
-                )
+                try:
+                    self._s3.create_bucket(
+                        Bucket=bucket_name,
+                        CreateBucketConfiguration={'LocationConstraint': self._s3.meta.region_name}
+                    )
+                except ClientError as create_err:
+                    if create_err.response['Error']['Code'] == 'BucketAlreadyOwnedByYou':
+                        logger.info(f"Bucket '{bucket_name}' was created by another process.")
+                    else:
+                        raise
             else:
                 raise e
 

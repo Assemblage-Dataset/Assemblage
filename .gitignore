@@ -53,5 +53,9 @@ local_config/
 !backend/requirements.txt
 
 
-# temporarily 
+# TUI generated files
+docker-compose-tui.yml
+
+# temporarily
 frontend/
+binaries

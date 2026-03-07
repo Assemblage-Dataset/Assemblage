@@ -616,7 +616,8 @@ class Scraper(BasicWorker):
                     )
                 send_queue = MQQueue(InputQueue.SCRAPER_REG)
                 conn.send_msg(
-                    queue=send_queue, msg=msg.to_json(), corr_id=self.uuid
+                    queue=send_queue, msg=msg.to_json(), corr_id=self.uuid,
+                    reply_to=self.control_queue_in.name
                 )
                 
                 self.mq_client.start_consumer(conn=conn, queue=self.control_queue_in, retry_delay=1)

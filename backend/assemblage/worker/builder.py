@@ -145,7 +145,7 @@ class Builder(BasicWorker):
         This is required due to the windows file lock on the produced executable. Only called on s3 when the projects are saved separately
         This does not delete the top level folder of the git username, but not worth the time and effort currenly
         '''
-        logger.debug(f"Deleting {path}")
+        logger.info(f"Deleting {path}")
         if not os.path.exists(path):
             return
 
@@ -223,7 +223,7 @@ class Builder(BasicWorker):
                         conn=conn, queue=self.control_queue_in, retry_delay=10)
                     logger.warning(f"Consume control on {self} has finished.")
                 else:
-                    logger.debug(
+                    logger.info(
                         f"Builder registered and listening on: {self.build_opt_queue}")
                 time.sleep(15)
 
@@ -282,10 +282,10 @@ class Builder(BasicWorker):
         if props.correlation_id != self.uuid:  # correlation ID doesnt match, send back onto queue
             ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
             return
-        logger.debug("Recieiving builder information")
+        logger.info("Recieiving builder information")
         # modifiy to include routing key + exhange name?
         msg = BuilderRegOut.from_json(body)
-        logger.debug(f"Recieived Builder Reg Info {msg}")
+        logger.info(f"Recieived Builder Reg Info {msg}")
 
         self.opt_id = msg.build_opt_id
         self.build_opt_queue = MQQueue(msg.build_opt_queue, callback=self.job_handler,
@@ -320,7 +320,7 @@ class Builder(BasicWorker):
 
         time_start = time.time()
 
-        logger.debug("Received a task to build %s. buildsys: %s",
+        logger.info("Received a task to build %s. buildsys: %s",
                     task.url,
                     task.build_system)
         self.logging_projects_processed += 1
@@ -353,14 +353,14 @@ class Builder(BasicWorker):
 
             if self.s3_client:
                 # save to s3 client and return location
-                logger.debug(
+                logger.info(
                     f"Uploading {clone_dir} to s3 bucket {self.ProjectBucket}")
                 username, project = clone_dir.rstrip("/").split("/")[-2:]
                 saved = self.save_project_to_s3(
                     clone_dir, username, project, commit_hexsha)
                 if saved:
                     save_path = f"{self.ProjectBucket}/{username}/{project}/{commit_hexsha}.tar.gz"
-                    logger.debug(f"Project saved to {save_path} ")
+                    logger.info(f"Project saved to {save_path} ")
 
             self.process_send_msg(task=task,
                                   kind=InputQueue.CLONE,
@@ -388,16 +388,16 @@ class Builder(BasicWorker):
                                       optimization=optimization,
                                       build_time=0)
 
-                logger.debug(
+                logger.info(
                     f"Starting pre build with optimization: {optimization}")
                 sln_file = self.build_strategy.pre_build(
                     build_mode=self.build_mode,
                     clone_dir=clone_dir,
                     optimization=optimization
                 )
-                logger.debug(
+                logger.info(
                     f"Prebuild SUCCESS. Building {task.url}...")
-                logger.debug(f"Building '{task.name}' on optimization {optimization}...")
+                logger.info(f"Building '{task.name}' on optimization {optimization}...")
                 before_build_time = int(time.time())
                 build_msg, build_status = self.build_strategy.run_build(
                     repo=task.url,
@@ -413,11 +413,23 @@ class Builder(BasicWorker):
                                                     self.build_mode,
                                                     task,
                                                     optimization, commit_hexsha)
-                logger.debug(f"Build message: {build_msg}")
+                logger.info(f"Build message: {build_msg}")
 
                 logger.info(f"Build {build_status} for task '{task.name}' on optimization {optimization}.")
 
                 if build_status == BuildStatus.SUCCESS:
+                    # Generate and save metadata
+                    metadata = self.generate_metadata(
+                        clone_dir, task, commit_hexsha, optimization
+                    )
+
+                    # Save metadata locally or to S3
+                    username, project = clone_dir.rstrip("/").split("/")[-2:]
+                    if self.s3_client:
+                        self.save_metadata_to_s3(clone_dir, username, project, commit_hexsha, optimization, metadata)
+                    else:
+                        self.save_metadata_locally(clone_dir, commit_hexsha, optimization, metadata)
+
                     dest_binfolder, saved_successfully = self.save_binaries(
                         clone_dir, task,
                         original_files=original_files,
@@ -433,6 +445,7 @@ class Builder(BasicWorker):
                 else:
                     self.logging_build_fails += 1
                     all_builds_saved = False   # Build itself failed
+                    logger.info(f"Build failed for task '{task.name}' on optimization {optimization} err {build_msg[:500]}")
 
                 self.process_send_msg(task=task,
                                       kind=InputQueue.BUILD,
@@ -468,8 +481,73 @@ class Builder(BasicWorker):
             logger.info("Clone FAILURE %s: %s", task.url, clone_msg)
             
         # build_method.clean(folders)
-        logger.debug("Worker %s finished %s", self.uuid[:5], task.url,
+        logger.info("Worker %s finished %s", self.uuid[:5], task.url,
                      )
+
+    def generate_metadata(self, clone_dir: str, task, commit_hexsha: str, optimization: OptLevel) -> dict:
+        '''
+        Generate metadata JSON for the build
+        Returns metadata dictionary with compiler, url, commit_hash, build_config, etc.
+        '''
+        metadata = {
+            "compiler": self.build_strategy.compiler,
+            "compiler_version": self.build_strategy.compiler_version,
+            "url": task.url,
+            "commit_hash": commit_hexsha,
+            "optimization_level": optimization.name,
+            "platform": self.platform,
+            "build_mode": self.build_mode,
+            "language": self.build_strategy.language,
+            "save_assembly": self.build_strategy.save_assembly,
+            "library": self.library,
+        }
+        return metadata
+
+    def save_metadata_locally(self, clone_dir: str, commit_hexsha: str, optimization: OptLevel, metadata: dict) -> str:
+        '''
+        Save metadata JSON file locally in the clone directory
+        Returns the path to the metadata file
+        '''
+        metadata_filename = f"assemblage_meta_{optimization}.json"
+        metadata_path = os.path.join(clone_dir, metadata_filename)
+
+        try:
+            with open(metadata_path, 'w') as f:
+                json.dump(metadata, f, indent=2)
+            logger.info(f"Metadata saved to {metadata_path}")
+            return metadata_path
+        except Exception as e:
+            logger.warning(f"Failed to save metadata to {metadata_path}: {e}")
+            return None
+
+    def save_metadata_to_s3(self, clone_dir: str, username: str, project_name: str,
+                            commit_hexsha: str, optimization: OptLevel, metadata: dict) -> bool:
+        '''
+        Upload metadata JSON file to S3
+        '''
+        metadata_filename = f"assemblage_meta_{optimization}.json"
+        metadata_path = os.path.join(clone_dir, metadata_filename)
+
+        try:
+            # Create temporary metadata file
+            with open(metadata_path, 'w') as f:
+                json.dump(metadata, f, indent=2)
+
+            # Upload to S3
+            s3_key = f"{username}/{project_name}/{commit_hexsha}/{metadata_filename}"
+            if self.ArtifactBucket.upload_file(metadata_path, s3_key):
+                logger.info(f"Metadata uploaded to S3: {s3_key}")
+                try:
+                    os.remove(metadata_path)
+                except Exception as e:
+                    logger.warning(f"Failed to clean up metadata file {metadata_path}: {e}")
+                return True
+            else:
+                logger.warning(f"Failed to upload metadata to S3: {s3_key}")
+                return False
+        except Exception as e:
+            logger.warning(f"Failed to save/upload metadata: {e}")
+            return False
 
     def save_project_to_s3(self, clone_dir: str, username: str, project_name: str, commit_hexsha: str):
         '''
@@ -498,7 +576,7 @@ class Builder(BasicWorker):
 
     def save_binaries(self, target_dir, task, original_files, commit_hexsha, optimization: OptLevel):
         """ Store binaries locally or on S3, and notify coordinator. """
-        logger.debug(f"Saving binaries of Repo: {task.url}")
+        logger.info(f"Saving binaries of Repo: {task.url}")
 
         self.build_strategy.own_dir(os.path.dirname(target_dir))
 
@@ -529,7 +607,7 @@ class Builder(BasicWorker):
             if self.s3_client:
                 s3_key = f"{dest_base}/{self.build_strategy.compiler}/{optimization}/{base_name}"
                 if self.ArtifactBucket.upload_file(fpath, s3_key):
-                    logger.debug(f"Uploaded {fpath} -> {s3_key}")
+                    logger.info(f"Uploaded {fpath} -> {s3_key}")
                 else:
                     all_saved = False
                     logger.warning(f"Failed to upload {fpath} -> {s3_key}")
@@ -585,7 +663,7 @@ class Builder(BasicWorker):
             ).to_json()
             ctrl_conn: Connection | None = self.mq_client.get_connection(
                 f'{self}-{OutputQueue.BUILDER_CTRL}')
-            logger.debug(
+            logger.info(
                 f"Reply to {self.control_queue_in.name}. corr_id {self.uuid}")
             if ctrl_conn:
                 logger.info(f"Registering builder with {ret}")
