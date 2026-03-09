@@ -256,6 +256,21 @@ MINIO_SECRET_KEY=<chosen S3 password>
 S3_ARTIFACTS_BUCKET=artifacts        # default
 ```
 
+**Running from the host machine (outside Docker):** The Docker internal hostnames (`assemblage-db`, `minio`) are not resolvable from the host. Override them via environment variables, which take priority over `secrets.env`:
+
+```bash
+DB_HOST=localhost MINIO_ENDPOINT=localhost:9000 python run_daily_dataset.py
+```
+
+This requires `docker-compose-s3.yml` to expose port 5432 for PostgreSQL (already done) and MinIO port 9000.
+
+**Migrating an existing SQLite database:** If `linux_licensed.sqlite` was created before the `repo_commit_hash` column was added to the schema, run:
+
+```bash
+sqlite3 assemblage_dataset/linux_licensed.sqlite \
+  "ALTER TABLE binaries ADD COLUMN repo_commit_hash VARCHAR(16);"
+```
+
 ### Pipeline internals (`Assemblage_dataset_cli/minio_pipeline.py`)
 
 1. Queries PostgreSQL for binaries built since the given date (`BuildDO.build_date`) where `projects.license IS NOT NULL` and `platform = linux`
