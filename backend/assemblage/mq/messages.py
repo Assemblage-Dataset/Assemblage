@@ -85,6 +85,7 @@ class BuilderTaskOut(MQMsg):
                  optimizations: list[int],
                  commit_hexsha: str | None = None,
                  mod_timestamp: str | None = None,
+                 license: str | None = None,
                  ):
         super().__init__()
         self.name = name
@@ -99,6 +100,7 @@ class BuilderTaskOut(MQMsg):
         self.commit_hexsha = commit_hexsha if commit_hexsha else ""
         self.mod_timestamp = mod_timestamp if mod_timestamp else ""
         self.optimizations = optimizations
+        self.license = license if license else ""
 
 
 class ScraperDataOutSingle(MQMsg):
@@ -110,7 +112,8 @@ class ScraperDataOutSingle(MQMsg):
     def __init__(self, name: str, url: str, language: SupportedLanguage,
                  owner_id: int, description: str,
                  created_at: str, updated_at: str, size: int,
-                 build_system: str, branch: str, commit_hexsha: str | None):
+                 build_system: str, branch: str, commit_hexsha: str | None,
+                 license: str | None = None):
         super().__init__()
         self.name: str = name
         self.url: str = url
@@ -123,6 +126,7 @@ class ScraperDataOutSingle(MQMsg):
         self.build_system: str = build_system
         self.branch: str = branch
         self.commit_hexsha: str | None = commit_hexsha
+        self.license: str | None = license
 
     def to_dict(self):
         return self.__dict__

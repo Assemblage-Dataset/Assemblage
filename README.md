@@ -215,7 +215,65 @@ MQ_PORT=<mq_port>
 You will also need to expose the rabbitmq port. TODO: add proper authentication
 
 
-## Note to future developers - 
+## Daily Dataset Pipeline
+
+Assemblage includes a CI pipeline that fetches newly built binaries from MinIO each day, extracts DWARF debug info, and appends them to a cumulative SQLite dataset.
+
+### Storage layout
+
+```
+assemblage_dataset/
+  linux_licensed.sqlite     ← cumulative dataset, updated daily
+  2026-03-09/
+    raw/                    ← raw binaries downloaded from MinIO
+    binaries/               ← processed, hash-organized binaries for this day
+    pipeline.log            ← run log for this day
+```
+
+### License filtering
+
+The scraper now only forwards GitHub repositories that carry an open-source license (detected via the GitHub API `license` field). The license name is stored in the `projects.license` database column and propagated into every build artifact's metadata JSON.
+
+### Running the pipeline
+
+```bash
+# Run once (fetches binaries built since yesterday by default)
+python run_daily_dataset.py
+
+# Specify a custom start date
+python run_daily_dataset.py --since 2026-03-01
+
+# Specify a custom dataset directory
+python run_daily_dataset.py --dataset-dir /data/assemblage_dataset
+```
+
+The script reads all connection details from `secrets.env`. Add the following variables if not already present:
+
+```
+MINIO_ENDPOINT=localhost:9000        # or minio:9000 inside Docker
+MINIO_ACCESS_KEY=<chosen S3 username>
+MINIO_SECRET_KEY=<chosen S3 password>
+S3_ARTIFACTS_BUCKET=artifacts        # default
+```
+
+### Pipeline internals (`Assemblage_dataset_cli/minio_pipeline.py`)
+
+1. Queries PostgreSQL for binaries built since the given date (`BuildDO.build_date`) where `projects.license IS NOT NULL` and `platform = linux`
+2. Downloads each ELF binary from the MinIO `artifacts` bucket
+3. Re-extracts DWARF function/RVA/line info using `pyelftools`
+4. Constructs an `assemblage_meta.json` (format compatible with `db_construct()`)
+5. Calls `db_construct()` to append binaries, functions, RVAs, and lines to `linux_licensed.sqlite`
+6. Stores the day's processed binaries under `assemblage_dataset/{date}/binaries/`
+
+### Scheduling via cron
+
+```cron
+0 2 * * * cd /path/to/Assemblage && python run_daily_dataset.py >> /var/log/assemblage_pipeline.log 2>&1
+```
+
+---
+
+## Note to future developers -
 On windows, there is an issue where Windows places a lock on all the built executables, this lock will not get lifted until the python program ( ie the worker script) stops and the container is downed. This means that it cannot be moved only copied to the volume ( or s3 bucket if implemented). Therefore it will progressively take more space so may have to be periodically stopped, cleaned, and recreated. To do this, every now and then, you should stop and remove the container. The repositories are cloned to C:/temp folder first if in s3 move, and so removing the container should automatically remove them. If it doesn't, or you are running in nons3 mode then leave the container running, exec into it, and manually remove them. Once the container has been stopped, the lock should be removed, so any extant binaries should be removable at this point. 
 
 

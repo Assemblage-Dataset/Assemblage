@@ -338,7 +338,7 @@ class DBManager:
             # Assemble build message
             build_message = BuilderTaskOut(
                 name = project.name,
-                url = _url, 
+                url = _url,
                 task_id = status.id,
                 opt_id = buildopt.id,
                 output_dir = _output_dir,
@@ -348,6 +348,7 @@ class DBManager:
                 msg_time = time.time(),
                 optimizations=[level.value for level in OptLevel], # can make this configurable alter
                 #commit_hexsha = status.commit_hexsha
+                license = project.license,
             )
             if reproduce_mode:
                 build_message.mod_timestamp = status.mod_timestamp

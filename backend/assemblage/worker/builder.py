@@ -500,6 +500,7 @@ class Builder(BasicWorker):
             "language": self.build_strategy.language,
             "save_assembly": self.build_strategy.save_assembly,
             "library": self.library,
+            "license": getattr(task, 'license', '') or '',
         }
         return metadata
 

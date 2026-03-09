@@ -424,7 +424,8 @@ class LinuxBuildStrategy(BuildStrategy):
             "Binary_info_list": outer_list,
             "Optimization": optimization.to_gnu_opt(),
             "Pushed_at": getattr(repoinfo, 'updated_at', ''),
-            "commit_sha": commit_hexsha
+            "commit_sha": commit_hexsha,
+            "License": getattr(repoinfo, 'license', '') or '',
         }
 
         try:

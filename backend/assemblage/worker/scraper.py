@@ -182,6 +182,12 @@ class GithubRepositories(DataSource):
         updated_at = github_time_to_mysql_time(repo["pushed_at"])
         size = int(repo['size'])
         commit_hexsha = repo_page['sha']
+        license_info = repo.get("license")
+        if not license_info:
+            return None, None
+        license_name = license_info.get("name", "") if isinstance(license_info, dict) else ""
+        if not license_name:
+            return None, None
         return ScraperDataOutSingle(
             name=name,
             url=url,
@@ -193,7 +199,8 @@ class GithubRepositories(DataSource):
             size=size,
             build_system=build_tool,
             branch=repo["default_branch"],
-            commit_hexsha=commit_hexsha
+            commit_hexsha=commit_hexsha,
+            license=license_name,
             ), files
     
     def fetch_data(self):
