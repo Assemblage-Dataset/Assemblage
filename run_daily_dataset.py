@@ -52,11 +52,12 @@ def load_secrets_env(path):
 
 
 def build_db_url(env):
-    host = env.get("DB_HOST") or os.environ.get("DB_HOST", "localhost")
-    port = env.get("DB_PORT") or os.environ.get("DB_PORT", "5432")
-    user = env.get("POSTGRES_USER") or os.environ.get("POSTGRES_USER", "assemblage")
-    password = env.get("POSTGRES_PASSWORD") or os.environ.get("POSTGRES_PASSWORD", "")
-    db = env.get("POSTGRES_DB") or os.environ.get("POSTGRES_DB", "assemblage")
+    # os.environ takes priority over secrets.env (allows host-side overrides)
+    host = os.environ.get("DB_HOST") or env.get("DB_HOST", "localhost")
+    port = os.environ.get("DB_PORT") or env.get("DB_PORT", "5432")
+    user = os.environ.get("POSTGRES_USER") or env.get("POSTGRES_USER", "assemblage")
+    password = os.environ.get("POSTGRES_PASSWORD") or env.get("POSTGRES_PASSWORD", "")
+    db = os.environ.get("POSTGRES_DB") or env.get("POSTGRES_DB", "assemblage")
     return f"postgresql://{user}:{password}@{host}:{port}/{db}"
 
 
@@ -102,22 +103,25 @@ def main():
     db_url = build_db_url(env)
 
     s3_endpoint = (
-        env.get("MINIO_ENDPOINT")
+        os.environ.get("MINIO_ENDPOINT")
+        or env.get("MINIO_ENDPOINT")
         or env.get("S3_HOST")
-        or os.environ.get("MINIO_ENDPOINT", "localhost:9000")
+        or "localhost:9000"
     )
     # Strip http(s):// prefix if accidentally included
     s3_endpoint = s3_endpoint.replace("http://", "").replace("https://", "")
 
     s3_access_key = (
-        env.get("MINIO_ACCESS_KEY")
+        os.environ.get("MINIO_ACCESS_KEY")
+        or env.get("MINIO_ACCESS_KEY")
         or env.get("S3_ACCESS_KEY")
-        or os.environ.get("MINIO_ACCESS_KEY", "minioadmin")
+        or "minioadmin"
     )
     s3_secret_key = (
-        env.get("MINIO_SECRET_KEY")
+        os.environ.get("MINIO_SECRET_KEY")
+        or env.get("MINIO_SECRET_KEY")
         or env.get("S3_SECRET_ACCESS_KEY")
-        or os.environ.get("MINIO_SECRET_KEY", "minioadmin")
+        or "minioadmin"
     )
     s3_https = (env.get("S3_HTTPS", "false").lower() in ("1", "true", "yes"))
     bucket = env.get("S3_ARTIFACTS_BUCKET", "artifacts")

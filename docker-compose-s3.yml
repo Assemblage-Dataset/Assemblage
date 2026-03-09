@@ -7,6 +7,8 @@ services:
       - secrets.env
     environment:
       - POSTGRES_USER=assemblage # do not change!
+    ports:
+      - "5432:5432"
     volumes:
       - db-data:/var/lib/postgresql
     healthcheck:
