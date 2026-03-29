@@ -139,7 +139,7 @@ class BuilderSettings(AssemblageSettings, S3Settings):
     build_os: SupportedPlatform = Field(default_factory=lambda: system().lower())
     compiler: SupportedCompiler
     language: SupportedLanguage
-    build_mode: str = Field(default="Release", env="BUILD_MODE")
+    compiler_flag: str = Field(default="", env="COMPILER_FLAG")
     # how long to wait in minutes for the build option id from coordinator before exiting (If none, then will wait forever)
-    WAIT_FOR_BUILD_OPT: int | None = None
+    WAIT_FOR_BUILD_OPT: int | None = 5  # exit after 5 min if no config, Docker restarts
     CONFIG_CHECK_INTERVAL: int = 5 # time in seconds to poll coordinator for build options ( defaults to 5 seconds)

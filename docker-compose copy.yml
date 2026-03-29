@@ -68,8 +68,8 @@ services:
       name: scraper_0
       TYPE: scraper
       SCRAPER_POLICY: continuous
-    # env_file:
-    #   - secrets.env
+    env_file:
+      - secrets.env
     restart: unless-stopped
     deploy:
       resources:
@@ -102,10 +102,10 @@ services:
     restart: unless-stopped
     stop_grace_period: 10s
     deploy:
-      replicas: 10
+      replicas: 5
     volumes:
       - ./backend:/app
-    mem_limit: 16g
+    mem_limit: 250g
 
   # clang-O1
   builder_1:
@@ -131,10 +131,10 @@ services:
     restart: unless-stopped
     stop_grace_period: 10s
     deploy:
-      replicas: 10
+      replicas: 5
     volumes:
       - ./backend:/app
-    mem_limit: 16g
+    mem_limit: 250g
 
   # clang-O2
   builder_2:
@@ -160,10 +160,10 @@ services:
     restart: unless-stopped
     stop_grace_period: 10s
     deploy:
-      replicas: 10
+      replicas: 5
     volumes:
       - ./backend:/app
-    mem_limit: 16g
+    mem_limit: 250g
 
   # clang-O3
   builder_3:
@@ -189,10 +189,10 @@ services:
     restart: unless-stopped
     stop_grace_period: 10s
     deploy:
-      replicas: 10
+      replicas: 5
     volumes:
       - ./backend:/app
-    mem_limit: 16g
+    mem_limit: 250g
 
   # gcc-O0
   builder_4:
@@ -218,10 +218,10 @@ services:
     restart: unless-stopped
     stop_grace_period: 10s
     deploy:
-      replicas: 10
+      replicas: 5
     volumes:
       - ./backend:/app
-    mem_limit: 16g
+    mem_limit: 250g
 
   # gcc-O1
   builder_5:
@@ -247,10 +247,10 @@ services:
     restart: unless-stopped
     stop_grace_period: 10s
     deploy:
-      replicas: 10
+      replicas: 5
     volumes:
       - ./backend:/app
-    mem_limit: 16g
+    mem_limit: 250g
 
   # gcc-O2
   builder_6:
@@ -276,10 +276,10 @@ services:
     restart: unless-stopped
     stop_grace_period: 10s
     deploy:
-      replicas: 10
+      replicas: 5
     volumes:
       - ./backend:/app
-    mem_limit: 16g
+    mem_limit: 250g
 
   # gcc-O3
   builder_7:
@@ -305,10 +305,10 @@ services:
     restart: unless-stopped
     stop_grace_period: 10s
     deploy:
-      replicas: 10
+      replicas: 5
     volumes:
       - ./backend:/app
-    mem_limit: 16g
+    mem_limit: 250g
 
   # clang-Os
   builder_8:
@@ -334,10 +334,10 @@ services:
     restart: unless-stopped
     stop_grace_period: 10s
     deploy:
-      replicas: 10
+      replicas: 5
     volumes:
       - ./backend:/app
-    mem_limit: 16g
+    mem_limit: 250g
 
   # gcc-Os
   builder_9:
@@ -363,10 +363,10 @@ services:
     restart: unless-stopped
     stop_grace_period: 10s
     deploy:
-      replicas: 10
+      replicas: 5
     volumes:
       - ./backend:/app
-    mem_limit: 16g
+    mem_limit: 250g
 
 # self host s3 bucket
   minio:

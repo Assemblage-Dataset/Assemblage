@@ -23,7 +23,7 @@ from sqlalchemy.exc import IntegrityError
 # from sqlalchemy.sql import Insert
 
 from assemblage.database.models import BuildDO, BuildOpt, RepoDO, Status, ScraperData
-from assemblage.consts import BuildStatus, SUPPORTED_LANGUAGE, CloneStatus, BIN_DIR, OptLevel
+from assemblage.consts import BuildStatus, SUPPORTED_LANGUAGE, CloneStatus, BIN_DIR
 # from typing import Tuple
 
 
@@ -74,88 +74,55 @@ class DBManager:
 
     def register_build_opt(self, regInfo: BuilderRegIn, assign_to_unset: bool = True) -> int:
         '''
-        Retrive or create a build option from a builder registering
-        will match exactly every field or a new one is created
-        If it matches an exisitng one that is disabled, then it enables it
-        Setting the bool assign_to_unset will also then apply this build option to every project scraped without a 
-        build option assigned yet ( defaults to true)
-
-        self.name: str = name
-        self.uuid: str = uuid
-        self.compiler: str = compiler
-        self.compiler_version: str = compiler_version
-        self.language: str = language
-        self.save_assembly: bool = save_assembly
-        self.platform: str = platform
-        self.toolset_version: str | None = toolset version
+        Retrieve or create a build option from a builder registering.
+        Matches on the original buildopt columns: platform, language,
+        compiler_name, compiler_flag, build_system, build_command, library.
         '''
         with self.get_session() as session:
-            filters = []
-            attrs = [
-                ('platform', BuildOpt.platform),
-                ('language', BuildOpt.language),
-                ('compiler', BuildOpt.compiler_name),
-                ('compiler_flag', BuildOpt.compiler_flag),
-                ('compiler_version', BuildOpt.compiler_version),
-                ('build_system', BuildOpt.build_system),
-                ('build_command', BuildOpt.build_command),
-                ('library', BuildOpt.library),
-                ('save_assembly', BuildOpt.save_assembly),
-                ('toolset_version', BuildOpt.toolset_version)
-            ]
-            # sql alchemy gets funny with none values so creating filters now
-            for attr_name, column in attrs:
-                value = getattr(regInfo, attr_name)
-                if value is not None:
-                    filters.append(column == value)
-            query = select(BuildOpt).where(*filters)
+            query = select(BuildOpt).where(
+                BuildOpt.platform == regInfo.platform,
+                BuildOpt.language == regInfo.language,
+                BuildOpt.compiler_name == regInfo.compiler,
+                BuildOpt.compiler_flag == (regInfo.compiler_flag or ""),
+                BuildOpt.build_system == (regInfo.build_system or ""),
+                BuildOpt.build_command == (regInfo.build_command or ""),
+                BuildOpt.library == regInfo.library,
+            )
 
-            res  = session.execute(query).scalar_one_or_none()
+            res = session.execute(query).scalars().first()
+            is_new = False
             if res:
                 if not res.enable:
                     res.enable = True
             else:
+                is_new = True
                 res = BuildOpt(
                     platform=regInfo.platform,
                     language=regInfo.language,
                     compiler_name=regInfo.compiler,
-                    compiler_flag=regInfo.compiler_flag,
-                    compiler_version=regInfo.compiler_version,
-                    toolset_version=regInfo.toolset_version,
-                    build_system=regInfo.build_system, # 100% make this an enum
-                    build_command=regInfo.build_command,
+                    compiler_flag=regInfo.compiler_flag or "",
+                    build_system=regInfo.build_system or "",
+                    build_command=regInfo.build_command or "",
                     library=regInfo.library,
-                    save_assembly=regInfo.save_assembly,
                     enable=True
-
                 )
                 session.add(res)
                 session.flush()
-                
-            if assign_to_unset:
+
+            if assign_to_unset and is_new:
                 query_repo = select(RepoDO)
                 repos: list[RepoDO] = session.execute(query_repo)
                 status_ = []
                 for repo in repos:
                     repo: RepoDO
-                    # logging.info("Adding buildopt %s, repo is %s", build_system, repo[0].build_system)
                     if regInfo.build_system in repo[0].build_system or regInfo.build_system == "all":
-                        # check that a task for this project on this repo doesn't already exist (avoid duplicates)
-                        query = select(Status).where(
-                            Status.repo_id == repo[0].id,
-                            Status.build_opt_id == res.id,
-                            Status.commit_hexsha == repo[0].commit_hexsha
+                        new_status = Status(
+                            repo_id=repo[0].id,
+                            build_opt_id=res.id,
                         )
-                        row = session.execute(query).first()
-                        if row is None:
-                            new_status = Status(
-                                repo_id=repo[0].id,
-                                build_opt_id=res.id,
-                                commit_hexsha=repo[0].commit_hexsha
-                            )
-                            status_.append(new_status)
-            session.bulk_save_objects(status_)
-            session.commit()    
+                        status_.append(new_status)
+                session.bulk_save_objects(status_)
+            session.commit()
                 
             
             if not res.id:
@@ -204,7 +171,7 @@ class DBManager:
         """ pop first binary haven't run ddisasm """
         with Session(self.engine) as session:
             query = select(BuildDO).where(
-                BuildDO.disassembled == False).limit(1)
+                BuildDO.disasmed == False).limit(1)
             result = session.execute(query)
             return result[0][0]
 
@@ -212,7 +179,7 @@ class DBManager:
         """  set a binary disassembled """
         with Session(self.engine) as session:
             query = update(BuildDO).values(
-                disassembled=True).where(BuildDO.id == bin_id)
+                disasmed=True).where(BuildDO.id == bin_id)
             session.execute(query)
 
     # unused
@@ -346,9 +313,7 @@ class DBManager:
                 updated_at = _updated_at,
                 build_system = project.build_system,
                 msg_time = time.time(),
-                optimizations=[level.value for level in OptLevel], # can make this configurable alter
-                #commit_hexsha = status.commit_hexsha
-                license = project.license,
+                compiler_flag = buildopt.compiler_flag,
             )
             if reproduce_mode:
                 build_message.mod_timestamp = status.mod_timestamp
@@ -610,7 +575,10 @@ class DBManager:
             # looking for if a repo exists
             try:
                 
-                repo = RepoDO(**repos_msg)
+                # Filter out keys that aren't in the RepoDO model
+                valid_keys = {c.name for c in RepoDO.__table__.columns}
+                filtered_msg = {k: v for k, v in repos_msg.items() if k in valid_keys}
+                repo = RepoDO(**filtered_msg)
                 # t_prev = time.time()
                 session.add(repo)
                 session.flush()

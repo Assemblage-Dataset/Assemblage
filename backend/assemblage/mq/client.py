@@ -148,7 +148,9 @@ class Connection:
             if not self.chan or self.chan.is_closed:
                 raise Exception(
                     f"Channel is closed, cannot create queue on {self}")
-            self.chan.queue_declare(queue=queue.name, durable=True)
+            self.chan.queue_declare(queue=queue.name, durable=queue.durable,
+                                      exclusive=queue.exclusive,
+                                      auto_delete=queue.auto_delete)
             logger.debug(f"Created queue: {queue} on {self}")
             if queue.exchange_name and queue.routing_key:
                 logger.debug(
@@ -199,14 +201,16 @@ class Connection:
             self.chan.queue_declare(queue=queue.name, passive=True)
 
 
-    def send_msg(self, queue: MQQueue, msg, exchange='', reply_to: str | None = None, corr_id: str | None = None):
+    def send_msg(self, queue: MQQueue, msg, exchange='', reply_to: str | None = None, corr_id: str | None = None, skip_declare: bool = False):
         '''
         send message into the queue, should only be used on Producer connections
-        '''  
-      # woudl it be better to just pass in mqqueue type and deal with exception later?
+        Set skip_declare=True when the queue was already declared by the consumer
+        (e.g. reply queues with non-default flags).
+        '''
         try:
             self.ensure_connection()
-            self.ensure_queue(queue)
+            if not skip_declare:
+                self.ensure_queue(queue)
             self.ensure_exchange(exchange)
             self.chan.basic_publish(exchange=exchange,
                                     routing_key=queue.routing_key,

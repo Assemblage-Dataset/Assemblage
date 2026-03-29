@@ -1,7 +1,7 @@
 import json
 
 
-from assemblage.consts import CloneStatus, BuildStatus, OutputQueue, ScraperMsgType, ScraperOutputPolicy, OptLevel, SupportedArchitecture, SupportedCompiler, SupportedLanguage, SupportedPlatform
+from assemblage.consts import CloneStatus, BuildStatus, OutputQueue, ScraperMsgType, ScraperOutputPolicy
 
 
 class MQMsg:
@@ -40,24 +40,20 @@ class BuilderRegIn(MQMsg):
     Sent from Builder worker to Coordinator on first start up
     '''
 
-    def __init__(self, name: str, uuid: str, compiler: SupportedCompiler,
-                 compiler_version: str, library: SupportedArchitecture,
-                 language: SupportedLanguage, save_assembly: bool,
-                 platform: SupportedPlatform, compiler_flag: str, build_command: str,
-                 build_system: str, toolset_version: str | None = None):
+    def __init__(self, name: str, uuid: str, compiler: str,
+                 library: str, language: str,
+                 platform: str, compiler_flag: str, build_command: str,
+                 build_system: str, **kwargs):
         super().__init__()
         self.name = name
         self.uuid = uuid
         self.compiler = compiler
-        self.compiler_version = compiler_version
         self.library = library
         self.language = language
-        self.save_assembly = save_assembly
         self.platform = platform
         self.compiler_flag = compiler_flag
         self.build_command = build_command
         self.build_system = build_system
-        self.toolset_version = toolset_version
 
 
 class BuilderRegOut(MQMsg):
@@ -75,17 +71,16 @@ class BuilderRegOut(MQMsg):
 class BuilderTaskOut(MQMsg):
     '''
         Message sent from coordinator to builder to build a repo (clone then build)
-
     '''
 
     def __init__(self, name: str, url: str, task_id: int,
                  opt_id: int, output_dir: str, repo_id: int,
                  updated_at: str, build_system: str,
                  msg_time: float,
-                 optimizations: list[int],
+                 compiler_flag: str = "",
                  commit_hexsha: str | None = None,
                  mod_timestamp: str | None = None,
-                 license: str | None = None,
+                 **kwargs,
                  ):
         super().__init__()
         self.name = name
@@ -99,8 +94,7 @@ class BuilderTaskOut(MQMsg):
         self.msg_time = msg_time
         self.commit_hexsha = commit_hexsha if commit_hexsha else ""
         self.mod_timestamp = mod_timestamp if mod_timestamp else ""
-        self.optimizations = optimizations
-        self.license = license if license else ""
+        self.compiler_flag = compiler_flag
 
 
 class ScraperDataOutSingle(MQMsg):
@@ -109,15 +103,15 @@ class ScraperDataOutSingle(MQMsg):
     By default, the scraper sends these in bundles of 10 (see ScraperDataOutBundle)
     '''
 
-    def __init__(self, name: str, url: str, language: SupportedLanguage,
+    def __init__(self, name: str, url: str, language: str,
                  owner_id: int, description: str,
                  created_at: str, updated_at: str, size: int,
-                 build_system: str, branch: str, commit_hexsha: str | None,
-                 license: str | None = None):
+                 build_system: str, branch: str, commit_hexsha: str | None = None,
+                 license: str | None = None, **kwargs):
         super().__init__()
         self.name: str = name
         self.url: str = url
-        self.language: SupportedLanguage = language
+        self.language: str = language
         self.owner_id: int = int(owner_id)
         self.description: str = description
         self.created_at: str = created_at
@@ -181,9 +175,7 @@ class CloneStatusMsgIn(MQMsg):
 
 class BuildStatusMsgIn(MQMsg):
     def __init__(self, url: str, opt_id: int, status: CloneStatus,
-                 msg: str, task_id: int, build_time: int, commit_hexsha: str, optimization: int):
-
-        # use the value of the opt
+                 msg: str, task_id: int, build_time: int, commit_hexsha: str, **kwargs):
         super().__init__()
         self.url = url
         self.opt_id = opt_id
@@ -192,15 +184,13 @@ class BuildStatusMsgIn(MQMsg):
         self.task_id = task_id
         self.build_time = build_time
         self.commit_hexsha = commit_hexsha
-        self.optimization = optimization  # dont want to send the opt lvel iteslf
 
 
 class BinaryTaskMsgIn(MQMsg):
-    def __init__(self, task_id: int, file_name: str, optimization: OptLevel = OptLevel.NONE):
+    def __init__(self, task_id: int, file_name: str, **kwargs):
         super().__init__()
         self.task_id = task_id
         self.file_name = file_name
-        self.optimization = optimization
 
 
 class PostAnalysisTaskMsgIn(MQMsg):

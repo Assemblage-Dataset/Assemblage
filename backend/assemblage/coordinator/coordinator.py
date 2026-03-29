@@ -20,9 +20,9 @@ from assemblage.data.initialize_database import conditional_init_db
 from collections import Counter
 from assemblage.consts import (AWS_AUTO_REBOOT_PREFIX, COORDINATOR_DATABASE_SYNC_TIMEOUT,
                                BIN_DIR, CLEAN_OVERTIME_INTERVAL,  BuildStatus, #WORKER_TIMEOUT_THRESHOLD,
-                               CloneStatus, InputQueue, OutputQueue, ScraperMsgType, ScraperOutputPolicy,  #REPO_SIZE_THRESHOLD, 
+                               CloneStatus, InputQueue, OutputQueue, ScraperMsgType, ScraperOutputPolicy,  #REPO_SIZE_THRESHOLD,
                                DISPATCH_INTERVAL, IDLE_DISPATCH_INTERVAL, AWS_REBOOT_SLEEP_INTERVAL,
-                               COORDINATOR_REPO_REQUEST_THRESHOLD, SCRAPER_REPO_BUNDLESIZE, WAIT_AFTER_REQ_INTERVAL
+                               COORDINATOR_REPO_REQUEST_THRESHOLD, SCRAPER_REPO_BUNDLESIZE, WAIT_AFTER_REQ_INTERVAL,
                                )
 
 from assemblage.config import CoordinatorSettings
@@ -514,7 +514,7 @@ class Coordinator:
             self.db_man.insert_binary(
                 file_name=recv_msg.file_name,
                 description='',
-                status_id=recv_msg.task_id
+                status_id=recv_msg.task_id,
             )
             if ch and ch.is_open:
                 ch.basic_ack(delivery_tag=method.delivery_tag)
@@ -631,7 +631,12 @@ class Coordinator:
                 f"Will be replying to {props.reply_to} with corr_id : {props.correlation_id}")
 
             build_opt_id = self.db_man.register_build_opt(reg_info)
-  
+            if build_opt_id is None:
+                logger.error("Failed to register build option for builder %s — skipping", reg_info.name)
+                if ch and ch.is_open:
+                    ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
+                return
+
             conn: Connection = self.mq_client.get_connection(conn_name=f'{self}-{InputQueue.BUILD_REG}')
             if conn: 
                 conn.ensure_connection()
@@ -645,7 +650,8 @@ class Coordinator:
             conn.send_msg(queue=queue, msg=BuilderRegOut(build_opt_id).to_json(),
                         exchange="",
                         reply_to=props.reply_to,
-                        corr_id=props.correlation_id
+                        corr_id=props.correlation_id,
+                        skip_declare=True,
                         )
             if ch and ch.is_open:
 
@@ -729,7 +735,8 @@ class Coordinator:
             conn.send_msg(queue=queue, msg=msg.to_json(),
                 exchange="",
                 reply_to=props.reply_to,
-                corr_id=props.correlation_id
+                corr_id=props.correlation_id,
+                skip_declare=True,
             )
 
             # Track scraper queue for REQUEST_REPOS broadcasts

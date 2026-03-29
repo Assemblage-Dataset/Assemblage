@@ -50,8 +50,8 @@ class BasicWorker(ABC):
         else: 
             control_queue_in_name = "Unknown-type" # probably should sys exit/ return
         
-        self.control_queue_in = MQQueue(control_queue_in_name, callback=self.control_message_handler) 
-        # of the uuid in case two wokrers of same name exist
+        self.control_queue_in = MQQueue(control_queue_in_name, callback=self.control_message_handler,
+                                        durable=False, auto_delete=True)
 
     def __str__(self):
         return f'{self.type.value}-{self.uuid}'

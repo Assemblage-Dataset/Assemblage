@@ -705,7 +705,7 @@ class TestCoordinator(unittest.TestCase):
 
         expected_build_message = msg.BuilderTaskOut(
             name = "RepoName",
-            url = "123ABC", 
+            url = "123ABC",
             task_id = 44284,
             opt_id = 2,
             output_dir = f'{BIN_DIR}/44284',
@@ -713,7 +713,7 @@ class TestCoordinator(unittest.TestCase):
             updated_at = "placeholder_updatetime",
             build_system = "MaybeClangOrSomething",
             msg_time = MockTime.time(),
-            optimizations=[0,1,2,3]
+            compiler_flag="-O2",
         )
         mock_db.get_dispatch_task.return_value = expected_build_message
 

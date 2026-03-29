@@ -59,3 +59,5 @@ docker-compose-tui.yml
 # temporarily
 frontend/
 binaries
+
+*dataset*

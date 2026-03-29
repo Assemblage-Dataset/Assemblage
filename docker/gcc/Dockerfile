@@ -60,5 +60,5 @@ ENV LANGUAGE="c++"
 RUN echo '1:gcc' >> /conf
 
 
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 CMD  [ "CMD", "bash", "-c", "pgrep -f start_worker.py > /dev/null" ]
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 CMD bash -c "pgrep -f start_worker.py > /dev/null"
 ENTRYPOINT ["python3", "/app/scripts/start_worker.py"]

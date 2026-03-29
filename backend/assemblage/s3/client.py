@@ -88,18 +88,35 @@ class S3Bucket:
             return False
         return True
     
-    def download_file(self, object_name: str, file_path: str)->bool:
-        """Download a file from S3 bucket
+    def download_file(self, object_name: str, file_path: str) -> bool:
+        """Download a file from S3 bucket.
 
-        :param file_path: Path to download to 
         :param object_name: S3 object name.
-        :return: True if file was uploaded, else False
+        :param file_path: Local path to download to.
+        :return: True if file was downloaded, else False.
         """
         try:
-            self.client._s3.download_File(file_path, self.bucket_name, object_name) 
+            self.client._s3.download_file(self.bucket_name, object_name, file_path)
         except ClientError as e:
             logging.error(e)
             return False
         return True
+
+    def object_exists(self, object_name: str) -> bool:
+        """Check if an object exists in the bucket."""
+        try:
+            self.client._s3.head_object(Bucket=self.bucket_name, Key=object_name)
+            return True
+        except ClientError:
+            return False
+
+    def put_bytes(self, object_name: str, data: bytes) -> bool:
+        """Write raw bytes as an S3 object."""
+        try:
+            self.client._s3.put_object(Bucket=self.bucket_name, Key=object_name, Body=data)
+            return True
+        except ClientError as e:
+            logging.error(e)
+            return False
 
 

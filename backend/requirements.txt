@@ -51,7 +51,7 @@ psycopg2-binary==2.9.10  # used by DB/SQL
 pydantic==2.11.9  # used for config
 pydantic-settings==2.11.0  # used for config
 pydantic_core==2.33.2  # used for config
-pyelftools==0.27  # probably used by analyze and builder
+pyelftools==0.32  # probably used by analyze and builder
 #pyftpdlib==1.5.6  # deprecated, from ftp server
 # PyJWT==2.3.0 
 #pyparsing==3.2.3

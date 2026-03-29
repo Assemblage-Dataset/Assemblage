@@ -133,9 +133,9 @@ COORDINATOR_DATABASE_SYNC_TIMEOUT = 10
 # If the coordinator may be reading an outdated entry in the database (see recv_build_info),
 # wait for these many seconds for the database to update before continuing
 
-COORDINATOR_REPO_REQUEST_THRESHOLD = 1
+COORDINATOR_REPO_REQUEST_THRESHOLD = 10
 # How many repositories the coordinator will identify as "too few" and request more to be scraped
-# (for scrapers with the ON_REQUEST policy). Lower is more performant by RabbitMQ standards
+# (for scrapers with the ON_REQUEST policy). Should be >= number of replicas per buildopt
 
 COORDINATOR_REPO_REQUEST_TIMEOUT = 60
 # If the coordinator waits more than this many seconds to get a repo bundle, 
@@ -241,7 +241,7 @@ class OptLevel(Enum):
     HIGH = 3
 
     def __str__(self):
-        return f"opt_{self.name}"
+        return self.to_gnu_opt()
 
     def to_msvc_opt(self):
         """MSVC optimization flags"""
@@ -266,6 +266,9 @@ class OptLevel(Enum):
                 return "-O3"
             case _:
                 return "-O0"  # default. none
+
+
+
 
 # Testing constants
 

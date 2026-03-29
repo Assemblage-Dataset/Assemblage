@@ -9,6 +9,7 @@ Yihao
 """
 
 from abc import abstractmethod
+import bisect
 import json
 import os
 import glob
@@ -26,7 +27,7 @@ from typing import Tuple
 
 
 from assemblage.worker.profile import AWSProfile
-from assemblage.consts import BuildStatus, PDBJSONNAME, CloneStatus, PDBPATH, BINPATH, OptLevel, RuntimeEnv
+from assemblage.consts import BuildStatus, CloneStatus, BINPATH, RuntimeEnv
 from assemblage.windows.parsers.proj import Project
 from assemblage.windows.parsers.sln import Solution
 from assemblage.analyze.analyze import get_build_system
@@ -175,6 +176,35 @@ class BuildStrategy:
 
         return out, return_code, clone_dir
 
+    def restore_from_archive(self, archive_path: str, url: str):
+        """Restore a project from a downloaded S3 tarball instead of git-cloning.
+
+        Returns the same (message, CloneStatus, clone_dir) tuple as clone_data().
+        """
+        user_name, project_name = self.parse_github_name(url)
+        if not user_name:
+            user_name = os.urandom(8).hex()
+        if not project_name:
+            project_name = os.urandom(8).hex()
+
+        git_user_dir = f"{self.base_path}/projects/{user_name}"
+        clone_dir = f"{git_user_dir}/{project_name}"
+        os.makedirs(clone_dir, exist_ok=True)
+
+        try:
+            shutil.unpack_archive(archive_path, clone_dir)
+            self.own_dir(git_user_dir)
+            self.mark_dir_as_safe(clone_dir)
+            logger.info(f"Restored {url} from S3 archive into {clone_dir}")
+            return b"Restored from S3 archive", CloneStatus.SUCCESS, clone_dir
+        except Exception as e:
+            logger.warning(f"Failed to restore archive for {url}: {e}")
+            try:
+                shutil.rmtree(clone_dir, ignore_errors=True)
+            except Exception:
+                pass
+            return str(e).encode(), CloneStatus.FAILED, clone_dir
+
     def parse_github_name(self, url):
         if url.endswith(".git"):
             url = url[:-4]
@@ -194,9 +224,15 @@ class BuildStrategy:
         logger.info(
             f"Finding executables in {path}, saving assembly files too: {self.save_assembly}")
         file_paths = set()
+        # Skip directories that contain pre-existing binaries (vendored code,
+        # packaging artifacts, test fixtures) rather than binaries we built.
+        _SKIP_DIRS = frozenset({
+            '.git', 'third_party', '3rdparty', 'thirdparty',
+            'vendor', 'external', 'deps', 'debian',
+            'node_modules', '.cache', 'testdata', 'test_data',
+        })
         for root, dirs, file_names in os.walk(os.path.realpath(path)):
-            if '.git' in dirs:  # skip .git files
-                dirs.remove('.git')
+            dirs[:] = [d for d in dirs if d.lower() not in _SKIP_DIRS]
 
             for file_name in file_names:
                 location = f'{root}/{file_name}'
@@ -253,14 +289,14 @@ class BuildStrategy:
         '''' A workaround function to fix ownership of the binaries directory. Owns a particular directory '''
 
     @abstractmethod
-    def run_build(self, repo, clone_dir, build_mode, optimization, slnfile) -> Tuple[bytes, bytes, int]:
+    def run_build(self, repo, clone_dir, compiler_flag="", slnfile=None, build_mode="RelWithDebInfo") -> Tuple[bytes, bytes, int]:
         """ callback function to build command, return...."""
 
     @abstractmethod
     def pre_build(self,
-                  build_mode,
                   clone_dir,
-                  optimization: str | None = None,
+                  compiler_flag: str = "",
+                  build_mode="RelWithDebInfo",
                   favorsizeorspeed: None | str = None,
                   inlinefunctionexpansion: None | str = None,
                   intrinsicfunctions:  bool = False):
@@ -271,8 +307,8 @@ class BuildStrategy:
         """
 
     @abstractmethod
-    def post_build_hook(self, dest_binfolder, build_mode, repoinfo,
-                        optimization, commit_hexsha):
+    def post_build_hook(self, dest_binfolder, repoinfo,
+                        compiler_flag="", commit_hexsha="", build_mode="RelWithDebInfo", original_files=None):
         """ post process hook  """
         pass
 
@@ -338,11 +374,10 @@ class LinuxBuildStrategy(BuildStrategy):
     def run_build(self,
                   repo,
                   clone_dir,
-                  build_mode,
-                  optimization,
+                  compiler_flag="",
                   slnfile=None,
                   ):
-        """ Generate cmd to execute """
+        """ Generate cmd to execute. compiler_flag is the raw flag string e.g. '-O2'. """
 
         files = []
         for filename in glob.iglob(clone_dir + '**/**', recursive=True):
@@ -353,26 +388,41 @@ class LinuxBuildStrategy(BuildStrategy):
 
         build_tool = get_build_system(files)
         cmd = ""
-        opt_level = optimization.to_gnu_opt()
 
-        if self.save_assembly:
-            cflags = f'$CFLAGS -g -save-temps=obj {opt_level}'
-            cxxflags = f'$CXXFLAGS -g -save-temps=obj {opt_level}'
-        else:
-            cflags = f'$CFLAGS -g {opt_level}'
-            cxxflags = f'$CXXFLAGS -g {opt_level}'
+        # Hardcoded RelWithDebInfo: -g (debug info) + -DNDEBUG (assertions disabled)
+        debug_flag = "-g"
+        ndebug_flag = "-DNDEBUG"
+        cmake_build_type = "RelWithDebInfo"
 
+        base_flags = " ".join(f for f in [debug_flag, ndebug_flag, compiler_flag] if f)
+        save_temps = "-save-temps=obj" if self.save_assembly else ""
+        all_flags = " ".join(f for f in [base_flags, save_temps] if f)
+
+        cflags = f'$CFLAGS {all_flags}'
+        cxxflags = f'$CXXFLAGS {all_flags}'
         extra_flags = f'CFLAGS="{cflags}" CXXFLAGS="{cxxflags}"'
+        # Override both CMAKE_C_FLAGS and the build-type-specific flags
+        # (e.g. CMAKE_C_FLAGS_RELWITHDEBINFO) so the build-type defaults
+        # don't append a conflicting -O flag after ours.
+        bt_upper = cmake_build_type.upper()
+        cmake_flags = (
+            f'-DCMAKE_BUILD_TYPE="{cmake_build_type}" '
+            f'-DCMAKE_C_FLAGS="{all_flags}" '
+            f'-DCMAKE_CXX_FLAGS="{all_flags}" '
+            f'-DCMAKE_C_FLAGS_{bt_upper}="{all_flags}" '
+            f'-DCMAKE_CXX_FLAGS_{bt_upper}="{all_flags}"'
+        )
+
         # ideally use LLM/ other to generate the command here based on the files
         if 'bootstrap' in build_tool:
             cmd = f'cd {clone_dir} && ./bootstrap && ' \
-                f'bash ./configure && timeout 10m make {extra_flags} -j{self.num_p_job}'
+                f'bash ./configure {extra_flags} && timeout 10m make {extra_flags} -j{self.num_p_job}'
         elif 'configure' in build_tool:
-            cmd = f'cd {clone_dir} && bash ./configure && ' \
+            cmd = f'cd {clone_dir} && bash ./configure {extra_flags} && ' \
                 f'timeout 10m make {extra_flags} -j{self.num_p_job}'
         elif 'cmake' in build_tool:
-            cmd = f'cd {clone_dir} && cmake -Bbuild ./ && cd build && ' \
-                f'timeout 10m  make {extra_flags} -j{self.num_p_job}'
+            cmd = f'cd {clone_dir} && cmake -Bbuild ./ {cmake_flags} && cd build && ' \
+                f'timeout 10m make -j{self.num_p_job}'
         elif 'make' in build_tool:
             cmd = f'cd {clone_dir} && timeout 10m make {extra_flags} -j{self.num_p_job}'
         logger.debug("Linux cmd generated: %s", cmd)
@@ -390,17 +440,24 @@ class LinuxBuildStrategy(BuildStrategy):
     def _get_toolset_version(self):
         return None
 
-    def pre_build(self, build_mode, clone_dir, optimization=None,
+    def pre_build(self, clone_dir, compiler_flag="",
                   favorsizeorspeed=None, inlinefunctionexpansion=None,
                   intrinsicfunctions=False):
         return None
 
-    def post_build_hook(self, dest_binfolder, build_mode, repoinfo,
-                        optimization, commit_hexsha):
-        """Extract DWARF debug info from ELF binaries and match source code to RVAs."""
+    def post_build_hook(self, dest_binfolder, repoinfo,
+                        compiler_flag, commit_hexsha, original_files=None):
+        """Extract DWARF debug info from ELF binaries.
+
+        Returns a list of Binary_info_list items (one per binary) so the
+        caller can merge them into assemblage_meta.json.  Returns an empty
+        list when no debug info is found.
+        """
         bin_files = self.find_binaries(dest_binfolder)
+        if original_files is not None:
+            bin_files = {f for f in bin_files if f not in original_files}
         if not bin_files:
-            return
+            return []
 
         outer_list = []
         for binfile in bin_files:
@@ -409,32 +466,11 @@ class LinuxBuildStrategy(BuildStrategy):
                 if item:
                     outer_list.append(item)
             except Exception as e:
-                logger.warning(f"DWARF extraction failed for {binfile}: {e}")
+                logger.warning(f"DWARF extraction failed for {binfile}: {type(e).__name__}: {e}")
 
         if not outer_list:
             logger.info("No DWARF debug info found in any binary")
-            return
-
-        json_data = {
-            "Platform": self.library,
-            "Build_mode": build_mode,
-            "Compiler": self.compiler,
-            "Compiler_version": self.compiler_version,
-            "URL": repoinfo.url,
-            "Binary_info_list": outer_list,
-            "Optimization": optimization.to_gnu_opt(),
-            "Pushed_at": getattr(repoinfo, 'updated_at', ''),
-            "commit_sha": commit_hexsha,
-            "License": getattr(repoinfo, 'license', '') or '',
-        }
-
-        try:
-            outpath = os.path.join(dest_binfolder, PDBJSONNAME)
-            with open(outpath, "w") as f:
-                json.dump(json_data, f, sort_keys=False, indent=4)
-            logger.info(f"DWARF info JSON written to {outpath}")
-        except Exception as e:
-            logger.warning(f"Failed to write DWARF info JSON: {e}")
+        return outer_list
 
     def _get_elf_base_address(self, elf):
         """Get the lowest PT_LOAD virtual address as the base for RVA computation."""
@@ -453,6 +489,7 @@ class LinuxBuildStrategy(BuildStrategy):
 
         file_entries = line_program.header.get('file_entry', [])
         include_dirs = line_program.header.get('include_directory', [])
+        version = line_program.header.get('version', 4)
 
         for i, entry in enumerate(file_entries):
             name = entry.name
@@ -460,80 +497,142 @@ class LinuxBuildStrategy(BuildStrategy):
                 name = name.decode('utf-8', errors='replace')
 
             dir_index = entry.dir_index
-            if dir_index > 0 and dir_index <= len(include_dirs):
-                dir_name = include_dirs[dir_index - 1]
-                if isinstance(dir_name, bytes):
-                    dir_name = dir_name.decode('utf-8', errors='replace')
-                if os.path.isabs(name):
-                    full_path = name
-                else:
-                    full_path = os.path.join(dir_name, name)
-            elif comp_dir:
-                if os.path.isabs(name):
-                    full_path = name
-                else:
-                    full_path = os.path.join(comp_dir, name)
-            else:
-                full_path = name
-
-            # DWARF v5: 0-indexed, DWARF v4: 1-indexed
-            version = line_program.header.get('version', 4)
+            # DWARF v5: include_directory is 0-indexed (dir[0] = comp_dir)
+            # DWARF v4: include_directory is 1-indexed (dir_index 0 means comp_dir)
             if version >= 5:
+                if 0 <= dir_index < len(include_dirs):
+                    dir_name = include_dirs[dir_index]
+                    if isinstance(dir_name, bytes):
+                        dir_name = dir_name.decode('utf-8', errors='replace')
+                    full_path = name if os.path.isabs(name) else os.path.join(dir_name, name)
+                elif comp_dir:
+                    full_path = name if os.path.isabs(name) else os.path.join(comp_dir, name)
+                else:
+                    full_path = name
                 file_table[i] = full_path
             else:
+                if dir_index > 0 and dir_index <= len(include_dirs):
+                    dir_name = include_dirs[dir_index - 1]
+                    if isinstance(dir_name, bytes):
+                        dir_name = dir_name.decode('utf-8', errors='replace')
+                    full_path = name if os.path.isabs(name) else os.path.join(dir_name, name)
+                elif comp_dir:
+                    full_path = name if os.path.isabs(name) else os.path.join(comp_dir, name)
+                else:
+                    full_path = name
                 file_table[i + 1] = full_path
 
         return file_table
 
-    def _collect_functions_from_die(self, die, functions_dict, base_addr, file_table):
-        """Recursively collect DW_TAG_subprogram entries with address ranges."""
-        if die.tag == 'DW_TAG_subprogram':
-            name_attr = die.attributes.get('DW_AT_name')
-            low_pc_attr = die.attributes.get('DW_AT_low_pc')
+    def _resolve_die_name(self, die, _depth=0):
+        """Get function name, following DW_AT_abstract_origin/DW_AT_specification."""
+        if _depth > 5:
+            return None
+        name_attr = die.attributes.get('DW_AT_name')
+        if name_attr:
+            val = name_attr.value
+            return val.decode('utf-8', errors='replace') if isinstance(val, bytes) else val
+        for ref_tag in ('DW_AT_abstract_origin', 'DW_AT_specification'):
+            ref_attr = die.attributes.get(ref_tag)
+            if ref_attr:
+                try:
+                    ref_die = die.get_DIE_from_attribute(ref_tag)
+                    if ref_die:
+                        return self._resolve_die_name(ref_die, _depth + 1)
+                except Exception:
+                    pass
+        return None
 
-            if name_attr and low_pc_attr:
-                func_name = name_attr.value
-                if isinstance(func_name, bytes):
-                    func_name = func_name.decode('utf-8', errors='replace')
+    def _resolve_die_source(self, die, file_table, _depth=0):
+        """Get source file from DIE, following abstract_origin/specification."""
+        if _depth > 5:
+            return ""
+        decl_file = die.attributes.get('DW_AT_decl_file')
+        if decl_file:
+            return file_table.get(decl_file.value, "")
+        for ref_tag in ('DW_AT_abstract_origin', 'DW_AT_specification'):
+            ref_attr = die.attributes.get(ref_tag)
+            if ref_attr:
+                try:
+                    ref_die = die.get_DIE_from_attribute(ref_tag)
+                    if ref_die:
+                        return self._resolve_die_source(ref_die, file_table, _depth + 1)
+                except Exception:
+                    pass
+        return ""
 
-                low_pc = low_pc_attr.value
-                high_pc_attr = die.attributes.get('DW_AT_high_pc')
-                if high_pc_attr:
-                    if high_pc_attr.form.startswith('DW_FORM_addr'):
-                        high_pc = high_pc_attr.value
-                    else:
-                        # high_pc is an offset from low_pc
-                        high_pc = low_pc + high_pc_attr.value
-                else:
-                    high_pc = low_pc
+    def _resolve_address_ranges(self, die, dwarf_info, cu_base_addr):
+        """Get absolute address ranges from DW_AT_ranges or low_pc/high_pc."""
+        ranges_attr = die.attributes.get('DW_AT_ranges')
+        if ranges_attr is not None:
+            try:
+                range_lists = dwarf_info.range_lists()
+                if range_lists is not None:
+                    rl = range_lists.get_range_list_at_offset(ranges_attr.value)
+                    result = []
+                    base = cu_base_addr
+                    for entry in rl:
+                        if (getattr(entry, 'begin_offset', None) == 0 and
+                                getattr(entry, 'end_offset', None) == 0):
+                            break
+                        if getattr(entry, 'is_absolute', False):
+                            base = entry.begin_offset
+                            continue
+                        begin = getattr(entry, 'begin_offset', 0) + base
+                        end = getattr(entry, 'end_offset', 0) + base
+                        if begin < end:
+                            result.append((begin, end))
+                    return result if result else None
+            except Exception:
+                pass
+        low_pc_attr = die.attributes.get('DW_AT_low_pc')
+        if not low_pc_attr:
+            return None
+        low_pc = low_pc_attr.value
+        high_pc_attr = die.attributes.get('DW_AT_high_pc')
+        if not high_pc_attr:
+            return None
+        if high_pc_attr.form.startswith('DW_FORM_addr'):
+            high_pc = high_pc_attr.value
+        else:
+            high_pc = low_pc + high_pc_attr.value
+        if low_pc >= high_pc:
+            return None
+        return [(low_pc, high_pc)]
 
-                rva_start = low_pc - base_addr
-                rva_end = high_pc - base_addr
-                hex_len = max(8, len(format(rva_end, 'x')))
-
-                source_file = ""
-                decl_file = die.attributes.get('DW_AT_decl_file')
-                if decl_file:
-                    source_file = file_table.get(decl_file.value, "")
-
-                range_info = {
-                    'rva_start': format(rva_start, 'x').rjust(hex_len, '0'),
-                    'rva_end': format(rva_end, 'x').rjust(hex_len, '0'),
-                    'start_int': rva_start,
-                    'end_int': rva_end,
-                }
-
-                if func_name not in functions_dict:
-                    functions_dict[func_name] = {
-                        'source_file': source_file,
-                        'ranges': [range_info],
-                        'lines': []
-                    }
-                else:
-                    functions_dict[func_name]['ranges'].append(range_info)
+    def _collect_functions_from_die(self, die, functions_list, base_addr,
+                                    file_table, dwarf_info, cu_base_addr):
+        """Recursively collect DW_TAG_subprogram and DW_TAG_inlined_subroutine entries."""
+        if die.tag in ('DW_TAG_subprogram', 'DW_TAG_inlined_subroutine'):
+            func_name = self._resolve_die_name(die)
+            if func_name:
+                addr_ranges = self._resolve_address_ranges(
+                    die, dwarf_info, cu_base_addr)
+                if addr_ranges:
+                    source_file = self._resolve_die_source(die, file_table)
+                    ranges_info = []
+                    for begin, end in addr_ranges:
+                        rva_start = begin - base_addr
+                        rva_end = end - base_addr
+                        if rva_start < 0 or rva_end <= rva_start:
+                            continue
+                        ranges_info.append({
+                            'rva_start': format(rva_start, 'x').rjust(16, '0'),
+                            'rva_end': format(rva_end, 'x').rjust(16, '0'),
+                            'start_int': rva_start,
+                            'end_int': rva_end,
+                        })
+                    if ranges_info:
+                        functions_list.append({
+                            'name': func_name,
+                            'source_file': source_file,
+                            'ranges': ranges_info,
+                            'lines': [],
+                        })
 
         for child in die.iter_children():
-            self._collect_functions_from_die(child, functions_dict, base_addr, file_table)
+            self._collect_functions_from_die(child, functions_list, base_addr,
+                                            file_table, dwarf_info, cu_base_addr)
 
     def _extract_dwarf_info(self, binfile):
         """Extract DWARF debug info from a single ELF binary."""
@@ -549,7 +648,7 @@ class LinuxBuildStrategy(BuildStrategy):
             dwarf_info = elf.get_dwarf_info()
             base_addr = self._get_elf_base_address(elf)
 
-            all_functions = {}
+            all_functions = []  # list of function dicts (avoids name collision)
             file_cache = {}
 
             for CU in dwarf_info.iter_CUs():
@@ -561,14 +660,32 @@ class LinuxBuildStrategy(BuildStrategy):
                     if isinstance(comp_dir, bytes):
                         comp_dir = comp_dir.decode('utf-8', errors='replace')
 
+                # CU base address for range list resolution
+                cu_base_addr = 0
+                cu_low_pc = top_die.attributes.get('DW_AT_low_pc')
+                if cu_low_pc:
+                    cu_base_addr = cu_low_pc.value
+
                 line_program = dwarf_info.line_program_for_CU(CU)
                 file_table = self._build_dwarf_file_table(line_program, comp_dir)
 
-                # Collect function address ranges from DIEs
-                self._collect_functions_from_die(top_die, all_functions, base_addr, file_table)
+                func_start_idx = len(all_functions)
 
-                # Collect line entries and assign to functions
+                # Collect functions (subprograms + inlined subroutines)
+                self._collect_functions_from_die(
+                    top_die, all_functions, base_addr, file_table,
+                    dwarf_info, cu_base_addr)
+
+                # Collect line entries and assign to functions using bisect
                 if line_program:
+                    # Build sorted interval list from this CU's functions
+                    intervals = []  # (start_int, end_int, func_idx)
+                    for fi in range(func_start_idx, len(all_functions)):
+                        for r in all_functions[fi]['ranges']:
+                            intervals.append((r['start_int'], r['end_int'], fi))
+                    intervals.sort()
+                    interval_starts = [iv[0] for iv in intervals]
+
                     raw_entries = []
                     for entry in line_program.get_entries():
                         state = entry.state
@@ -584,7 +701,9 @@ class LinuxBuildStrategy(BuildStrategy):
                         if source_file and os.path.isfile(source_file):
                             if source_file not in file_cache:
                                 try:
-                                    with open(source_file, 'r', encoding='utf-8', errors='replace') as sf:
+                                    with open(source_file, 'r',
+                                              encoding='utf-8',
+                                              errors='replace') as sf:
                                         file_cache[source_file] = sf.readlines()
                                 except Exception:
                                     file_cache[source_file] = []
@@ -601,23 +720,26 @@ class LinuxBuildStrategy(BuildStrategy):
                             'source_file': source_file,
                         })
 
-                    # Sort by address and compute lengths from consecutive entries
+                    # Sort by address and compute lengths
                     raw_entries.sort(key=lambda x: x['rva_int'])
                     for i in range(len(raw_entries) - 1):
-                        raw_entries[i]['length'] = raw_entries[i + 1]['rva_int'] - raw_entries[i]['rva_int']
+                        raw_entries[i]['length'] = (
+                            raw_entries[i + 1]['rva_int'] -
+                            raw_entries[i]['rva_int'])
 
-                    # Assign line entries to their containing functions
+                    # Assign line entries to functions using bisect
                     for entry in raw_entries:
                         entry_rva = entry['rva_int']
-                        for func_data in all_functions.values():
-                            matched = False
-                            for r in func_data['ranges']:
-                                if r['start_int'] <= entry_rva < r['end_int']:
-                                    func_data['lines'].append(entry)
-                                    matched = True
-                                    break
-                            if matched:
+                        idx = bisect.bisect_right(
+                            interval_starts, entry_rva) - 1
+                        while idx >= 0:
+                            s, e, fi = intervals[idx]
+                            if s <= entry_rva < e:
+                                all_functions[fi]['lines'].append(entry)
                                 break
+                            if s < entry_rva:
+                                break
+                            idx -= 1
 
             # Build output
             item_dict = {
@@ -625,38 +747,40 @@ class LinuxBuildStrategy(BuildStrategy):
                 "functions": []
             }
 
-            for func_name, func_data in all_functions.items():
+            for func_data in all_functions:
                 if not func_data['ranges']:
                     continue
 
-                clean_lines = []
-                for line in func_data['lines']:
-                    clean_lines.append({
-                        'line_number': line['line_number'],
-                        'rva': line['rva'],
-                        'length': line['length'],
-                        'source_code': line['source_code'],
-                        'source_file': line['source_file'],
-                    })
+                clean_lines = [{
+                    'line_number': ln['line_number'],
+                    'rva': ln['rva'],
+                    'length': ln['length'],
+                    'source_code': ln['source_code'],
+                    'source_file': ln['source_file'],
+                } for ln in func_data['lines']]
 
-                function_info = []
-                for r in func_data['ranges']:
-                    function_info.append({
-                        'rva_start': r['rva_start'],
-                        'rva_end': r['rva_end'],
-                    })
+                function_info = [{
+                    'rva_start': r['rva_start'],
+                    'rva_end': r['rva_end'],
+                } for r in func_data['ranges']]
 
                 if len(func_data['ranges']) <= 1:
                     intersect_ratio = "0%"
                 else:
-                    ranges_sorted = sorted(func_data['ranges'], key=lambda x: x['start_int'])
-                    total_len = ranges_sorted[-1]['end_int'] - ranges_sorted[0]['start_int']
-                    gap = sum(ranges_sorted[i + 1]['start_int'] - ranges_sorted[i]['end_int']
-                              for i in range(len(ranges_sorted) - 1))
-                    intersect_ratio = f"{(gap / total_len * 100):.2f}%" if total_len > 0 else "0%"
+                    ranges_sorted = sorted(
+                        func_data['ranges'], key=lambda x: x['start_int'])
+                    total_len = (ranges_sorted[-1]['end_int'] -
+                                 ranges_sorted[0]['start_int'])
+                    gap = sum(
+                        ranges_sorted[i + 1]['start_int'] -
+                        ranges_sorted[i]['end_int']
+                        for i in range(len(ranges_sorted) - 1))
+                    intersect_ratio = (
+                        f"{(gap / total_len * 100):.2f}%"
+                        if total_len > 0 else "0%")
 
                 item_dict["functions"].append({
-                    "function_name": func_name,
+                    "function_name": func_data['name'],
                     "source_file": func_data['source_file'],
                     "intersect_ratio": intersect_ratio,
                     "function_info": function_info,
@@ -716,7 +840,7 @@ class WindowsDefaultStrategy(BuildStrategy):
     def pre_build(self,
                   build_mode,
                   clone_dir,
-                  optimization: str | None = None,
+                  compiler_flag: str = "",
                   favorsizeorspeed: None | str = None,
                   inlinefunctionexpansion: None | str = None,
                   intrinsicfunctions:  bool = False):
@@ -745,7 +869,7 @@ class WindowsDefaultStrategy(BuildStrategy):
             for projfile in projfiles:
                 projobj = Project(projfile)
                 projobj.set_toolset_version(self.compiler_version)
-                projobj.set_optimization(optimization)
+                projobj.set_optimization(compiler_flag)
                 if favorsizeorspeed:
                     projobj.set_favorsizeorspeed(favorsizeorspeed)
                 if inlinefunctionexpansion:
@@ -760,11 +884,9 @@ class WindowsDefaultStrategy(BuildStrategy):
 
                 projobj.write()
                 projobj_saved = Project(projfile)
-                optimization_mode = optimization.to_msvc_opt()
 
-                logger.info("Read config: %s, correct: %s",
-                            projobj_saved.get_optimization(), optimization_mode)
-                assert optimization_mode == projobj_saved.get_optimization()
+                logger.info("Read config: %s, flag: %s",
+                            projobj_saved.get_optimization(), compiler_flag)
 
                 logger.debug(f"Finished processing projobj file: {projobj}")
         except FileNotFoundError:
@@ -874,8 +996,8 @@ class WindowsDefaultStrategy(BuildStrategy):
                   repo,
                   clone_dir,
                   build_mode,
-                  slnfile,
-                  optimization,
+                  compiler_flag="",
+                  slnfile=None,
                   num_p_job=16):
         """ Generate cmd to execute """
         if not slnfile:
@@ -893,30 +1015,21 @@ class WindowsDefaultStrategy(BuildStrategy):
             cmd.append("/property:Platform='Mixed Platforms'")
         elif self.library == "Any CPU":
             cmd.append("/p:Platform=Any CPU")
-        # cmd.append(f"/p:PlatformToolset={compiler_version}")
         if self.compiler_version in ["v140", "v141"]:
             cmd.append(
                 f"/p:WindowsTargetPlatformVersion={self.compiler_version}")
 
-
-
-        if build_mode == "Release":
-            match optimization:
-                # this should be updated too with the switch but ran out of time
-                case OptLevel.NONE:
-                    cmd.append("/p:Optimization=Disable")
-                case OptLevel.LOW:
-                    cmd.append("/p:Optimize=true")
-                    cmd.append("/p:Optimization=MinSpace")
-                case OptLevel.MEDIUM:
-                    cmd.append("/p:Optimize=true")
-                    cmd.append("/p:Optimization=MaxSpeed")
-                case OptLevel.HIGH:
-                    cmd.append("/p:Optimize=true")
-                    cmd.append("/p:Optimization=Full")
-                case _:
-                    # otherwise do nothing
-                    pass
+        # Map compiler_flag string to MSVC optimization property
+        _MSVC_OPT_MAP = {
+            "/Od": "/p:Optimization=Disable",
+            "/O1": "/p:Optimization=MinSpace",
+            "/O2": "/p:Optimization=MaxSpeed",
+            "/Ox": "/p:Optimization=Full",
+        }
+        if build_mode == "Release" and compiler_flag in _MSVC_OPT_MAP:
+            if compiler_flag != "/Od":
+                cmd.append("/p:Optimize=true")
+            cmd.append(_MSVC_OPT_MAP[compiler_flag])
         cmd.append("/maxcpucount:16")
         # cmd.append("/property:PostBuildEvent= ")
         # if target_dir:
@@ -933,7 +1046,7 @@ class WindowsDefaultStrategy(BuildStrategy):
         return out.decode() + err.decode(), return_code
 
     def post_build_hook(self, dest_binfolder, build_mode, repoinfo,
-                        optimization, commit_hexsha):
+                        compiler_flag, commit_hexsha, original_files=None):
         """ Postprocess the pdb """
         logger.debug(f"Adding files in {dest_binfolder}")
         bin_files = self.find_binaries(dest_binfolder)
@@ -973,27 +1086,4 @@ class WindowsDefaultStrategy(BuildStrategy):
                 functions_val["lines"] = lines_infos[func_name]
                 item_dict["functions"].append(functions_val)
             outer_list.append(item_dict)
-        try:
-            json_di = {}
-            json_di["Platform"] = self.library
-            json_di["Build_mode"] = build_mode
-            json_di["Toolset_version"] = self.toolset_version
-            json_di["Compiler_version"] = self.compiler_version
-            json_di["URL"] = repoinfo.url
-            json_di["Binary_info_list"] = outer_list
-            json_di["Optimization"] = optimization.to_msvc_opt()
-            json_di["Pushed_at"] = repoinfo.updated_at
-            json_di["commit_sha"] = commit_hexsha
-            # fix this
-            with open(os.path.join(dest_binfolder, PDBJSONNAME), "w+") as outfile:
-                json.dump(json_di, outfile, sort_keys=False)
-            repoid = dest_binfolder.split("\\")[-1]
-            with open(os.path.join(PDBPATH, f"{repoid}.json"), "w+") as outfile:
-                json.dump(json_di, outfile, sort_keys=False, indent=4)
-                logger.debug(f"written to {outfile} ")
-
-        except FileNotFoundError:
-            logger.warning("Pdbjsonfile not found")
-        
-        except Exception as e:
-            logger.warning("Something else went wrong processing PDBjson...: {e}")
+        return outer_list
