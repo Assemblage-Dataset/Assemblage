@@ -14,6 +14,7 @@ class WorkerType(str, Enum):
     Coordinator = "coordinator"
     Builder = "builder"
     Scraper = "scraper"
+    LegacyConan = "legacy_conan"
 
 
 class BuildStatus(str, Enum):

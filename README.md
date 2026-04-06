@@ -288,6 +288,32 @@ sqlite3 assemblage_dataset/linux_licensed.sqlite \
 
 ---
 
+## DeepHistory Legacy Builder (Conan)
+
+Standalone pipeline for building the [DeepHistory](https://arxiv.org/abs/2405.03991) multi-version Windows binary corpus using Conan. Does not require RabbitMQ or the coordinator.
+
+```bash
+# Build specific packages
+python backend/scripts/build_deephistory.py --packages sqlite3 fmt --output C:/binaries/deephistory
+
+# Build all 258 packages from manifest (resumable)
+python backend/scripts/build_deephistory.py \
+  --manifest backend/assemblage/legacy/deephistory_manifest.json \
+  --output C:/binaries/deephistory --resume
+
+# Construct SQLite DB from output
+python Assemblage_dataset_cli/cli.py -g --data C:/binaries/deephistory \
+  --dbfile deephistory.sqlite --functions --lines --rvas --pdbs
+```
+
+Each build produces a folder `<md5(url)>_x64_<mode>_<toolset>_<opt>/` containing `assemblage_meta.json` and prefixed binaries (`.dll`, `.exe`, `.lib`, `.pdb`). Build matrix: Debug/RelWithDebInfo/Release, /Od /O1 /O2, MSVC vc143.
+
+Via Docker: `docker compose -f docker-compose-deephistory.yml up --build`
+
+Via worker dispatch: `TYPE=legacy_conan python backend/scripts/start_worker.py`
+
+---
+
 ## Note to future developers -
 On windows, there is an issue where Windows places a lock on all the built executables, this lock will not get lifted until the python program ( ie the worker script) stops and the container is downed. This means that it cannot be moved only copied to the volume ( or s3 bucket if implemented). Therefore it will progressively take more space so may have to be periodically stopped, cleaned, and recreated. To do this, every now and then, you should stop and remove the container. The repositories are cloned to C:/temp folder first if in s3 move, and so removing the container should automatically remove them. If it doesn't, or you are running in nons3 mode then leave the container running, exec into it, and manually remove them. Once the container has been stopped, the lock should be removed, so any extant binaries should be removable at this point. 
 

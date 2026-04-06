@@ -1,0 +1,48 @@
+# Docker Compose for DeepHistory legacy builder
+# Builds multi-version Windows binaries using Conan package manager
+#
+# Usage:
+#   # Build all packages from manifest
+#   docker compose -f docker-compose-deephistory.yml up --build
+#
+#   # Build specific packages (override command)
+#   docker compose -f docker-compose-deephistory.yml run deephistory-builder \
+#     --packages sqlite3 fmt zlib --build-modes RelWithDebInfo --resume
+#
+#   # Dry run
+#   docker compose -f docker-compose-deephistory.yml run deephistory-builder \
+#     --manifest assemblage/legacy/deephistory_manifest.json --dry-run
+
+services:
+  deephistory-builder:
+    build:
+      context: .
+      dockerfile: docker/conan/Dockerfile
+    container_name: deephistory-builder
+    command: >-
+      --manifest assemblage/legacy/deephistory_manifest.json
+      --output C:/binaries/deephistory
+      --db C:/binaries/deephistory/deephistory.sqlite
+      --resume
+      --log-level INFO
+    volumes:
+      - ./backend:/app:rw
+      - deephistory-binaries:C:/binaries
+      - deephistory-conan-cache:C:/Users/ContainerUser/.conan2
+    environment:
+      - COMPILER=MSVC
+      - LANGUAGE=c++
+      - TYPE=legacy_conan
+    mem_limit: 32g
+    healthcheck:
+      test: ["CMD", "powershell", "-Command", "Get-Process python -ErrorAction SilentlyContinue"]
+      interval: 60s
+      timeout: 10s
+      start_period: 120s
+      retries: 3
+
+volumes:
+  deephistory-binaries:
+    driver: local
+  deephistory-conan-cache:
+    driver: local

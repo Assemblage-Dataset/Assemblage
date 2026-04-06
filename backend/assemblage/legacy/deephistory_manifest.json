@@ -1,0 +1,4912 @@
+{
+  "7bitdi": {
+    "github_url": "https://github.com/7bitcoder/7bitDI",
+    "conan_url": "https://conan.io/center/recipes/7bitdi",
+    "versions": [
+      "1.0.0",
+      "2.0.0",
+      "2.1.0",
+      "3.0.0",
+      "3.1.0",
+      "3.2.0",
+      "3.3.0",
+      "3.4.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "abseil": {
+    "github_url": "https://github.com/abseil/abseil-cpp",
+    "conan_url": "https://conan.io/center/recipes/abseil",
+    "versions": [
+      "20230802.1",
+      "20240116.1",
+      "20240116.2"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od",
+      "O2",
+      "O1"
+    ]
+  },
+  "ada": {
+    "github_url": "https://github.com/ada-url/ada",
+    "conan_url": "https://conan.io/center/recipes/ada",
+    "versions": [
+      "2.5.1",
+      "2.6.10",
+      "2.7.8",
+      "2.8.0",
+      "2.9.0",
+      "2.9.1",
+      "2.9.2"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "Od",
+      "O2"
+    ]
+  },
+  "ade": {
+    "github_url": "https://github.com/opencv/ade",
+    "conan_url": "https://conan.io/center/recipes/ade",
+    "versions": [
+      "0.1.2d"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "Od",
+      "O1"
+    ]
+  },
+  "aeron": {
+    "github_url": "https://github.com/real-logic/aeron",
+    "conan_url": "https://conan.io/center/recipes/aeron",
+    "versions": [
+      "1.32.0",
+      "1.33.1",
+      "1.34.0",
+      "1.35.1",
+      "1.41.4"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "Od",
+      "O2"
+    ]
+  },
+  "ags": {
+    "github_url": "https://github.com/adventuregamestudio/ags",
+    "conan_url": "https://conan.io/center/recipes/ags",
+    "versions": [
+      "6.1.0",
+      "6.2.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "alembic": {
+    "github_url": "https://github.com/alembic/alembic",
+    "conan_url": "https://conan.io/center/recipes/alembic",
+    "versions": [
+      "1.8.2",
+      "1.8.3",
+      "1.8.5",
+      "1.8.6"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "amqp-cpp": {
+    "github_url": "https://github.com/CopernicaMarketingSoftware/AMQP-CPP",
+    "conan_url": "https://conan.io/center/recipes/amqp-cpp",
+    "versions": [
+      "4.1.7",
+      "4.2.1",
+      "4.3.24",
+      "4.3.26"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2"
+    ]
+  },
+  "antlr4-cppruntime": {
+    "github_url": "https://github.com/antlr/antlr4",
+    "conan_url": "https://conan.io/center/recipes/antlr4-cppruntime",
+    "versions": [
+      "4.10.1",
+      "4.11.1",
+      "4.12.0",
+      "4.13.0",
+      "4.13.1",
+      "4.9.3"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "apr": {
+    "github_url": "https://github.com/apache/apr",
+    "conan_url": "https://conan.io/center/recipes/apr",
+    "versions": [
+      "1.7.4"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1"
+    ]
+  },
+  "apr-util": {
+    "github_url": "https://github.com/apache/apr-util",
+    "conan_url": "https://conan.io/center/recipes/apr-util",
+    "versions": [
+      "1.6.1"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2"
+    ]
+  },
+  "argtable3": {
+    "github_url": "https://github.com/argtable/argtable3",
+    "conan_url": "https://conan.io/center/recipes/argtable3",
+    "versions": [
+      "3.1.5",
+      "3.2.0",
+      "3.2.1",
+      "3.2.2"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "armadillo": {
+    "github_url": "https://gitlab.com/conradsanderson/armadillo-code",
+    "conan_url": "https://conan.io/center/recipes/armadillo",
+    "versions": [
+      "10.7.0",
+      "10.7.3",
+      "11.4.3",
+      "12.2.0",
+      "12.6.4"
+    ],
+    "build_modes": [
+      "RelWithDebInfo",
+      "Debug"
+    ],
+    "optimizations": [
+      "Od",
+      "O1",
+      "O2"
+    ]
+  },
+  "arsenalgear": {
+    "github_url": "https://github.com/JustWhit3/arsenalgear-cpp",
+    "conan_url": "https://conan.io/center/recipes/arsenalgear",
+    "versions": [
+      "2.1.0",
+      "2.1.1"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "Od",
+      "O1"
+    ]
+  },
+  "asmjit": {
+    "github_url": "https://github.com/asmjit/asmjit",
+    "conan_url": "https://conan.io/center/recipes/asmjit",
+    "versions": [
+      "cci.20210306",
+      "cci.20220210",
+      "cci.20221111",
+      "cci.20230325",
+      "cci.20240531"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "Od",
+      "O2"
+    ]
+  },
+  "assimp": {
+    "github_url": "https://github.com/assimp/assimp",
+    "conan_url": "https://conan.io/center/recipes/assimp",
+    "versions": [
+      "5.1.6",
+      "5.2.5",
+      "5.3.1",
+      "5.4.1",
+      "5.4.2",
+      "5.4.3"
+    ],
+    "build_modes": [
+      "RelWithDebInfo",
+      "Debug"
+    ],
+    "optimizations": [
+      "O1",
+      "Od",
+      "O2"
+    ]
+  },
+  "automake": {
+    "github_url": "https://github.com/autotools-mirror/automake",
+    "conan_url": "https://conan.io/center/recipes/automake",
+    "versions": [
+      "1.16.5"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od",
+      "O2",
+      "O1"
+    ]
+  },
+  "b2": {
+    "github_url": "",
+    "conan_url": "https://conan.io/center/recipes/b2",
+    "versions": [
+      "5.3.1"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od"
+    ]
+  },
+  "base64": {
+    "github_url": "https://github.com/aklomp/base64",
+    "conan_url": "https://conan.io/center/recipes/base64",
+    "versions": [
+      "0.4.0",
+      "0.5.0",
+      "0.5.1",
+      "0.5.2"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1",
+      "Od"
+    ]
+  },
+  "bdwgc": {
+    "github_url": "https://github.com/ivmai/bdwgc",
+    "conan_url": "https://conan.io/center/recipes/bdwgc",
+    "versions": [
+      "8.0.4",
+      "8.0.6",
+      "8.2.2",
+      "8.2.4",
+      "8.2.6",
+      "8.2.8"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "benchmark": {
+    "github_url": "https://github.com/google/benchmark",
+    "conan_url": "https://conan.io/center/recipes/benchmark",
+    "versions": [
+      "1.7.0",
+      "1.7.1",
+      "1.8.0",
+      "1.8.1",
+      "1.8.2",
+      "1.8.3",
+      "1.8.4",
+      "1.8.5",
+      "1.9.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "Od",
+      "O2"
+    ]
+  },
+  "blend2d": {
+    "github_url": "https://github.com/asmjit/blend2d",
+    "conan_url": "https://conan.io/center/recipes/blend2d",
+    "versions": [
+      "0.10.4",
+      "0.10.5",
+      "0.10.6",
+      "0.11.1",
+      "0.11.3",
+      "0.11.4",
+      "0.8",
+      "0.9"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od",
+      "O1",
+      "O2"
+    ]
+  },
+  "boost": {
+    "github_url": "https://github.com/boostorg/boost",
+    "conan_url": "https://conan.io/center/recipes/boost",
+    "versions": [
+      "1.76.0",
+      "1.78.0",
+      "1.79.0",
+      "1.80.0",
+      "1.81.0",
+      "1.82.0",
+      "1.83.0",
+      "1.84.0",
+      "1.85.0",
+      "1.86.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "Od",
+      "O2"
+    ]
+  },
+  "botan": {
+    "github_url": "https://github.com/randombit/botan",
+    "conan_url": "https://conan.io/center/recipes/botan",
+    "versions": [
+      "2.17.3",
+      "2.18.2",
+      "2.19.1",
+      "2.19.2",
+      "2.19.3",
+      "2.19.4",
+      "2.19.5"
+    ],
+    "build_modes": [
+      "Debug",
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od",
+      "O1",
+      "O2"
+    ]
+  },
+  "box2d": {
+    "github_url": "https://github.com/erincatto/box2d",
+    "conan_url": "https://conan.io/center/recipes/box2d",
+    "versions": [
+      "2.4.0",
+      "2.4.1",
+      "2.4.2",
+      "3.0.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od",
+      "O2",
+      "O1"
+    ]
+  },
+  "brotli": {
+    "github_url": "https://github.com/google/brotli",
+    "conan_url": "https://conan.io/center/recipes/brotli",
+    "versions": [
+      "1.1.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "bzip2": {
+    "github_url": "https://gitlab.com/bzip2/bzip2",
+    "conan_url": "https://conan.io/center/recipes/bzip2",
+    "versions": [
+      "1.0.8"
+    ],
+    "build_modes": [
+      "RelWithDebInfo",
+      "Debug"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "bzip3": {
+    "github_url": "https://github.com/kspalaiologos/bzip3",
+    "conan_url": "https://conan.io/center/recipes/bzip3",
+    "versions": [
+      "1.1.8",
+      "1.2.0",
+      "1.2.1",
+      "1.2.2",
+      "1.2.3",
+      "1.3.0",
+      "1.3.1",
+      "1.3.2",
+      "1.4.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1",
+      "Od"
+    ]
+  },
+  "c-ares": {
+    "github_url": "https://github.com/c-ares/c-ares",
+    "conan_url": "https://conan.io/center/recipes/c-ares",
+    "versions": [
+      "1.25.0",
+      "1.31.0",
+      "1.32.1",
+      "1.32.2",
+      "1.32.3",
+      "1.33.0",
+      "1.33.1",
+      "1.34.1",
+      "1.34.3"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "Od",
+      "O2"
+    ]
+  },
+  "c-blosc": {
+    "github_url": "https://github.com/Blosc/c-blosc",
+    "conan_url": "https://conan.io/center/recipes/c-blosc",
+    "versions": [
+      "1.17.1",
+      "1.18.1",
+      "1.19.0",
+      "1.20.0",
+      "1.20.1",
+      "1.21.0",
+      "1.21.1",
+      "1.21.3",
+      "1.21.4",
+      "1.21.5"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2"
+    ]
+  },
+  "c-blosc2": {
+    "github_url": "https://github.com/Blosc/c-blosc2",
+    "conan_url": "https://conan.io/center/recipes/c-blosc2",
+    "versions": [
+      "2.10.5",
+      "2.11.3",
+      "2.12.0",
+      "2.13.0",
+      "2.13.1",
+      "2.14.4",
+      "2.15.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2"
+    ]
+  },
+  "c4core": {
+    "github_url": "https://github.com/biojppm/c4core",
+    "conan_url": "https://conan.io/center/recipes/c4core",
+    "versions": [
+      "0.1.10",
+      "0.1.11",
+      "0.1.8",
+      "0.1.9",
+      "0.2.0",
+      "0.2.1",
+      "0.2.2"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od",
+      "O1",
+      "O2"
+    ]
+  },
+  "calceph": {
+    "github_url": "https://github.com/gastineau/calceph",
+    "conan_url": "https://conan.io/center/recipes/calceph",
+    "versions": [
+      "3.4.5",
+      "3.4.6",
+      "3.4.7",
+      "3.5.0",
+      "3.5.1",
+      "3.5.5"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "cargs": {
+    "github_url": "https://github.com/likle/cargs",
+    "conan_url": "https://conan.io/center/recipes/cargs",
+    "versions": [
+      "1.0.0",
+      "1.0.1",
+      "1.0.3",
+      "1.1.0",
+      "1.2.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1",
+      "Od"
+    ]
+  },
+  "catch2": {
+    "github_url": "https://github.com/catchorg/Catch2/",
+    "conan_url": "https://conan.io/center/recipes/catch2",
+    "versions": [
+      "3.0.1",
+      "3.1.0",
+      "3.2.0",
+      "3.2.1",
+      "3.3.0",
+      "3.3.1",
+      "3.3.2",
+      "3.4.0",
+      "3.5.0",
+      "3.5.1",
+      "3.5.2",
+      "3.5.3",
+      "3.5.4",
+      "3.6.0",
+      "3.7.0",
+      "3.7.1"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "ceres-solver": {
+    "github_url": "https://github.com/ceres-solver/ceres-solver",
+    "conan_url": "https://conan.io/center/recipes/ceres-solver",
+    "versions": [
+      "1.14.0",
+      "2.0.0",
+      "2.1.0",
+      "2.2.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo",
+      "Debug"
+    ],
+    "optimizations": [
+      "O1",
+      "Od",
+      "O2"
+    ]
+  },
+  "cfitsio": {
+    "github_url": "https://github.com/HEASARC/cfitsio",
+    "conan_url": "https://conan.io/center/recipes/cfitsio",
+    "versions": [
+      "4.0.0",
+      "4.1.0",
+      "4.2.0",
+      "4.3.0",
+      "4.3.1",
+      "4.4.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1"
+    ]
+  },
+  "cgltf": {
+    "github_url": "https://github.com/jkuhlmann/cgltf",
+    "conan_url": "https://conan.io/center/recipes/cgltf",
+    "versions": [
+      "1.11",
+      "1.12",
+      "1.13",
+      "1.5",
+      "1.6",
+      "1.7",
+      "1.8",
+      "1.9"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od",
+      "O1",
+      "O2"
+    ]
+  },
+  "charls": {
+    "github_url": "https://github.com/team-charls/charls",
+    "conan_url": "https://conan.io/center/recipes/charls",
+    "versions": [
+      "2.1.0",
+      "2.2.0",
+      "2.3.4",
+      "2.4.0",
+      "2.4.1",
+      "2.4.2"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "Od",
+      "O2"
+    ]
+  },
+  "cjson": {
+    "github_url": "https://github.com/DaveGamble/cJSON",
+    "conan_url": "https://conan.io/center/recipes/cjson",
+    "versions": [
+      "1.7.12",
+      "1.7.13",
+      "1.7.14",
+      "1.7.15",
+      "1.7.16",
+      "1.7.17",
+      "1.7.18"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "Od",
+      "O2"
+    ]
+  },
+  "clipper": {
+    "github_url": "https://github.com/AngusJohnson/Clipper2",
+    "conan_url": "https://conan.io/center/recipes/clipper",
+    "versions": [
+      "4.10.0",
+      "6.4.2"
+    ],
+    "build_modes": [
+      "RelWithDebInfo",
+      "Debug"
+    ],
+    "optimizations": [
+      "O2",
+      "O1",
+      "Od"
+    ]
+  },
+  "clipper2": {
+    "github_url": "https://github.com/AngusJohnson/Clipper2",
+    "conan_url": "https://conan.io/center/recipes/clipper2",
+    "versions": [
+      "1.2.2",
+      "1.2.3",
+      "1.2.4",
+      "1.3.0",
+      "1.4.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od",
+      "O2",
+      "O1"
+    ]
+  },
+  "cmake": {
+    "github_url": "https://github.com/Kitware/CMake",
+    "conan_url": "https://conan.io/center/recipes/cmake",
+    "versions": [
+      "3.31.6"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od",
+      "O2",
+      "O1"
+    ]
+  },
+  "cpp-optparse": {
+    "github_url": "https://github.com/weisslj/cpp-optparse",
+    "conan_url": "https://conan.io/center/recipes/cpp-optparse",
+    "versions": [
+      "cci.20171104"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od",
+      "O1",
+      "O2"
+    ]
+  },
+  "cppcommon": {
+    "github_url": "https://github.com/chronoxor/CppCommon",
+    "conan_url": "https://conan.io/center/recipes/cppcommon",
+    "versions": [
+      "1.0.0.0",
+      "1.0.1.0",
+      "1.0.2.0",
+      "1.0.3.0",
+      "1.0.4.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "Od",
+      "O2"
+    ]
+  },
+  "cpptrace": {
+    "github_url": "https://github.com/jeremy-rifkin/cpptrace",
+    "conan_url": "https://conan.io/center/recipes/cpptrace",
+    "versions": [
+      "0.2.1",
+      "0.3.1",
+      "0.6.0",
+      "0.6.1",
+      "0.6.2",
+      "0.6.3",
+      "0.7.0",
+      "0.7.1",
+      "0.7.2",
+      "0.7.3"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1",
+      "Od"
+    ]
+  },
+  "cpu_features": {
+    "github_url": "https://github.com/google/cpu_features",
+    "conan_url": "https://conan.io/center/recipes/cpu_features",
+    "versions": [
+      "0.6.0",
+      "0.7.0",
+      "0.8.0",
+      "0.9.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1",
+      "Od"
+    ]
+  },
+  "cpuinfo": {
+    "github_url": "https://github.com/pytorch/cpuinfo",
+    "conan_url": "https://conan.io/center/recipes/cpuinfo",
+    "versions": [
+      "cci.20201217",
+      "cci.20220228",
+      "cci.20220618",
+      "cci.20230118",
+      "cci.20231129"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "cryptopp": {
+    "github_url": "https://github.com/weidai11/cryptopp/",
+    "conan_url": "https://conan.io/center/recipes/cryptopp",
+    "versions": [
+      "8.5.0",
+      "8.6.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo",
+      "Debug"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "cwalk": {
+    "github_url": "https://github.com/likle/cwalk",
+    "conan_url": "https://conan.io/center/recipes/cwalk",
+    "versions": [
+      "1.0.0",
+      "1.1.0",
+      "1.2.2",
+      "1.2.5",
+      "1.2.6",
+      "1.2.7",
+      "1.2.8"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od",
+      "O1",
+      "O2"
+    ]
+  },
+  "dataframe": {
+    "github_url": "https://github.com/hosseinmoein/DataFrame",
+    "conan_url": "https://conan.io/center/recipes/dataframe",
+    "versions": [
+      "2.0.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1",
+      "Od"
+    ]
+  },
+  "dav1d": {
+    "github_url": "https://github.com/videolan/dav1d",
+    "conan_url": "https://conan.io/center/recipes/dav1d",
+    "versions": [
+      "1.2.1",
+      "1.3.0",
+      "1.4.1",
+      "1.4.3"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "Od",
+      "O2"
+    ]
+  },
+  "dbus": {
+    "github_url": "",
+    "conan_url": "https://conan.io/center/recipes/dbus",
+    "versions": [
+      "1.15.0",
+      "1.15.2",
+      "1.15.6",
+      "1.15.8"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od"
+    ]
+  },
+  "djinni-support-lib": {
+    "github_url": "https://github.com/cross-language-cpp/djinni-support-lib",
+    "conan_url": "https://conan.io/center/recipes/djinni-support-lib",
+    "versions": [
+      "0.0.1"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "Od",
+      "O1"
+    ]
+  },
+  "double-conversion": {
+    "github_url": "https://github.com/google/double-conversion",
+    "conan_url": "https://conan.io/center/recipes/double-conversion",
+    "versions": [
+      "3.1.4",
+      "3.1.5",
+      "3.1.6",
+      "3.1.7",
+      "3.2.0",
+      "3.2.1",
+      "3.3.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "draco": {
+    "github_url": "https://github.com/google/draco",
+    "conan_url": "https://conan.io/center/recipes/draco",
+    "versions": [
+      "1.3.5",
+      "1.3.6",
+      "1.4.3",
+      "1.5.2",
+      "1.5.3",
+      "1.5.4",
+      "1.5.5",
+      "1.5.6"
+    ],
+    "build_modes": [
+      "RelWithDebInfo",
+      "Debug"
+    ],
+    "optimizations": [
+      "Od",
+      "O1",
+      "O2"
+    ]
+  },
+  "drwav": {
+    "github_url": "https://github.com/mackron/dr_libs",
+    "conan_url": "https://conan.io/center/recipes/drwav",
+    "versions": [
+      "0.13.12",
+      "0.13.14",
+      "0.13.6",
+      "0.13.7"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od",
+      "O1",
+      "O2"
+    ]
+  },
+  "duckdb": {
+    "github_url": "https://github.com/duckdb/duckdb",
+    "conan_url": "https://conan.io/center/recipes/duckdb",
+    "versions": [
+      "0.9.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1"
+    ]
+  },
+  "eastl": {
+    "github_url": "https://github.com/electronicarts/EASTL",
+    "conan_url": "https://conan.io/center/recipes/eastl",
+    "versions": [
+      "3.21.12"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "Od",
+      "O1"
+    ]
+  },
+  "embree3": {
+    "github_url": "https://github.com/embree/embree",
+    "conan_url": "https://conan.io/center/recipes/embree3",
+    "versions": [
+      "3.12.0",
+      "3.13.1",
+      "3.13.3",
+      "3.13.5"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2"
+    ]
+  },
+  "expat": {
+    "github_url": "https://github.com/libexpat/libexpat",
+    "conan_url": "https://conan.io/center/recipes/expat",
+    "versions": [
+      "R_2_2_10",
+      "R_2_3_0",
+      "R_2_4_8",
+      "R_2_4_9",
+      "R_2_5_0",
+      "R_2_6_0",
+      "R_2_6_2",
+      "R_2_6_3",
+      "R_2_6_4",
+      "R_2_7_1"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "ezc3d": {
+    "github_url": "https://github.com/pyomeca/ezc3d",
+    "conan_url": "https://conan.io/center/recipes/ezc3d",
+    "versions": [
+      "1.3.8",
+      "1.4.8",
+      "1.5.0",
+      "1.5.4",
+      "1.5.5"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od",
+      "O1",
+      "O2"
+    ]
+  },
+  "fast-cdr": {
+    "github_url": "https://github.com/eProsima/Fast-CDR",
+    "conan_url": "https://conan.io/center/recipes/fast-cdr",
+    "versions": [
+      "1.0.27",
+      "1.1.0",
+      "2.0.0",
+      "2.1.0",
+      "2.2.0",
+      "2.2.3",
+      "2.2.5"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1",
+      "Od"
+    ]
+  },
+  "fast-dds": {
+    "github_url": "https://github.com/eProsima/Fast-DDS",
+    "conan_url": "https://conan.io/center/recipes/fast-dds",
+    "versions": [
+      "2.13.3",
+      "2.14.0",
+      "2.14.3"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "Od",
+      "O2"
+    ]
+  },
+  "fastgltf": {
+    "github_url": "https://github.com/spnda/fastgltf",
+    "conan_url": "https://conan.io/center/recipes/fastgltf",
+    "versions": [
+      "0.4.0",
+      "0.5.0",
+      "0.6.1",
+      "0.7.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1",
+      "Od"
+    ]
+  },
+  "fftw": {
+    "github_url": "https://github.com/FFTW/fftw3",
+    "conan_url": "https://conan.io/center/recipes/fftw",
+    "versions": [
+      "3.3.10"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1"
+    ]
+  },
+  "flac": {
+    "github_url": "https://github.com/xiph/flac",
+    "conan_url": "https://conan.io/center/recipes/flac",
+    "versions": [
+      "1.4.2",
+      "1.4.3"
+    ],
+    "build_modes": [
+      "RelWithDebInfo",
+      "Debug"
+    ],
+    "optimizations": [
+      "O2",
+      "Od",
+      "O1"
+    ]
+  },
+  "flatbuffers": {
+    "github_url": "https://github.com/google/flatbuffers",
+    "conan_url": "https://conan.io/center/recipes/flatbuffers",
+    "versions": [
+      "1.12.0",
+      "2.0.5",
+      "2.0.8",
+      "22.10.26",
+      "22.11.23",
+      "22.12.06",
+      "22.9.29",
+      "23.1.21",
+      "23.3.3",
+      "23.5.26",
+      "24.3.25",
+      "24.3.7"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1",
+      "Od"
+    ]
+  },
+  "flecs": {
+    "github_url": "https://github.com/SanderMertens/flecs",
+    "conan_url": "https://conan.io/center/recipes/flecs",
+    "versions": [
+      "2.3.2",
+      "2.4.6",
+      "2.4.7",
+      "2.4.8",
+      "3.0.1",
+      "3.0.4",
+      "3.1.0",
+      "3.1.1",
+      "3.1.2",
+      "3.1.3",
+      "3.1.4",
+      "3.2.11",
+      "3.2.4",
+      "3.2.8",
+      "4.0.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "fmt": {
+    "github_url": "https://github.com/fmtlib/fmt",
+    "conan_url": "https://conan.io/center/recipes/fmt",
+    "versions": [
+      "10.0.0",
+      "10.1.0",
+      "10.1.1",
+      "10.2.0",
+      "10.2.1",
+      "11.0.0",
+      "11.0.1",
+      "11.0.2",
+      "5.3.0",
+      "6.2.1",
+      "7.1.3",
+      "8.0.1",
+      "8.1.1",
+      "9.0.0",
+      "9.1.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "Od",
+      "O2"
+    ]
+  },
+  "foonathan-memory": {
+    "github_url": "https://github.com/foonathan/memory",
+    "conan_url": "https://conan.io/center/recipes/foonathan-memory",
+    "versions": [
+      "v0.7-0",
+      "v0.7-1",
+      "v0.7-2",
+      "v0.7-3"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1",
+      "Od"
+    ]
+  },
+  "freetype": {
+    "github_url": "https://github.com/freetype/freetype",
+    "conan_url": "https://conan.io/center/recipes/freetype",
+    "versions": [
+      "VER-2-14-1",
+      "VER-2-15-1",
+      "VER-2-16-0",
+      "VER-2-16-2",
+      "VER-2-16-3"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "Od",
+      "O2"
+    ]
+  },
+  "fribidi": {
+    "github_url": "https://github.com/fribidi/fribidi",
+    "conan_url": "https://conan.io/center/recipes/fribidi",
+    "versions": [
+      "1.0.10",
+      "1.0.12",
+      "1.0.13",
+      "1.0.9"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od",
+      "O1",
+      "O2"
+    ]
+  },
+  "fruit": {
+    "github_url": "https://github.com/google/fruit",
+    "conan_url": "https://conan.io/center/recipes/fruit",
+    "versions": [
+      "3.4.0",
+      "3.5.0",
+      "3.6.0",
+      "3.7.0",
+      "3.7.1"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "ftxui": {
+    "github_url": "https://github.com/ArthurSonzogni/FTXUI",
+    "conan_url": "https://conan.io/center/recipes/ftxui",
+    "versions": [
+      "2.0.0",
+      "3.0.0",
+      "4.0.0",
+      "4.1.0",
+      "4.1.1",
+      "5.0.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "Od",
+      "O2"
+    ]
+  },
+  "g3log": {
+    "github_url": "https://github.com/KjellKod/g3log",
+    "conan_url": "https://conan.io/center/recipes/g3log",
+    "versions": [
+      "1.3.2",
+      "1.3.3",
+      "1.3.4",
+      "2.1",
+      "2.2",
+      "2.3",
+      "2.4"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2"
+    ]
+  },
+  "geographiclib": {
+    "github_url": "https://github.com/geographiclib/geographiclib",
+    "conan_url": "https://conan.io/center/recipes/geographiclib",
+    "versions": [
+      "1.50.2",
+      "1.51",
+      "1.52",
+      "2.3",
+      "2.4"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "geos": {
+    "github_url": "https://github.com/libgeos/geos",
+    "conan_url": "https://conan.io/center/recipes/geos",
+    "versions": [
+      "3.10.2",
+      "3.10.3",
+      "3.11.0",
+      "3.11.1",
+      "3.11.2",
+      "3.12.0",
+      "3.12.2",
+      "3.13.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "gflags": {
+    "github_url": "https://github.com/gflags/gflags",
+    "conan_url": "https://conan.io/center/recipes/gflags",
+    "versions": [
+      "2.2.2"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od",
+      "O2",
+      "O1"
+    ]
+  },
+  "giflib": {
+    "github_url": "https://github.com/giflib/giflib",
+    "conan_url": "https://conan.io/center/recipes/giflib",
+    "versions": [
+      "5.2.1",
+      "5.2.2"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1"
+    ]
+  },
+  "ginkgo": {
+    "github_url": "https://github.com/ginkgo-project/ginkgo",
+    "conan_url": "https://conan.io/center/recipes/ginkgo",
+    "versions": [
+      "1.3.0",
+      "1.4.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1",
+      "Od"
+    ]
+  },
+  "glad": {
+    "github_url": "https://github.com/Dav1dde/glad",
+    "conan_url": "https://conan.io/center/recipes/glad",
+    "versions": [
+      "0.1.33",
+      "0.1.34",
+      "0.1.35",
+      "0.1.36"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1"
+    ]
+  },
+  "glfw": {
+    "github_url": "https://github.com/glfw/glfw",
+    "conan_url": "https://conan.io/center/recipes/glfw",
+    "versions": [
+      "3.4"
+    ],
+    "build_modes": [
+      "Debug",
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od",
+      "O2",
+      "O1"
+    ]
+  },
+  "glog": {
+    "github_url": "https://github.com/google/glog",
+    "conan_url": "https://conan.io/center/recipes/glog",
+    "versions": [
+      "0.4.0",
+      "0.5.0",
+      "0.6.0",
+      "0.7.0",
+      "0.7.1"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "gm2calc": {
+    "github_url": "https://github.com/GM2Calc/GM2Calc",
+    "conan_url": "https://conan.io/center/recipes/gm2calc",
+    "versions": [
+      "1.7.5",
+      "2.0.0",
+      "2.1.0",
+      "2.2.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2"
+    ]
+  },
+  "gtest": {
+    "github_url": "https://github.com/google/googletest",
+    "conan_url": "https://conan.io/center/recipes/gtest",
+    "versions": [
+      "1.10.0",
+      "1.12.1",
+      "1.13.0",
+      "1.14.0",
+      "1.15.0",
+      "1.8.1"
+    ],
+    "build_modes": [
+      "RelWithDebInfo",
+      "Debug"
+    ],
+    "optimizations": [
+      "O2",
+      "Od",
+      "O1"
+    ]
+  },
+  "h3": {
+    "github_url": "https://github.com/uber/h3",
+    "conan_url": "https://conan.io/center/recipes/h3",
+    "versions": [
+      "3.6.3",
+      "3.6.4",
+      "3.7.0",
+      "3.7.1",
+      "3.7.2",
+      "4.1.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "hazelcast-cpp-client": {
+    "github_url": "https://github.com/hazelcast/hazelcast-cpp-client",
+    "conan_url": "https://conan.io/center/recipes/hazelcast-cpp-client",
+    "versions": [
+      "4.2.0",
+      "5.1.0",
+      "5.2.0",
+      "5.3.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od",
+      "O2",
+      "O1"
+    ]
+  },
+  "hdf5": {
+    "github_url": "https://github.com/HDFGroup/hdf5",
+    "conan_url": "https://conan.io/center/recipes/hdf5",
+    "versions": [
+      "1.10.5",
+      "1.10.6",
+      "1.12.0",
+      "1.12.2",
+      "1.13.1",
+      "1.14.0",
+      "1.14.1",
+      "1.14.2",
+      "1.14.3",
+      "1.14.4.3",
+      "1.14.5",
+      "1.8.21"
+    ],
+    "build_modes": [
+      "RelWithDebInfo",
+      "Debug"
+    ],
+    "optimizations": [
+      "Od",
+      "O1",
+      "O2"
+    ]
+  },
+  "hdrhistogram-c": {
+    "github_url": "https://github.com/HdrHistogram/HdrHistogram_c",
+    "conan_url": "https://conan.io/center/recipes/hdrhistogram-c",
+    "versions": [
+      "0.11.0",
+      "0.11.1",
+      "0.11.6",
+      "0.11.8"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od",
+      "O1",
+      "O2"
+    ]
+  },
+  "hidapi": {
+    "github_url": "https://github.com/libusb/hidapi",
+    "conan_url": "https://conan.io/center/recipes/hidapi",
+    "versions": [
+      "0.12.0",
+      "0.13.1",
+      "0.14.0"
+    ],
+    "build_modes": [
+      "Release"
+    ],
+    "optimizations": [
+      "O1",
+      "Od",
+      "O2"
+    ]
+  },
+  "highs": {
+    "github_url": "https://github.com/ERGO-Code/HiGHS",
+    "conan_url": "https://conan.io/center/recipes/highs",
+    "versions": [
+      "1.7.2",
+      "1.8.0",
+      "1.8.1"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "highway": {
+    "github_url": "https://github.com/google/highway",
+    "conan_url": "https://conan.io/center/recipes/highway",
+    "versions": [
+      "0.12.2",
+      "0.17.0",
+      "1.0.0",
+      "1.0.1",
+      "1.0.2",
+      "1.0.3",
+      "1.0.4",
+      "1.0.5",
+      "1.0.6",
+      "1.0.7",
+      "1.1.0",
+      "1.2.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "hiredis": {
+    "github_url": "https://github.com/redis/hiredis",
+    "conan_url": "https://conan.io/center/recipes/hiredis",
+    "versions": [
+      "1.0.0",
+      "1.0.2",
+      "1.1.0",
+      "1.2.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od",
+      "O2",
+      "O1"
+    ]
+  },
+  "http_parser": {
+    "github_url": "https://github.com/nodejs/http-parser",
+    "conan_url": "https://conan.io/center/recipes/http_parser",
+    "versions": [
+      "2.9.4"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "imath": {
+    "github_url": "https://github.com/AcademySoftwareFoundation/Imath",
+    "conan_url": "https://conan.io/center/recipes/imath",
+    "versions": [
+      "3.1.10",
+      "3.1.11",
+      "3.1.12",
+      "3.1.8",
+      "3.1.9"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "Od",
+      "O1"
+    ]
+  },
+  "imgui": {
+    "github_url": "https://github.com/ocornut/imgui",
+    "conan_url": "https://conan.io/center/recipes/imgui",
+    "versions": [
+      "1.85",
+      "1.86",
+      "1.87",
+      "1.88",
+      "1.89.9",
+      "1.89.9-docking",
+      "1.90.5",
+      "1.90.5-docking",
+      "1.90.6",
+      "1.90.6-docking",
+      "1.90.7",
+      "1.90.7-docking",
+      "1.90.8",
+      "1.90.8-docking",
+      "1.90.9",
+      "1.90.9-docking",
+      "1.91.0",
+      "1.91.0-docking",
+      "1.91.2",
+      "1.91.2-docking",
+      "1.91.3",
+      "1.91.3-docking",
+      "1.91.4",
+      "1.91.4-docking",
+      "1.91.5",
+      "1.91.5-docking"
+    ],
+    "build_modes": [
+      "RelWithDebInfo",
+      "Debug"
+    ],
+    "optimizations": [
+      "Od",
+      "O1",
+      "O2"
+    ]
+  },
+  "implot": {
+    "github_url": "https://github.com/epezent/implot",
+    "conan_url": "https://conan.io/center/recipes/implot",
+    "versions": [
+      "0.11",
+      "0.12",
+      "0.13",
+      "0.14",
+      "0.15",
+      "0.16"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "ixwebsocket": {
+    "github_url": "https://github.com/machinezone/IXWebSocket",
+    "conan_url": "https://conan.io/center/recipes/ixwebsocket",
+    "versions": [
+      "10.2.5",
+      "10.4.0",
+      "11.0.4",
+      "11.0.9",
+      "11.2.4",
+      "11.4.3",
+      "11.4.5",
+      "7.9.2",
+      "9.1.9",
+      "9.6.4"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "Od",
+      "O2"
+    ]
+  },
+  "jasper": {
+    "github_url": "https://github.com/jasper-software/jasper",
+    "conan_url": "https://conan.io/center/recipes/jasper",
+    "versions": [
+      "4.2.0",
+      "4.2.4"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "jbig": {
+    "github_url": "https://github.com/ImageMagick/jbig",
+    "conan_url": "https://conan.io/center/recipes/jbig",
+    "versions": [
+      "20160605"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "Od",
+      "O1"
+    ]
+  },
+  "jom": {
+    "github_url": "https://github.com/qt-labs/jom",
+    "conan_url": "https://conan.io/center/recipes/jom",
+    "versions": [
+      "1.1.4"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "Od",
+      "O1"
+    ]
+  },
+  "json-c": {
+    "github_url": "https://github.com/json-c/json-c",
+    "conan_url": "https://conan.io/center/recipes/json-c",
+    "versions": [
+      "0.14",
+      "0.15",
+      "0.16",
+      "0.17",
+      "0.18"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od",
+      "O1",
+      "O2"
+    ]
+  },
+  "json-schema-validator": {
+    "github_url": "https://github.com/pboettch/json-schema-validator",
+    "conan_url": "https://conan.io/center/recipes/json-schema-validator",
+    "versions": [
+      "2.0.0",
+      "2.1.0",
+      "2.2.0",
+      "2.3.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "jsoncpp": {
+    "github_url": "https://github.com/open-source-parsers/jsoncpp",
+    "conan_url": "https://conan.io/center/recipes/jsoncpp",
+    "versions": [
+      "1.8.3",
+      "1.9.1",
+      "1.9.2",
+      "1.9.3",
+      "1.9.4",
+      "1.9.5",
+      "1.9.6"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "kuba-zip": {
+    "github_url": "https://github.com/kuba--/zip",
+    "conan_url": "https://conan.io/center/recipes/kuba-zip",
+    "versions": [
+      "0.1.31",
+      "0.2.0",
+      "0.2.2",
+      "0.2.3",
+      "0.2.4",
+      "0.2.5",
+      "0.2.6",
+      "0.3.0",
+      "0.3.1",
+      "0.3.2"
+    ],
+    "build_modes": [
+      "RelWithDebInfo",
+      "Debug"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "leptonica": {
+    "github_url": "https://github.com/DanBloomberg/leptonica",
+    "conan_url": "https://conan.io/center/recipes/leptonica",
+    "versions": [
+      "1.81.0",
+      "1.82.0",
+      "1.83.1",
+      "1.85.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2"
+    ]
+  },
+  "lerc": {
+    "github_url": "https://github.com/Esri/lerc",
+    "conan_url": "https://conan.io/center/recipes/lerc",
+    "versions": [
+      "2.1",
+      "2.2",
+      "4.0.0",
+      "4.0.1",
+      "4.0.4"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "lexbor": {
+    "github_url": "https://github.com/lexbor/lexbor",
+    "conan_url": "https://conan.io/center/recipes/lexbor",
+    "versions": [
+      "2.1.0",
+      "2.2.0",
+      "2.3.0",
+      "2.4.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1",
+      "Od"
+    ]
+  },
+  "libaesgm": {
+    "github_url": "https://github.com/brainhub/libaesgm",
+    "conan_url": "https://conan.io/center/recipes/libaesgm",
+    "versions": [
+      "2013.1.1"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1",
+      "Od"
+    ]
+  },
+  "libaom-av1": {
+    "github_url": "https://github.com/AcademySoftwareFoundation/aom",
+    "conan_url": "https://conan.io/center/recipes/libaom-av1",
+    "versions": [
+      "2.0.1",
+      "3.4.0",
+      "3.5.0",
+      "3.6.1",
+      "3.8.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od",
+      "O1",
+      "O2"
+    ]
+  },
+  "libassert": {
+    "github_url": "https://github.com/jeremy-rifkin/libassert/",
+    "conan_url": "https://conan.io/center/recipes/libassert",
+    "versions": [
+      "1.1",
+      "1.2.1",
+      "1.2.2",
+      "2.0.0",
+      "2.0.1",
+      "2.0.2",
+      "2.1.0",
+      "2.1.1",
+      "2.1.2"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "Od",
+      "O2"
+    ]
+  },
+  "libatomic_ops": {
+    "github_url": "https://github.com/ivmai/libatomic_ops",
+    "conan_url": "https://conan.io/center/recipes/libatomic_ops",
+    "versions": [
+      "7.8.2"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1",
+      "Od"
+    ]
+  },
+  "libavif": {
+    "github_url": "https://github.com/AOMediaCodec/libavif",
+    "conan_url": "https://conan.io/center/recipes/libavif",
+    "versions": [
+      "0.11.1",
+      "0.9.3",
+      "1.0.1",
+      "1.0.2",
+      "1.0.3",
+      "1.0.4",
+      "1.1.0",
+      "1.1.1"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od",
+      "O1",
+      "O2"
+    ]
+  },
+  "libde265": {
+    "github_url": "https://github.com/strukturag/libde265",
+    "conan_url": "https://conan.io/center/recipes/libde265",
+    "versions": [
+      "1.0.11",
+      "1.0.12",
+      "1.0.15"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2"
+    ]
+  },
+  "libdeflate": {
+    "github_url": "https://github.com/ebiggers/libdeflate",
+    "conan_url": "https://conan.io/center/recipes/libdeflate",
+    "versions": [
+      "1.12",
+      "1.14",
+      "1.15",
+      "1.17",
+      "1.18",
+      "1.19",
+      "1.21",
+      "1.22",
+      "1.7",
+      "1.8",
+      "1.9"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "Od",
+      "O1"
+    ]
+  },
+  "libdwarf": {
+    "github_url": "https://github.com/davea42/libdwarf-code",
+    "conan_url": "https://conan.io/center/recipes/libdwarf",
+    "versions": [
+      "0.11.1",
+      "0.8.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1",
+      "Od"
+    ]
+  },
+  "libfdk_aac": {
+    "github_url": "https://github.com/mstorsjo/fdk-aac",
+    "conan_url": "https://conan.io/center/recipes/libfdk_aac",
+    "versions": [
+      "2.0.0",
+      "2.0.1",
+      "2.0.2",
+      "2.0.3"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1",
+      "Od"
+    ]
+  },
+  "libftp": {
+    "github_url": "",
+    "conan_url": "https://conan.io/center/recipes/libftp",
+    "versions": [
+      "0.4.1"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "Od",
+      "O2"
+    ]
+  },
+  "libgd": {
+    "github_url": "https://github.com/libgd/libgd",
+    "conan_url": "https://conan.io/center/recipes/libgd",
+    "versions": [
+      "2.2.5",
+      "2.3.0",
+      "2.3.1",
+      "2.3.2",
+      "2.3.3"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1",
+      "Od"
+    ]
+  },
+  "libheif": {
+    "github_url": "https://github.com/strukturag/libheif",
+    "conan_url": "https://conan.io/center/recipes/libheif",
+    "versions": [
+      "1.11.0",
+      "1.12.0",
+      "1.13.0",
+      "1.16.2",
+      "1.18.1",
+      "1.18.2",
+      "1.9.1"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2"
+    ]
+  },
+  "libjpeg": {
+    "github_url": "https://github.com/thorfdbg/libjpeg",
+    "conan_url": "https://conan.io/center/recipes/libjpeg",
+    "versions": [
+      "9e"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "Od",
+      "O2"
+    ]
+  },
+  "libjpeg-turbo": {
+    "github_url": "https://github.com/libjpeg-turbo/libjpeg-turbo",
+    "conan_url": "https://conan.io/center/recipes/libjpeg-turbo",
+    "versions": [
+      "2.0.6",
+      "2.1.5",
+      "3.0.0",
+      "3.0.1",
+      "3.0.2",
+      "3.0.3",
+      "3.0.4"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "Od",
+      "O1"
+    ]
+  },
+  "libjxl": {
+    "github_url": "https://github.com/libjxl/libjxl",
+    "conan_url": "https://conan.io/center/recipes/libjxl",
+    "versions": [
+      "0.8.2"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2"
+    ]
+  },
+  "libmaxminddb": {
+    "github_url": "https://github.com/maxmind/libmaxminddb",
+    "conan_url": "https://conan.io/center/recipes/libmaxminddb",
+    "versions": [
+      "1.10.0",
+      "1.6.0",
+      "1.7.1",
+      "1.8.0",
+      "1.9.1"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od",
+      "O1",
+      "O2"
+    ]
+  },
+  "libmp3lame": {
+    "github_url": "https://github.com/rbrito/lame",
+    "conan_url": "https://conan.io/center/recipes/libmp3lame",
+    "versions": [
+      "3.100"
+    ],
+    "build_modes": [
+      "RelWithDebInfo",
+      "Debug"
+    ],
+    "optimizations": [
+      "O1",
+      "Od",
+      "O2"
+    ]
+  },
+  "libnghttp2": {
+    "github_url": "https://github.com/nghttp2/nghttp2",
+    "conan_url": "https://conan.io/center/recipes/libnghttp2",
+    "versions": [
+      "1.53.0",
+      "1.54.0",
+      "1.55.0",
+      "1.55.1",
+      "1.56.0",
+      "1.57.0",
+      "1.58.0",
+      "1.59.0",
+      "1.60.0",
+      "1.61.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1",
+      "Od"
+    ]
+  },
+  "libpcap": {
+    "github_url": "https://github.com/the-tcpdump-group/libpcap",
+    "conan_url": "https://conan.io/center/recipes/libpcap",
+    "versions": [
+      "1.10.0",
+      "1.10.1",
+      "1.10.4",
+      "1.9.1"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1"
+    ]
+  },
+  "libpng": {
+    "github_url": "https://github.com/pnggroup/libpng",
+    "conan_url": "https://conan.io/center/recipes/libpng",
+    "versions": [
+      "1.5.30",
+      "1.6.32",
+      "1.6.37",
+      "1.6.38",
+      "1.6.39",
+      "1.6.40",
+      "1.6.41",
+      "1.6.42",
+      "1.6.43",
+      "1.6.44",
+      "1.6.47"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "libpq": {
+    "github_url": "https://github.com/postgres/postgres",
+    "conan_url": "https://conan.io/center/recipes/libpq",
+    "versions": [
+      "14.9",
+      "15.3",
+      "15.4",
+      "15.5"
+    ],
+    "build_modes": [
+      "Release"
+    ],
+    "optimizations": [
+      "Od",
+      "O2",
+      "O1"
+    ]
+  },
+  "libpqxx": {
+    "github_url": "https://github.com/jtv/libpqxx",
+    "conan_url": "https://conan.io/center/recipes/libpqxx",
+    "versions": [
+      "7.9.2"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "Od",
+      "O1"
+    ]
+  },
+  "librdkafka": {
+    "github_url": "https://github.com/edenhill/librdkafka",
+    "conan_url": "https://conan.io/center/recipes/librdkafka",
+    "versions": [
+      "1.9.2",
+      "2.0.2",
+      "2.2.0",
+      "2.3.0",
+      "2.4.0",
+      "2.5.0",
+      "2.5.3",
+      "2.6.0",
+      "2.6.1"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "libressl": {
+    "github_url": "https://github.com/libressl/portable",
+    "conan_url": "https://conan.io/center/recipes/libressl",
+    "versions": [
+      "2.9.2",
+      "3.0.2",
+      "3.2.0",
+      "3.2.1",
+      "3.4.3",
+      "3.5.2",
+      "3.5.3",
+      "3.9.1"
+    ],
+    "build_modes": [
+      "RelWithDebInfo",
+      "Debug"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "libsigcpp": {
+    "github_url": "https://github.com/libsigcplusplus/libsigcplusplus",
+    "conan_url": "https://conan.io/center/recipes/libsigcpp",
+    "versions": [
+      "3.0.7"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2"
+    ]
+  },
+  "libsndfile": {
+    "github_url": "https://github.com/libsndfile/libsndfile",
+    "conan_url": "https://conan.io/center/recipes/libsndfile",
+    "versions": [
+      "1.0.29",
+      "1.0.30",
+      "1.0.31",
+      "1.2.0",
+      "1.2.2"
+    ],
+    "build_modes": [
+      "RelWithDebInfo",
+      "Debug"
+    ],
+    "optimizations": [
+      "O1",
+      "Od",
+      "O2"
+    ]
+  },
+  "libsodium": {
+    "github_url": "https://github.com/jedisct1/libsodium",
+    "conan_url": "https://conan.io/center/recipes/libsodium",
+    "versions": [
+      "1.0.18",
+      "1.0.19",
+      "1.0.20",
+      "cci.20220430"
+    ],
+    "build_modes": [
+      "Release",
+      "Debug"
+    ],
+    "optimizations": [
+      "Od",
+      "O2",
+      "O1"
+    ]
+  },
+  "libsrtp": {
+    "github_url": "https://github.com/cisco/libsrtp",
+    "conan_url": "https://conan.io/center/recipes/libsrtp",
+    "versions": [
+      "2.3.0",
+      "2.4.0",
+      "2.4.2",
+      "2.5.0",
+      "2.6.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1",
+      "Od"
+    ]
+  },
+  "libsvm": {
+    "github_url": "https://github.com/cjlin1/libsvm",
+    "conan_url": "https://conan.io/center/recipes/libsvm",
+    "versions": [
+      "324",
+      "325",
+      "330",
+      "332",
+      "333"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od",
+      "O2",
+      "O1"
+    ]
+  },
+  "libsvtav1": {
+    "github_url": "https://gitlab.com/AOMediaCodec/SVT-AV1",
+    "conan_url": "https://conan.io/center/recipes/libsvtav1",
+    "versions": [
+      "1.6.0",
+      "1.7.0",
+      "2.1.0",
+      "2.1.2",
+      "2.2.1"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "Od",
+      "O1"
+    ]
+  },
+  "libtiff": {
+    "github_url": "https://github.com/libsdl-org/libtiff",
+    "conan_url": "https://conan.io/center/recipes/libtiff",
+    "versions": [
+      "4.3.0",
+      "4.4.0",
+      "4.5.0",
+      "4.5.1",
+      "4.6.0",
+      "4.7.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1"
+    ]
+  },
+  "libusb": {
+    "github_url": "https://github.com/libusb/libusb",
+    "conan_url": "https://conan.io/center/recipes/libusb",
+    "versions": [
+      "1.0.23",
+      "1.0.24",
+      "1.0.25",
+      "1.0.26"
+    ],
+    "build_modes": [
+      "Release"
+    ],
+    "optimizations": [
+      "Od",
+      "O1",
+      "O2"
+    ]
+  },
+  "libuv": {
+    "github_url": "https://github.com/libuv/libuv",
+    "conan_url": "https://conan.io/center/recipes/libuv",
+    "versions": [
+      "1.42.0",
+      "1.43.0",
+      "1.44.2",
+      "1.45.0",
+      "1.46.0",
+      "1.47.0",
+      "1.48.0",
+      "1.49.0",
+      "1.49.1",
+      "1.49.2"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "libwebp": {
+    "github_url": "https://github.com/AcademySoftwareFoundation/libwebp",
+    "conan_url": "https://conan.io/center/recipes/libwebp",
+    "versions": [
+      "1.1.0",
+      "1.2.4",
+      "1.3.1",
+      "1.3.2",
+      "1.4.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od",
+      "O1",
+      "O2"
+    ]
+  },
+  "libxlsxwriter": {
+    "github_url": "https://github.com/jmcnamara/libxlsxwriter",
+    "conan_url": "https://conan.io/center/recipes/libxlsxwriter",
+    "versions": [
+      "1.0.0",
+      "1.1.3",
+      "1.1.4",
+      "1.1.5",
+      "1.1.7",
+      "1.1.8",
+      "1.1.9"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1"
+    ]
+  },
+  "libyuv": {
+    "github_url": "https://chromium.googlesource.com/libyuv/libyuv",
+    "conan_url": "https://conan.io/center/recipes/libyuv",
+    "versions": [
+      "1768",
+      "1841",
+      "1845",
+      "1854",
+      "1880",
+      "1892"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "Od",
+      "O1"
+    ]
+  },
+  "libzen": {
+    "github_url": "https://github.com/MediaArea/ZenLib",
+    "conan_url": "https://conan.io/center/recipes/libzen",
+    "versions": [
+      "0.4.38"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "libzip": {
+    "github_url": "https://github.com/nih-at/libzip",
+    "conan_url": "https://conan.io/center/recipes/libzip",
+    "versions": [
+      "1.10.1",
+      "1.11.1",
+      "1.11.2",
+      "1.7.3",
+      "1.8.0",
+      "1.9.2"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "Od",
+      "O2"
+    ]
+  },
+  "libzippp": {
+    "github_url": "https://github.com/ctabin/libzippp",
+    "conan_url": "https://conan.io/center/recipes/libzippp",
+    "versions": [
+      "5.0-1.8.0",
+      "6.0-1.9.2",
+      "6.1-1.9.2",
+      "7.0-1.10.1",
+      "7.1-1.10.1"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1",
+      "Od"
+    ]
+  },
+  "lief": {
+    "github_url": "https://github.com/lief-project/LIEF",
+    "conan_url": "https://conan.io/center/recipes/lief",
+    "versions": [
+      "0.10.1",
+      "0.12.2",
+      "0.12.3"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "Od",
+      "O1"
+    ]
+  },
+  "lightgbm": {
+    "github_url": "https://github.com/microsoft/LightGBM",
+    "conan_url": "https://conan.io/center/recipes/lightgbm",
+    "versions": [
+      "3.3.2",
+      "3.3.5",
+      "4.1.0",
+      "4.2.0",
+      "4.3.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1",
+      "Od"
+    ]
+  },
+  "log4cplus": {
+    "github_url": "https://github.com/log4cplus/log4cplus",
+    "conan_url": "https://conan.io/center/recipes/log4cplus",
+    "versions": [
+      "REL_2_0_7",
+      "REL_2_0_8",
+      "REL_2_1_0",
+      "REL_2_1_1",
+      "REL_2_1_2"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "Od",
+      "O2"
+    ]
+  },
+  "log4cxx": {
+    "github_url": "https://github.com/apache/logging-log4cxx",
+    "conan_url": "https://conan.io/center/recipes/log4cxx",
+    "versions": [
+      "0.12.1",
+      "0.13.0",
+      "1.1.0",
+      "1.2.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2"
+    ]
+  },
+  "lua": {
+    "github_url": "https://github.com/lua/lua",
+    "conan_url": "https://conan.io/center/recipes/lua",
+    "versions": [
+      "5.3.5",
+      "5.3.6",
+      "5.4.1",
+      "5.4.3",
+      "5.4.4",
+      "5.4.6",
+      "5.4.7"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "lunasvg": {
+    "github_url": "https://github.com/sammycage/lunasvg",
+    "conan_url": "https://conan.io/center/recipes/lunasvg",
+    "versions": [
+      "2.3.1",
+      "2.3.2",
+      "2.3.4",
+      "2.3.5",
+      "2.3.8",
+      "2.3.9",
+      "2.4.0",
+      "2.4.1",
+      "3.0.0",
+      "3.0.1"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "lz4": {
+    "github_url": "https://github.com/lz4/lz4",
+    "conan_url": "https://conan.io/center/recipes/lz4",
+    "versions": [
+      "1.9.4"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "matio": {
+    "github_url": "https://github.com/tbeu/matio",
+    "conan_url": "https://conan.io/center/recipes/matio",
+    "versions": [
+      "1.5.23",
+      "1.5.24",
+      "1.5.26",
+      "1.5.27"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "Od",
+      "O2"
+    ]
+  },
+  "mbedtls": {
+    "github_url": "https://github.com/Mbed-TLS/mbedtls",
+    "conan_url": "https://conan.io/center/recipes/mbedtls",
+    "versions": [
+      "2.25.0",
+      "3.2.1"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od",
+      "O2",
+      "O1"
+    ]
+  },
+  "md4c": {
+    "github_url": "https://github.com/mity/md4c",
+    "conan_url": "https://conan.io/center/recipes/md4c",
+    "versions": [
+      "0.4.8"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1"
+    ]
+  },
+  "meshoptimizer": {
+    "github_url": "https://github.com/zeux/meshoptimizer",
+    "conan_url": "https://conan.io/center/recipes/meshoptimizer",
+    "versions": [
+      "0.14",
+      "0.15",
+      "0.16",
+      "0.17",
+      "0.21",
+      "0.22"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "mimalloc": {
+    "github_url": "https://github.com/microsoft/mimalloc",
+    "conan_url": "https://conan.io/center/recipes/mimalloc",
+    "versions": [
+      "1.7.9",
+      "1.8.2",
+      "1.8.7",
+      "2.0.9",
+      "2.1.2",
+      "2.1.7"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "miniz": {
+    "github_url": "https://github.com/richgel999/miniz",
+    "conan_url": "https://conan.io/center/recipes/miniz",
+    "versions": [
+      "2.1.0",
+      "2.2.0",
+      "3.0.1",
+      "3.0.2"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "Od",
+      "O1"
+    ]
+  },
+  "minizip": {
+    "github_url": "https://github.com/nicklockwood/minizip",
+    "conan_url": "https://conan.io/center/recipes/minizip",
+    "versions": [
+      "1.2.11",
+      "1.2.12",
+      "1.2.13",
+      "1.3.1"
+    ],
+    "build_modes": [
+      "RelWithDebInfo",
+      "Debug"
+    ],
+    "optimizations": [
+      "O1",
+      "Od",
+      "O2"
+    ]
+  },
+  "mozilla-build": {
+    "github_url": "",
+    "conan_url": "https://conan.io/center/recipes/mozilla-build",
+    "versions": [
+      "3.3"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2"
+    ]
+  },
+  "mozjpeg": {
+    "github_url": "https://github.com/mozilla/mozjpeg",
+    "conan_url": "https://conan.io/center/recipes/mozjpeg",
+    "versions": [
+      "3.3.1",
+      "4.0.0",
+      "4.1.1",
+      "4.1.3",
+      "4.1.5"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2"
+    ]
+  },
+  "mpdecimal": {
+    "github_url": "https://github.com/svalber/mpdecimal",
+    "conan_url": "https://conan.io/center/recipes/mpdecimal",
+    "versions": [
+      "2.5.0",
+      "2.5.1"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od",
+      "O2",
+      "O1"
+    ]
+  },
+  "mpg123": {
+    "github_url": "",
+    "conan_url": "https://conan.io/center/recipes/mpg123",
+    "versions": [
+      "1.31.2"
+    ],
+    "build_modes": [
+      "RelWithDebInfo",
+      "Debug"
+    ],
+    "optimizations": [
+      "O2",
+      "Od",
+      "O1"
+    ]
+  },
+  "msgpack-c": {
+    "github_url": "https://github.com/msgpack/msgpack-c",
+    "conan_url": "https://conan.io/center/recipes/msgpack-c",
+    "versions": [
+      "3.3.0",
+      "4.0.0",
+      "5.0.0",
+      "6.0.0",
+      "6.1.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1",
+      "Od"
+    ]
+  },
+  "msys2": {
+    "github_url": "https://github.com/msys2/MSYS2-packages",
+    "conan_url": "https://conan.io/center/recipes/msys2",
+    "versions": [
+      "cci.latest"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od",
+      "O1",
+      "O2"
+    ]
+  },
+  "nasm": {
+    "github_url": "https://github.com/netwide-assembler/nasm",
+    "conan_url": "https://conan.io/center/recipes/nasm",
+    "versions": [
+      "2.15.05",
+      "2.16.01"
+    ],
+    "build_modes": [
+      "RelWithDebInfo",
+      "Debug"
+    ],
+    "optimizations": [
+      "O1",
+      "Od",
+      "O2"
+    ]
+  },
+  "nghttp3": {
+    "github_url": "https://github.com/ngtcp2/nghttp3",
+    "conan_url": "https://conan.io/center/recipes/nghttp3",
+    "versions": [
+      "0.15.0",
+      "1.0.0",
+      "1.1.0",
+      "1.2.0",
+      "1.3.0",
+      "1.4.0",
+      "1.5.0",
+      "1.6.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od",
+      "O2",
+      "O1"
+    ]
+  },
+  "ninja": {
+    "github_url": "https://github.com/ninja-build/ninja",
+    "conan_url": "https://conan.io/center/recipes/ninja",
+    "versions": [
+      "1.12.1"
+    ],
+    "build_modes": [
+      "Debug",
+      "Release"
+    ],
+    "optimizations": [
+      "Od"
+    ]
+  },
+  "nlopt": {
+    "github_url": "https://github.com/stevengj/nlopt",
+    "conan_url": "https://conan.io/center/recipes/nlopt",
+    "versions": [
+      "2.6.2",
+      "2.7.0",
+      "2.7.1"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1"
+    ]
+  },
+  "nng": {
+    "github_url": "https://github.com/nanomsg/nng",
+    "conan_url": "https://conan.io/center/recipes/nng",
+    "versions": [
+      "1.3.2",
+      "1.5.1",
+      "1.5.2",
+      "1.6.0",
+      "1.7.0",
+      "1.7.1",
+      "1.7.2",
+      "1.7.3",
+      "1.8.0",
+      "1.9.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "nsync": {
+    "github_url": "https://github.com/google/nsync",
+    "conan_url": "https://conan.io/center/recipes/nsync",
+    "versions": [
+      "1.23.0",
+      "1.24.0",
+      "1.25.0",
+      "1.26.0",
+      "1.27.0",
+      "1.28.0",
+      "1.29.1",
+      "1.29.2"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "octomap": {
+    "github_url": "https://github.com/OctoMap/octomap",
+    "conan_url": "https://conan.io/center/recipes/octomap",
+    "versions": [
+      "1.10.0",
+      "1.9.3",
+      "1.9.5",
+      "1.9.6",
+      "1.9.7",
+      "1.9.8"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od",
+      "O2",
+      "O1"
+    ]
+  },
+  "ogg": {
+    "github_url": "https://github.com/xiph/ogg",
+    "conan_url": "https://conan.io/center/recipes/ogg",
+    "versions": [
+      "1.3.5"
+    ],
+    "build_modes": [
+      "RelWithDebInfo",
+      "Debug"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "onnx": {
+    "github_url": "https://github.com/onnx/onnx",
+    "conan_url": "https://conan.io/center/recipes/onnx",
+    "versions": [
+      "1.13.1",
+      "1.14.0",
+      "1.14.1",
+      "1.15.0",
+      "1.16.0",
+      "1.16.1",
+      "1.16.2",
+      "1.17.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "open62541": {
+    "github_url": "https://github.com/open62541/open62541",
+    "conan_url": "https://conan.io/center/recipes/open62541",
+    "versions": [
+      "1.0.6",
+      "1.1.6"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od",
+      "O2",
+      "O1"
+    ]
+  },
+  "openal": {
+    "github_url": "https://github.com/kcat/openal-soft",
+    "conan_url": "https://conan.io/center/recipes/openal",
+    "versions": [
+      "1.19.1",
+      "1.20.1",
+      "1.21.0",
+      "1.21.1",
+      "1.22.2"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1",
+      "Od"
+    ]
+  },
+  "openal-soft": {
+    "github_url": "https://github.com/kcat/openal-soft",
+    "conan_url": "https://conan.io/center/recipes/openal-soft",
+    "versions": [
+      "1.22.2"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "Od",
+      "O1"
+    ]
+  },
+  "openblas": {
+    "github_url": "https://github.com/xianyi/OpenBLAS",
+    "conan_url": "https://conan.io/center/recipes/openblas",
+    "versions": [
+      "0.3.10",
+      "0.3.12",
+      "0.3.13",
+      "0.3.15",
+      "0.3.17",
+      "0.3.20",
+      "0.3.24",
+      "0.3.25",
+      "0.3.26",
+      "0.3.27"
+    ],
+    "build_modes": [
+      "RelWithDebInfo",
+      "Debug"
+    ],
+    "optimizations": [
+      "Od",
+      "O2",
+      "O1"
+    ]
+  },
+  "opencl-icd-loader": {
+    "github_url": "https://github.com/KhronosGroup/OpenCL-ICD-Loader",
+    "conan_url": "https://conan.io/center/recipes/opencl-icd-loader",
+    "versions": [
+      "2020.06.16",
+      "2021.04.29",
+      "2022.01.04",
+      "2022.05.18",
+      "2022.09.30",
+      "2023.02.06",
+      "2023.04.17",
+      "2023.12.14"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od",
+      "O2",
+      "O1"
+    ]
+  },
+  "opencolorio": {
+    "github_url": "https://github.com/AcademySoftwareFoundation/OpenColorIO",
+    "conan_url": "https://conan.io/center/recipes/opencolorio",
+    "versions": [
+      "2.1.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2"
+    ]
+  },
+  "openddl-parser": {
+    "github_url": "https://github.com/kimkulling/openddl-parser",
+    "conan_url": "https://conan.io/center/recipes/openddl-parser",
+    "versions": [
+      "0.5.1"
+    ],
+    "build_modes": [
+      "RelWithDebInfo",
+      "Debug"
+    ],
+    "optimizations": [
+      "Od",
+      "O1",
+      "O2"
+    ]
+  },
+  "openexr": {
+    "github_url": "https://github.com/AcademySoftwareFoundation/openexr/",
+    "conan_url": "https://conan.io/center/recipes/openexr",
+    "versions": [
+      "2.5.7",
+      "2.5.9",
+      "3.1.7",
+      "3.1.9",
+      "3.2.1",
+      "3.2.2",
+      "3.2.3",
+      "3.2.4",
+      "3.3.0",
+      "3.3.1",
+      "3.3.2"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "openh264": {
+    "github_url": "https://github.com/cisco/openh264",
+    "conan_url": "https://conan.io/center/recipes/openh264",
+    "versions": [
+      "2.1.1",
+      "2.3.1",
+      "2.4.1",
+      "2.5.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "Od",
+      "O1"
+    ]
+  },
+  "openjpeg": {
+    "github_url": "https://github.com/uclouvain/openjpeg",
+    "conan_url": "https://conan.io/center/recipes/openjpeg",
+    "versions": [
+      "2.3.1",
+      "2.4.0",
+      "2.5.0",
+      "2.5.1",
+      "2.5.2"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1",
+      "Od"
+    ]
+  },
+  "openmesh": {
+    "github_url": "https://github.com/OpenMesh-org/OpenMesh",
+    "conan_url": "https://conan.io/center/recipes/openmesh",
+    "versions": [
+      "8.1"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2"
+    ]
+  },
+  "opus": {
+    "github_url": "https://github.com/xiph/opus",
+    "conan_url": "https://conan.io/center/recipes/opus",
+    "versions": [
+      "1.4"
+    ],
+    "build_modes": [
+      "RelWithDebInfo",
+      "Debug"
+    ],
+    "optimizations": [
+      "O2",
+      "Od",
+      "O1"
+    ]
+  },
+  "pcre": {
+    "github_url": "https://github.com/PCRE/pcre",
+    "conan_url": "https://conan.io/center/recipes/pcre",
+    "versions": [
+      "8.45"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1"
+    ]
+  },
+  "pcre2": {
+    "github_url": "https://github.com/PCRE2Project/pcre2",
+    "conan_url": "https://conan.io/center/recipes/pcre2",
+    "versions": [
+      "10.32",
+      "10.33",
+      "10.35",
+      "10.36",
+      "10.37",
+      "10.39",
+      "10.42",
+      "10.43",
+      "10.44"
+    ],
+    "build_modes": [
+      "Debug",
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od",
+      "O2",
+      "O1"
+    ]
+  },
+  "pdf-writer": {
+    "github_url": "https://github.com/galkahana/PDF-Writer",
+    "conan_url": "https://conan.io/center/recipes/pdf-writer",
+    "versions": [
+      "4.5.12",
+      "4.6.1",
+      "4.6.2",
+      "4.6.3",
+      "4.6.4",
+      "4.6.6",
+      "4.6.7"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2"
+    ]
+  },
+  "perfetto": {
+    "github_url": "https://github.com/google/perfetto",
+    "conan_url": "https://conan.io/center/recipes/perfetto",
+    "versions": [
+      "43.1",
+      "48.1"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1",
+      "Od"
+    ]
+  },
+  "pkgconf": {
+    "github_url": "https://github.com/pkgconf/pkgconf",
+    "conan_url": "https://conan.io/center/recipes/pkgconf",
+    "versions": [
+      "1.7.3",
+      "1.7.4",
+      "1.9.3",
+      "1.9.5",
+      "2.0.2",
+      "2.0.3",
+      "2.1.0",
+      "2.2.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo",
+      "Debug"
+    ],
+    "optimizations": [
+      "Od",
+      "O1",
+      "O2"
+    ]
+  },
+  "plutovg": {
+    "github_url": "https://github.com/sammycage/plutovg",
+    "conan_url": "https://conan.io/center/recipes/plutovg",
+    "versions": [
+      "0.0.1",
+      "0.0.4",
+      "0.0.5",
+      "0.0.6",
+      "0.0.7",
+      "0.0.8",
+      "cci.20220103",
+      "cci.20221030"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "poly2tri": {
+    "github_url": "https://github.com/greenm01/poly2tri",
+    "conan_url": "https://conan.io/center/recipes/poly2tri",
+    "versions": [
+      "cci.20130502"
+    ],
+    "build_modes": [
+      "Debug",
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od",
+      "O1",
+      "O2"
+    ]
+  },
+  "proj": {
+    "github_url": "https://github.com/OSGeo/PROJ",
+    "conan_url": "https://conan.io/center/recipes/proj",
+    "versions": [
+      "6.3.1"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1",
+      "Od"
+    ]
+  },
+  "protobuf": {
+    "github_url": "https://github.com/protocolbuffers/protobuf",
+    "conan_url": "https://conan.io/center/recipes/protobuf",
+    "versions": [
+      "3.20.3",
+      "3.21.12"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "pthreadpool": {
+    "github_url": "https://github.com/Maratyszcza/pthreadpool",
+    "conan_url": "https://conan.io/center/recipes/pthreadpool",
+    "versions": [
+      "cci.20231129"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "Od",
+      "O1"
+    ]
+  },
+  "pthreads4w": {
+    "github_url": "",
+    "conan_url": "https://conan.io/center/recipes/pthreads4w",
+    "versions": [
+      "3.0.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "Od",
+      "O2"
+    ]
+  },
+  "pugixml": {
+    "github_url": "https://github.com/zeux/pugixml",
+    "conan_url": "https://conan.io/center/recipes/pugixml",
+    "versions": [
+      "1.11",
+      "1.12.1",
+      "1.13",
+      "1.14"
+    ],
+    "build_modes": [
+      "RelWithDebInfo",
+      "Debug"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "pystring": {
+    "github_url": "https://github.com/imageworks/pystring",
+    "conan_url": "https://conan.io/center/recipes/pystring",
+    "versions": [
+      "1.1.4"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od",
+      "O2",
+      "O1"
+    ]
+  },
+  "qcbor": {
+    "github_url": "https://github.com/laurencelundblade/QCBOR",
+    "conan_url": "https://conan.io/center/recipes/qcbor",
+    "versions": [
+      "1.1",
+      "1.2",
+      "1.3",
+      "1.4.1",
+      "1.5"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "qhull": {
+    "github_url": "https://github.com/qhull/qhull",
+    "conan_url": "https://conan.io/center/recipes/qhull",
+    "versions": [
+      "8.0.1"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2"
+    ]
+  },
+  "qr-code-generator": {
+    "github_url": "https://github.com/nayuki/QR-Code-generator",
+    "conan_url": "https://conan.io/center/recipes/qr-code-generator",
+    "versions": [
+      "1.4.0",
+      "1.5.0",
+      "1.6.0",
+      "1.7.0",
+      "1.8.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "Od",
+      "O2"
+    ]
+  },
+  "quirc": {
+    "github_url": "https://github.com/dlbeer/quirc",
+    "conan_url": "https://conan.io/center/recipes/quirc",
+    "versions": [
+      "1.2"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1"
+    ]
+  },
+  "rabbitmq-c": {
+    "github_url": "https://github.com/alanxz/rabbitmq-c",
+    "conan_url": "https://conan.io/center/recipes/rabbitmq-c",
+    "versions": [
+      "0.10.0",
+      "0.11.0",
+      "0.13.0",
+      "0.14.0",
+      "0.15.0",
+      "0.9.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1",
+      "Od"
+    ]
+  },
+  "rapidyaml": {
+    "github_url": "https://github.com/biojppm/rapidyaml",
+    "conan_url": "https://conan.io/center/recipes/rapidyaml",
+    "versions": [
+      "0.3.0",
+      "0.4.0",
+      "0.4.1",
+      "0.5.0",
+      "0.7.0",
+      "0.7.1"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1",
+      "Od"
+    ]
+  },
+  "raylib": {
+    "github_url": "https://github.com/raysan5/raylib",
+    "conan_url": "https://conan.io/center/recipes/raylib",
+    "versions": [
+      "3.5.0",
+      "4.0.0",
+      "5.5"
+    ],
+    "build_modes": [
+      "RelWithDebInfo",
+      "Debug"
+    ],
+    "optimizations": [
+      "O1",
+      "Od",
+      "O2"
+    ]
+  },
+  "re2": {
+    "github_url": "https://github.com/google/re2",
+    "conan_url": "https://conan.io/center/recipes/re2",
+    "versions": [
+      "2021-09-01",
+      "2021-11-01",
+      "2022-02-01",
+      "2022-06-01",
+      "2022-12-01",
+      "2023-02-01",
+      "2023-03-01",
+      "2023-06-02",
+      "2023-07-01",
+      "2023-08-01",
+      "2023-09-01",
+      "2023-11-01",
+      "2024-03-01",
+      "2024-07-02"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1",
+      "Od"
+    ]
+  },
+  "redis-plus-plus": {
+    "github_url": "https://github.com/sewenew/redis-plus-plus",
+    "conan_url": "https://conan.io/center/recipes/redis-plus-plus",
+    "versions": [
+      "1.2.3",
+      "1.3.10",
+      "1.3.11",
+      "1.3.12",
+      "1.3.13",
+      "1.3.2",
+      "1.3.3",
+      "1.3.7",
+      "1.3.8"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1"
+    ]
+  },
+  "rmlui": {
+    "github_url": "https://github.com/mikke89/RmlUi/",
+    "conan_url": "https://conan.io/center/recipes/rmlui",
+    "versions": [
+      "4.1",
+      "4.2",
+      "4.3",
+      "4.4"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1"
+    ]
+  },
+  "roaring": {
+    "github_url": "https://github.com/RoaringBitmap/CRoaring",
+    "conan_url": "https://conan.io/center/recipes/roaring",
+    "versions": [
+      "2.1.2",
+      "3.0.0",
+      "4.0.0",
+      "4.1.0",
+      "4.1.1",
+      "4.1.2",
+      "4.1.7",
+      "4.2.0",
+      "4.2.1"
+    ],
+    "build_modes": [
+      "RelWithDebInfo",
+      "Debug"
+    ],
+    "optimizations": [
+      "Od",
+      "O2",
+      "O1"
+    ]
+  },
+  "rocksdb": {
+    "github_url": "https://github.com/facebook/rocksdb",
+    "conan_url": "https://conan.io/center/recipes/rocksdb",
+    "versions": [
+      "6.29.5",
+      "8.8.1",
+      "9.4.0",
+      "9.5.2",
+      "9.7.4"
+    ],
+    "build_modes": [
+      "RelWithDebInfo",
+      "Debug"
+    ],
+    "optimizations": [
+      "O1",
+      "Od",
+      "O2"
+    ]
+  },
+  "rotor": {
+    "github_url": "https://github.com/basiliscos/cpp-rotor",
+    "conan_url": "https://conan.io/center/recipes/rotor",
+    "versions": [
+      "0.23",
+      "0.24",
+      "0.25",
+      "0.28",
+      "0.29",
+      "0.31"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od",
+      "O2",
+      "O1"
+    ]
+  },
+  "sail": {
+    "github_url": "https://github.com/HappySeaFox/sail",
+    "conan_url": "https://conan.io/center/recipes/sail",
+    "versions": [
+      "0.9.0",
+      "0.9.1",
+      "0.9.4",
+      "0.9.5",
+      "0.9.6"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2"
+    ]
+  },
+  "screen_capture_lite": {
+    "github_url": "https://github.com/smasherprog/screen_capture_lite",
+    "conan_url": "https://conan.io/center/recipes/screen_capture_lite",
+    "versions": [
+      "17.1.1173",
+      "17.1.1327",
+      "17.1.1369",
+      "17.1.613"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od",
+      "O1",
+      "O2"
+    ]
+  },
+  "sdl": {
+    "github_url": "https://github.com/libsdl-org/SDL",
+    "conan_url": "https://conan.io/center/recipes/sdl",
+    "versions": [
+      "2.0.20",
+      "2.28.3",
+      "2.28.5",
+      "2.30.4",
+      "2.30.5",
+      "2.30.6",
+      "2.30.7",
+      "2.30.8",
+      "2.30.9"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "Od",
+      "O1"
+    ]
+  },
+  "sdl_ttf": {
+    "github_url": "https://github.com/libsdl-org/SDL_ttf",
+    "conan_url": "https://conan.io/center/recipes/sdl_ttf",
+    "versions": [
+      "2.20.1",
+      "2.20.2",
+      "2.22.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "Od",
+      "O2"
+    ]
+  },
+  "sfml": {
+    "github_url": "https://github.com/SFML/SFML",
+    "conan_url": "https://conan.io/center/recipes/sfml",
+    "versions": [
+      "2.5.1",
+      "2.6.0",
+      "2.6.1",
+      "2.6.2"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "simdjson": {
+    "github_url": "https://github.com/simdjson/simdjson",
+    "conan_url": "https://conan.io/center/recipes/simdjson",
+    "versions": [
+      "3.10.0",
+      "3.10.1",
+      "3.11.2",
+      "3.2.0",
+      "3.3.0",
+      "3.5.0",
+      "3.6.4",
+      "3.7.0",
+      "3.8.0",
+      "3.9.1",
+      "3.9.2",
+      "3.9.3"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1",
+      "Od"
+    ]
+  },
+  "simdutf": {
+    "github_url": "https://github.com/simdutf/simdutf",
+    "conan_url": "https://conan.io/center/recipes/simdutf",
+    "versions": [
+      "4.0.5",
+      "5.3.1",
+      "5.3.2",
+      "5.3.5",
+      "5.3.7",
+      "5.4.15",
+      "5.5.0",
+      "5.6.0",
+      "5.6.2",
+      "5.6.3"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1",
+      "Od"
+    ]
+  },
+  "snappy": {
+    "github_url": "https://github.com/google/snappy",
+    "conan_url": "https://conan.io/center/recipes/snappy",
+    "versions": [
+      "1.1.10",
+      "1.1.7",
+      "1.1.8",
+      "1.1.9",
+      "1.2.0",
+      "1.2.1"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1",
+      "Od"
+    ]
+  },
+  "sobjectizer": {
+    "github_url": "https://github.com/Stiffstream/sobjectizer",
+    "conan_url": "https://conan.io/center/recipes/sobjectizer",
+    "versions": [
+      "5.7.4",
+      "5.7.5",
+      "5.8.1",
+      "5.8.3"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "Od",
+      "O1"
+    ]
+  },
+  "spdlog": {
+    "github_url": "https://github.com/gabime/spdlog",
+    "conan_url": "https://conan.io/center/recipes/spdlog",
+    "versions": [
+      "1.10.0",
+      "1.11.0",
+      "1.12.0",
+      "1.13.0",
+      "1.14.0",
+      "1.14.1",
+      "1.15.0",
+      "1.8.5",
+      "1.9.1",
+      "1.9.2"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "Od",
+      "O1"
+    ]
+  },
+  "spirv-cross": {
+    "github_url": "https://github.com/KhronosGroup/SPIRV-Cross",
+    "conan_url": "https://conan.io/center/recipes/spirv-cross",
+    "versions": [
+      "1.3.239.0",
+      "1.3.243.0",
+      "1.3.246.1",
+      "1.3.250.1",
+      "1.3.261.1",
+      "1.3.268.0",
+      "1.3.296.0",
+      "cci.20211113"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "spirv-tools": {
+    "github_url": "https://github.com/KhronosGroup/SPIRV-Tools",
+    "conan_url": "https://conan.io/center/recipes/spirv-tools",
+    "versions": [
+      "1.2.198.0",
+      "1.3.236.0",
+      "1.3.239.0",
+      "1.3.243.0",
+      "1.3.261.1",
+      "1.3.268.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1",
+      "Od"
+    ]
+  },
+  "sqlite3": {
+    "github_url": "https://github.com/sqlite/sqlite",
+    "conan_url": "https://conan.io/center/recipes/sqlite3",
+    "versions": [
+      "3.36.0",
+      "3.37.2",
+      "3.38.5",
+      "3.39.0",
+      "3.39.1",
+      "3.39.2",
+      "3.39.3",
+      "3.39.4",
+      "3.40.0",
+      "3.40.1",
+      "3.41.1",
+      "3.41.2",
+      "3.42.0",
+      "3.43.0",
+      "3.43.1",
+      "3.43.2",
+      "3.44.0",
+      "3.44.1",
+      "3.44.2",
+      "3.45.0",
+      "3.45.1",
+      "3.45.2",
+      "3.45.3",
+      "3.46.0",
+      "3.46.1",
+      "3.47.0",
+      "3.47.1",
+      "3.49.1"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "Od",
+      "O2"
+    ]
+  },
+  "strawberryperl": {
+    "github_url": "https://github.com/StrawberryPerl/Perl-Dist-Strawberry",
+    "conan_url": "https://conan.io/center/recipes/strawberryperl",
+    "versions": [
+      "5.32.1.1"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "Od",
+      "O2"
+    ]
+  },
+  "taglib": {
+    "github_url": "https://github.com/taglib/taglib",
+    "conan_url": "https://conan.io/center/recipes/taglib",
+    "versions": [
+      "1.12",
+      "1.13",
+      "1.13.1"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1"
+    ]
+  },
+  "tcl": {
+    "github_url": "https://github.com/tcltk/tcl",
+    "conan_url": "https://conan.io/center/recipes/tcl",
+    "versions": [
+      "8.6.13"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "tinyspline": {
+    "github_url": "https://github.com/msteinbeck/tinyspline",
+    "conan_url": "https://conan.io/center/recipes/tinyspline",
+    "versions": [
+      "0.2.0",
+      "0.3.0",
+      "0.4.0",
+      "0.5.0",
+      "0.6.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od",
+      "O1",
+      "O2"
+    ]
+  },
+  "tinyxml2": {
+    "github_url": "https://github.com/leethomason/tinyxml2",
+    "conan_url": "https://conan.io/center/recipes/tinyxml2",
+    "versions": [
+      "10.0.0",
+      "7.1.0",
+      "8.0.0",
+      "9.0.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od",
+      "O2",
+      "O1"
+    ]
+  },
+  "tracy": {
+    "github_url": "https://github.com/wolfpld/tracy",
+    "conan_url": "https://conan.io/center/recipes/tracy",
+    "versions": [
+      "0.11.0",
+      "0.11.1",
+      "0.8.1",
+      "0.8.2.1",
+      "0.9",
+      "0.9.1",
+      "cci.20220130"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "tree-sitter": {
+    "github_url": "https://github.com/tree-sitter/tree-sitter",
+    "conan_url": "https://conan.io/center/recipes/tree-sitter",
+    "versions": [
+      "0.20.8",
+      "0.21.0",
+      "0.22.1",
+      "0.22.5",
+      "0.22.6",
+      "0.23.0",
+      "0.23.1",
+      "0.24.3",
+      "0.24.4"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od",
+      "O1",
+      "O2"
+    ]
+  },
+  "tree-sitter-c": {
+    "github_url": "https://github.com/tree-sitter/tree-sitter-c",
+    "conan_url": "https://conan.io/center/recipes/tree-sitter-c",
+    "versions": [
+      "0.20.1",
+      "0.20.2",
+      "0.20.3",
+      "0.20.7",
+      "0.23.1",
+      "0.23.2"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od",
+      "O2",
+      "O1"
+    ]
+  },
+  "uriparser": {
+    "github_url": "https://github.com/uriparser/uriparser",
+    "conan_url": "https://conan.io/center/recipes/uriparser",
+    "versions": [
+      "0.9.3",
+      "0.9.4",
+      "0.9.5",
+      "0.9.6",
+      "0.9.7",
+      "0.9.8"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "utf8proc": {
+    "github_url": "https://github.com/JuliaStrings/utf8proc",
+    "conan_url": "https://conan.io/center/recipes/utf8proc",
+    "versions": [
+      "2.5.0",
+      "2.6.0",
+      "2.6.1",
+      "2.7.0",
+      "2.8.0",
+      "2.9.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od",
+      "O2",
+      "O1"
+    ]
+  },
+  "vorbis": {
+    "github_url": "https://github.com/xiph/vorbis",
+    "conan_url": "https://conan.io/center/recipes/vorbis",
+    "versions": [
+      "1.3.7"
+    ],
+    "build_modes": [
+      "RelWithDebInfo",
+      "Debug"
+    ],
+    "optimizations": [
+      "Od",
+      "O2",
+      "O1"
+    ]
+  },
+  "vsg": {
+    "github_url": "https://github.com/vsg-dev/VulkanSceneGraph",
+    "conan_url": "https://conan.io/center/recipes/vsg",
+    "versions": [
+      "1.0.0",
+      "1.0.3",
+      "1.0.5",
+      "1.0.9"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od",
+      "O1",
+      "O2"
+    ]
+  },
+  "vulkan-loader": {
+    "github_url": "https://github.com/KhronosGroup/Vulkan-Loader",
+    "conan_url": "https://conan.io/center/recipes/vulkan-loader",
+    "versions": [
+      "1.3.239.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od",
+      "O2",
+      "O1"
+    ]
+  },
+  "vvenc": {
+    "github_url": "https://github.com/fraunhoferhhi/vvenc",
+    "conan_url": "https://conan.io/center/recipes/vvenc",
+    "versions": [
+      "1.10.0",
+      "1.11.1",
+      "1.12.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "wasm-micro-runtime": {
+    "github_url": "https://github.com/bytecodealliance/wasm-micro-runtime",
+    "conan_url": "https://conan.io/center/recipes/wasm-micro-runtime",
+    "versions": [
+      "1.2.2",
+      "1.2.3",
+      "1.3.3",
+      "2.2.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1"
+    ]
+  },
+  "wasmtime": {
+    "github_url": "https://github.com/bytecodealliance/wasmtime",
+    "conan_url": "https://conan.io/center/recipes/wasmtime",
+    "versions": [
+      "12.0.2",
+      "16.0.0",
+      "18.0.3",
+      "19.0.2",
+      "20.0.1",
+      "21.0.0",
+      "7.0.0",
+      "9.0.1"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "Od",
+      "O2"
+    ]
+  },
+  "winflexbison": {
+    "github_url": "https://github.com/lexxmark/winflexbison",
+    "conan_url": "https://conan.io/center/recipes/winflexbison",
+    "versions": [
+      "2.5.24",
+      "2.5.25"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "Od",
+      "O1"
+    ]
+  },
+  "xerces-c": {
+    "github_url": "https://github.com/apache/xerces-c",
+    "conan_url": "https://conan.io/center/recipes/xerces-c",
+    "versions": [
+      "3.2.2",
+      "3.2.3",
+      "3.2.4",
+      "3.2.5",
+      "3.3.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "xz_utils": {
+    "github_url": "https://github.com/tukaani-project/xz",
+    "conan_url": "https://conan.io/center/recipes/xz_utils",
+    "versions": [
+      "5.2.10",
+      "5.2.4",
+      "5.2.5",
+      "5.4.0",
+      "5.4.2",
+      "5.4.4",
+      "5.4.5"
+    ],
+    "build_modes": [
+      "Release"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "yaml-cpp": {
+    "github_url": "https://github.com/jbeder/yaml-cpp",
+    "conan_url": "https://conan.io/center/recipes/yaml-cpp",
+    "versions": [
+      "0.8.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "O2"
+    ]
+  },
+  "yasm": {
+    "github_url": "https://github.com/yasm/yasm",
+    "conan_url": "https://conan.io/center/recipes/yasm",
+    "versions": [
+      "1.3.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo",
+      "Debug"
+    ],
+    "optimizations": [
+      "O1",
+      "O2",
+      "Od"
+    ]
+  },
+  "yyjson": {
+    "github_url": "https://github.com/ibireme/yyjson",
+    "conan_url": "https://conan.io/center/recipes/yyjson",
+    "versions": [
+      "0.10.0",
+      "0.9.0"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O1",
+      "Od",
+      "O2"
+    ]
+  },
+  "z3": {
+    "github_url": "https://github.com/Z3Prover/z3",
+    "conan_url": "https://conan.io/center/recipes/z3",
+    "versions": [
+      "4.10.2",
+      "4.11.2",
+      "4.12.1",
+      "4.12.2",
+      "4.12.4",
+      "4.13.0",
+      "4.9.1"
+    ],
+    "build_modes": [
+      "Debug",
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od",
+      "O2",
+      "O1"
+    ]
+  },
+  "zeromq": {
+    "github_url": "https://github.com/zeromq/libzmq",
+    "conan_url": "https://conan.io/center/recipes/zeromq",
+    "versions": [
+      "4.3.2",
+      "4.3.3",
+      "4.3.4",
+      "4.3.5"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1",
+      "Od"
+    ]
+  },
+  "zimg": {
+    "github_url": "https://github.com/sekrit-twc/zimg",
+    "conan_url": "https://conan.io/center/recipes/zimg",
+    "versions": [
+      "2.9.3",
+      "3.0.1",
+      "3.0.2",
+      "3.0.3",
+      "3.0.4",
+      "3.0.5"
+    ],
+    "build_modes": [
+      "Release"
+    ],
+    "optimizations": [
+      "O1",
+      "Od",
+      "O2"
+    ]
+  },
+  "zlib": {
+    "github_url": "https://github.com/madler/zlib",
+    "conan_url": "https://conan.io/center/recipes/zlib",
+    "versions": [
+      "1.2.11",
+      "1.2.12",
+      "1.2.13",
+      "1.3",
+      "1.3.1"
+    ],
+    "build_modes": [
+      "RelWithDebInfo",
+      "Debug"
+    ],
+    "optimizations": [
+      "Od",
+      "O1",
+      "O2"
+    ]
+  },
+  "zlib-ng": {
+    "github_url": "https://github.com/zlib-ng/zlib-ng",
+    "conan_url": "https://conan.io/center/recipes/zlib-ng",
+    "versions": [
+      "2.0.2",
+      "2.0.5",
+      "2.0.6",
+      "2.0.7",
+      "2.1.2",
+      "2.1.3",
+      "2.1.4",
+      "2.1.5",
+      "2.1.6",
+      "2.1.7",
+      "2.2.1",
+      "2.2.2"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od",
+      "O1",
+      "O2"
+    ]
+  },
+  "zstd": {
+    "github_url": "https://github.com/facebook/zstd",
+    "conan_url": "https://conan.io/center/recipes/zstd",
+    "versions": [
+      "1.5.0",
+      "1.5.2",
+      "1.5.5",
+      "1.5.6"
+    ],
+    "build_modes": [
+      "Debug",
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od",
+      "O1",
+      "O2"
+    ]
+  },
+  "zulu-openjdk": {
+    "github_url": "https://github.com/zulu-openjdk/zulu-openjdk",
+    "conan_url": "https://conan.io/center/recipes/zulu-openjdk",
+    "versions": [
+      "11.0.19",
+      "21.0.1"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "Od",
+      "O2",
+      "O1"
+    ]
+  },
+  "zxing-cpp": {
+    "github_url": "https://github.com/zxing-cpp/zxing-cpp",
+    "conan_url": "https://conan.io/center/recipes/zxing-cpp",
+    "versions": [
+      "1.0.8",
+      "1.3.0",
+      "1.4.0",
+      "2.0.0",
+      "2.1.0",
+      "2.2.1"
+    ],
+    "build_modes": [
+      "RelWithDebInfo"
+    ],
+    "optimizations": [
+      "O2",
+      "O1",
+      "Od"
+    ]
+  }
+}
