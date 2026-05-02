@@ -489,6 +489,20 @@ class DBManager:
             session.execute(update_stmt)
             session.commit()
 
+    def fail_sibling_statuses(self, repo_id: int, exclude_status_id: int, msg: str = "Sibling build failed") -> int:
+        """Mark all INIT b_status rows for the same repo as FAILED, excluding the given status_id."""
+        with Session(self.engine) as session:
+            update_stmt = (
+                update(Status)
+                .values(build_status=BuildStatus.FAILED, build_msg=msg, mod_timestamp=time.time())
+                .where(Status.repo_id == repo_id)
+                .where(Status.id != exclude_status_id)
+                .where(Status.build_status == BuildStatus.INIT)
+            )
+            result = session.execute(update_stmt)
+            session.commit()
+            return result.rowcount
+
 # Unused
 
     # def query_repo_info(self, command: str) -> Tuple:

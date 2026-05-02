@@ -635,7 +635,18 @@ class LinuxBuildStrategy(BuildStrategy):
                                             file_table, dwarf_info, cu_base_addr)
 
     def _extract_dwarf_info(self, binfile):
-        """Extract DWARF debug info from a single ELF binary."""
+        """Extract DWARF debug info from a single ELF binary.
+
+        Skips binaries larger than DWARF_SIZE_LIMIT (default 150 MB) to avoid
+        OOM during extraction — loading every CU's functions + source lines
+        into Python memory is roughly 10-20x the binary size.
+        """
+        size_limit = int(os.environ.get('DWARF_SIZE_LIMIT', 150 * 1024 * 1024))
+        try:
+            if os.path.getsize(binfile) > size_limit:
+                return None
+        except OSError:
+            return None
         with open(binfile, 'rb') as f:
             try:
                 elf = ELFFile(f)

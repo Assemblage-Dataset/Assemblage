@@ -99,6 +99,7 @@ class RepoDO(SQLModel, table=True):
     priority: PriorityStatus = Field(default=PriorityStatus.LOW, index=True)
     size: int = 0
     build_system: str = Field(max_length=255, default="", index=True)
+    license: str = Field(max_length=255, default="")
     statuses: List[Status] = Relationship(
         back_populates="project", sa_relationship_kwargs={"cascade": "all, delete"})
 

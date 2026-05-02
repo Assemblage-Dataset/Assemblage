@@ -68,8 +68,8 @@ services:
       name: scraper_0
       TYPE: scraper
       SCRAPER_POLICY: continuous
-    # env_file:
-    #   - secrets.env
+    env_file:
+      - secrets.env
     restart: unless-stopped
     deploy:
       resources:

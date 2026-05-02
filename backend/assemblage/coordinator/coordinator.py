@@ -568,6 +568,13 @@ class Coordinator:
                     self.info_successes += 1
                 elif recv_msg.status == BuildStatus.FAILED:
                     self.info_failures += 1
+                    # Fail all other INIT tasks for the same repo
+                    skipped = self.db_man.fail_sibling_statuses(
+                        task.repo_id, recv_msg.task_id,
+                        msg="Sibling build failed")
+                    if skipped > 0:
+                        self.info_failures += skipped
+                        logger.info(f"Skipped {skipped} sibling tasks for repo {task.repo_id}")
                 if (self.info_successes + self.info_failures) % 100 == 0:
                     logger.info(f"Builds completed: {self.info_successes + self.info_failures} ({self.info_successes} successes, {self.info_failures} failures)")
 

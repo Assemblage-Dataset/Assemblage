@@ -58,6 +58,14 @@ docker-compose-tui.yml
 
 # temporarily
 frontend/
-binaries
+binaries*
 
-*dataset*
+*dataset
+
+# deephistory: runtime data only — source code under deephistory/ stays tracked
+deephistory/binaries/
+deephistory/claims/
+deephistory/progress/
+deephistory/deephistory/
+deephistory/*.sqlite*
+!deephistory/packages.json
