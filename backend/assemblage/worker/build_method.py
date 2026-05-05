@@ -525,13 +525,17 @@ class LinuxBuildStrategy(BuildStrategy):
         return file_table
 
     def _resolve_die_name(self, die, _depth=0):
-        """Get function name, following DW_AT_abstract_origin/DW_AT_specification."""
+        """Get function name, preferring DW_AT_linkage_name (full mangled
+        symbol — disambiguates C++ overloads), falling back to DW_AT_name,
+        then following DW_AT_abstract_origin/DW_AT_specification.
+        """
         if _depth > 5:
             return None
-        name_attr = die.attributes.get('DW_AT_name')
-        if name_attr:
-            val = name_attr.value
-            return val.decode('utf-8', errors='replace') if isinstance(val, bytes) else val
+        for direct_tag in ('DW_AT_linkage_name', 'DW_AT_MIPS_linkage_name', 'DW_AT_name'):
+            attr = die.attributes.get(direct_tag)
+            if attr:
+                val = attr.value
+                return val.decode('utf-8', errors='replace') if isinstance(val, bytes) else val
         for ref_tag in ('DW_AT_abstract_origin', 'DW_AT_specification'):
             ref_attr = die.attributes.get(ref_tag)
             if ref_attr:
@@ -702,6 +706,9 @@ class LinuxBuildStrategy(BuildStrategy):
                         state = entry.state
                         if state is None or state.end_sequence:
                             continue
+                        # Skip compiler-synthetic entries (no real source line).
+                        if not state.line:
+                            continue
 
                         rva = state.address - base_addr
                         file_idx = state.file
@@ -738,7 +745,12 @@ class LinuxBuildStrategy(BuildStrategy):
                             raw_entries[i + 1]['rva_int'] -
                             raw_entries[i]['rva_int'])
 
-                    # Assign line entries to functions using bisect
+                    # Assign line entries to functions. Walk back through
+                    # all intervals whose start <= entry_rva and pick the
+                    # innermost (highest start) one that contains entry_rva.
+                    # This handles overlap between an outer subprogram and
+                    # its inlined subroutine — which the previous
+                    # `if s < entry_rva: break` exited prematurely on.
                     for entry in raw_entries:
                         entry_rva = entry['rva_int']
                         idx = bisect.bisect_right(
@@ -747,8 +759,6 @@ class LinuxBuildStrategy(BuildStrategy):
                             s, e, fi = intervals[idx]
                             if s <= entry_rva < e:
                                 all_functions[fi]['lines'].append(entry)
-                                break
-                            if s < entry_rva:
                                 break
                             idx -= 1
 
