@@ -34,7 +34,6 @@ import requests
 from assemblage.config import ScraperSettings
 from assemblage.worker.base_worker import BasicWorker
 from assemblage.mq.client import MQQueue, MessageClient, Connection
-# from assemblage.analyze.tokenchecker import TokenChecker
 from assemblage.analyze.analyze import get_build_system
 from assemblage.consts import (
     SCRAPER_PAGE_SIZE,

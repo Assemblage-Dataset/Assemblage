@@ -11,7 +11,6 @@ jmespath==1.0.1  # required for S3/MinIO/AWS objects
 # cachetools==5.5.2   # required by Google requirements
 #certifi==2021.10.8  # used by Google and FastAPI
 #charset-normalizer==2.0.7
-clang==20.1.5  # used by clang builder
 #click==8.3.0   # used by CLI
 #cycler==0.10.0
 #Deprecated==1.2.13
@@ -24,9 +23,6 @@ clang==20.1.5  # used by clang builder
 # Pygments==2.19.2  # FastAPI
 #mdurl==0.1.2  #fastapi
 #httpx==0.28.1  # used by fastapi
-GitPython==3.1.27  # used by vcpkg 
-gitdb==4.0.12   # used by gitpython
-smmap==5.0.2  # used by gitpython
 # google-api-core==2.25.1
 # google-api-python-client==2.181.0
 # google-auth==2.40.3
@@ -37,11 +33,9 @@ smmap==5.0.2  # used by gitpython
 idna==3.10  # used by email validator? figure this one out
 # markdown-it-py==4.0.0  # unused by any of the main stuff -- personal preference i suppose if you want to use cmdline tools
 #oauthlib==3.3.1 # for google stuff
-packaging==25.0  # required by pipdeptree
 pefile==2021.9.3  # used by builder and loader
 future==0.18.2  # required by pefile
 pika==1.2.0  # required for rabbitmq
-pipdeptree==2.28.0  # useful for dependency management
 # proto-plus==1.26.1  # only possibly used in the unused cloner_new worker
 # protobuf==6.31.1  # only possibly used in the unused cloner_new worker
 psycopg2-binary==2.9.10  # used by DB/SQL
@@ -65,7 +59,6 @@ requests==2.32.5
 # rsa==4.9.1  # google
 s3transfer==0.14.0  # boto requirement
 #sentry-sdk==2.38.0 # fastapi
-setuptools==80.9.0  # i assume it's needed somewhere, don't know where
 # shellingham==1.5.4 # fastapi
 six==1.16.0  # needed by boto
 #sniffio==1.3.1 # watchfiles dep
@@ -83,5 +76,4 @@ urllib3==2.5.0  # boto
 #uvloop==0.21.0; sys_platform != "win32"   # required for website only (FastAPI) - not currently used
 #watchfiles==1.1.0
 #websockets==15.0.1
-wheel==0.45.1
 #wrapt==1.17.3
