@@ -26,13 +26,10 @@ import pefile
 from typing import Tuple
 
 
-from assemblage.worker.profile import AWSProfile
 from assemblage.consts import BuildStatus, CloneStatus, BINPATH, RuntimeEnv
 from assemblage.windows.parsers.proj import Project
 from assemblage.windows.parsers.sln import Solution
 from assemblage.analyze.analyze import get_build_system
-from assemblage.worker.ctags_parser import get_functions as ctags_get_functions
-from assemblage.worker.clang_parser import get_functions as clang_get_functions
 logger = logging.getLogger(__name__)
 
 # should this be a class function  change this to debug=False by default
@@ -566,7 +563,19 @@ class LinuxBuildStrategy(BuildStrategy):
         return ""
 
     def _resolve_address_ranges(self, die, dwarf_info, cu_base_addr):
-        """Get absolute address ranges from DW_AT_ranges or low_pc/high_pc."""
+        """Get absolute address ranges from DW_AT_ranges or low_pc/high_pc.
+
+        Handles three pyelftools entry shapes correctly:
+          * BaseAddressEntry — has `base_address`; sets the current base PC.
+          * RangeEntry with `is_absolute=True` — begin/end are already
+            absolute (they aren't a base selector).
+          * RangeEntry with `is_absolute=False` — begin/end are offsets
+            relative to the current base.
+        Critical for DWARF v5 binaries which use BaseAddressEntry +
+        offset_pair extensively; the previous logic conflated
+        absolute-RangeEntry with the base-selector and produced fictional
+        ranges.
+        """
         ranges_attr = die.attributes.get('DW_AT_ranges')
         if ranges_attr is not None:
             try:
@@ -576,14 +585,18 @@ class LinuxBuildStrategy(BuildStrategy):
                     result = []
                     base = cu_base_addr
                     for entry in rl:
+                        if hasattr(entry, 'base_address'):
+                            base = entry.base_address
+                            continue
                         if (getattr(entry, 'begin_offset', None) == 0 and
                                 getattr(entry, 'end_offset', None) == 0):
                             break
                         if getattr(entry, 'is_absolute', False):
-                            base = entry.begin_offset
-                            continue
-                        begin = getattr(entry, 'begin_offset', 0) + base
-                        end = getattr(entry, 'end_offset', 0) + base
+                            begin = entry.begin_offset
+                            end = entry.end_offset
+                        else:
+                            begin = entry.begin_offset + base
+                            end = entry.end_offset + base
                         if begin < end:
                             result.append((begin, end))
                     return result if result else None
@@ -612,6 +625,13 @@ class LinuxBuildStrategy(BuildStrategy):
             if func_name:
                 addr_ranges = self._resolve_address_ranges(
                     die, dwarf_info, cu_base_addr)
+                # Drop ranges that don't overlap any executable section.
+                exec_ranges = getattr(self, '_exec_ranges', None)
+                if addr_ranges and exec_ranges:
+                    addr_ranges = [
+                        (b, e) for (b, e) in addr_ranges
+                        if any(b < se and e > ss for ss, se in exec_ranges)
+                    ]
                 if addr_ranges:
                     source_file = self._resolve_die_source(die, file_table)
                     ranges_info = []
@@ -662,6 +682,21 @@ class LinuxBuildStrategy(BuildStrategy):
 
             dwarf_info = elf.get_dwarf_info()
             base_addr = self._get_elf_base_address(elf)
+
+            # Build the union of executable section ranges. Some compilers
+            # emit DW_TAG_subprogram DIEs at low_pc=0 for STL template
+            # instantiations that never made it into the binary; those
+            # addresses fall outside any SHF_EXECINSTR section and must be
+            # filtered to avoid storing bogus zero-RVA functions.
+            exec_ranges = []
+            for sec in elf.iter_sections():
+                if sec['sh_flags'] & 0x4:  # SHF_EXECINSTR
+                    start = sec['sh_addr']
+                    if start == 0:
+                        continue
+                    exec_ranges.append((start, start + sec['sh_size']))
+            exec_ranges.sort()
+            self._exec_ranges = exec_ranges
 
             all_functions = []  # list of function dicts (avoids name collision)
             file_cache = {}
