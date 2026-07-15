@@ -1,12 +1,8 @@
+import os
 from logging.config import fileConfig
 
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
-
 from alembic import context
-import alembic_postgresql_enum
-
-import os
+from sqlalchemy import engine_from_config, pool
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -16,14 +12,19 @@ config = context.config
 # This line sets up loggers basically.
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
-db_host = os.getenv('DB_HOST', 'assemblage-db')
-db_port = os.getenv('DB_PORT','5432')
-db_name: str = os.getenv('POSTGRES_DATABASE','assemblage')
+db_host = os.getenv("DB_HOST", "assemblage-db")
+db_port = os.getenv("DB_PORT", "5432")
+db_name: str = os.getenv("POSTGRES_DATABASE", "assemblage")
 db_user: str = "assemblage"
-db_pass: str = os.getenv('POSTGRES_PASSWORD', 'assemblage')
+db_pass: str = os.getenv("POSTGRES_PASSWORD", "assemblage")
 
 # Allows us to optionally overwrite the database URL to our own url (as we do in the integration test setup)
-if config.get_main_option("sqlalchemy.url") in (None, "", "driver://", "driver://user:pass@localhost/dbname"):
+if config.get_main_option("sqlalchemy.url") in (
+    None,
+    "",
+    "driver://",
+    "driver://user:pass@localhost/dbname",
+):
     DATABASE_URL = f"postgresql+psycopg2://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
 
     config.set_main_option("sqlalchemy.url", DATABASE_URL)
@@ -32,7 +33,8 @@ if config.get_main_option("sqlalchemy.url") in (None, "", "driver://", "driver:/
 # add your model's MetaData object here
 # for 'autogenerate' support
 from assemblage.database.models import *
-from sqlmodel import SQLModel                       
+from sqlmodel import SQLModel
+
 target_metadata = SQLModel.metadata
 
 # other values from the config, defined by the needs of env.py,
@@ -79,9 +81,7 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection, target_metadata=target_metadata
-        )
+        context.configure(connection=connection, target_metadata=target_metadata)
 
         with context.begin_transaction():
             context.run_migrations()

@@ -5,25 +5,29 @@ Yihao Sun
 """
 
 # import datetime
-from contextlib import contextmanager
 import inspect
+import logging
+
 # import random
 import time
-import logging
-from typing import Any, Generator
+from collections.abc import Generator
+from contextlib import contextmanager
+from typing import Any
+
+from sqlalchemy import create_engine, inspect, select, update
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+from sqlalchemy.sql.expression import desc
+
+from assemblage.consts import BIN_DIR, BuildStatus, CloneStatus
+from assemblage.data.url_patch import patch_url
+
+# from sqlalchemy.sql import Insert
+from assemblage.database.models import BuildDO, BuildOpt, RepoDO, ScraperData, Status
 
 # import sqlalchemy.exc
 from assemblage.mq.messages import BuilderRegIn, BuilderTaskOut
-from assemblage.data.url_patch import patch_url
-from sqlalchemy import select, update, create_engine, func, or_, inspect
-from sqlalchemy.orm import Session
-from sqlalchemy.sql.expression import desc, true
-from sqlalchemy.exc import IntegrityError
 
-# from sqlalchemy.sql import Insert
-
-from assemblage.database.models import BuildDO, BuildOpt, RepoDO, Status, ScraperData
-from assemblage.consts import BuildStatus, CloneStatus, BIN_DIR
 # from typing import Tuple
 
 
@@ -31,26 +35,26 @@ logger = logging.getLogger(__name__)
 
 
 class DBManager:
-    """ manager for db query and connection
-        TODO: Depreciate this
+    """manager for db query and connection
+    TODO: Depreciate this
     """
 
     def __init__(self, db_addr):
         # create the DB manager, init called when Coordinator first __init__ to start the db
-        self.engine = create_engine(db_addr, echo=False,
-                                    pool_pre_ping=True,
-                                    connect_args={'connect_timeout': 100})
+        self.engine = create_engine(
+            db_addr, echo=False, pool_pre_ping=True, connect_args={"connect_timeout": 100}
+        )
         # if init and not self._check_db_exists():
         #     init_clean_database(db_addr)
 
     # Only used in bootstrap.py
     def tables_exist(self) -> bool:
-        '''
+        """
         only of use on first start up when the database has not been initialised
         do we want them auto creating if the len == 0?
         Returns:
             bool: returns true if any tables exist
-        '''
+        """
         with self.engine.connect() as conn:
             logger.info("Checking tables")
             inspector = inspect(conn)
@@ -58,10 +62,10 @@ class DBManager:
             return len(tables) > 0
 
     @contextmanager
-    def get_session(self) -> Generator[Session, Any, None]:# -> Generator[Any, Any, None]:
-        '''
+    def get_session(self) -> Generator[Session, Any, None]:  # -> Generator[Any, Any, None]:
+        """
         Creates an interator. Dont need to call commit on every session now. this handles it
-        '''
+        """
         with Session(self.engine) as session:
             try:
                 yield session
@@ -73,11 +77,11 @@ class DBManager:
                 session.close()
 
     def register_build_opt(self, regInfo: BuilderRegIn, assign_to_unset: bool = True) -> int:
-        '''
+        """
         Retrieve or create a build option from a builder registering.
         Matches on the original buildopt columns: platform, language,
         compiler_name, compiler_flag, build_system, build_command, library.
-        '''
+        """
         with self.get_session() as session:
             query = select(BuildOpt).where(
                 BuildOpt.platform == regInfo.platform,
@@ -104,7 +108,7 @@ class DBManager:
                     build_system=regInfo.build_system or "",
                     build_command=regInfo.build_command or "",
                     library=regInfo.library,
-                    enable=True
+                    enable=True,
                 )
                 session.add(res)
                 session.flush()
@@ -115,7 +119,10 @@ class DBManager:
                 status_ = []
                 for repo in repos:
                     repo: RepoDO
-                    if regInfo.build_system in repo[0].build_system or regInfo.build_system == "all":
+                    if (
+                        regInfo.build_system in repo[0].build_system
+                        or regInfo.build_system == "all"
+                    ):
                         new_status = Status(
                             repo_id=repo[0].id,
                             build_opt_id=res.id,
@@ -123,90 +130,87 @@ class DBManager:
                         status_.append(new_status)
                 session.bulk_save_objects(status_)
             session.commit()
-                
-            
+
             if not res.id:
                 raise ValueError("Failed to create build opt ")
             return res.id
 
     def get_build_opt_language(self, build_opt_id: int):
-        with self.get_session() as session: 
+        with self.get_session() as session:
             query = select(BuildOpt).where(BuildOpt.id == build_opt_id)
             result = session.execute(query).first()
-            if not result: 
-                raise ValueError(f"Invalid build option: {build_opt_id}")                
+            if not result:
+                raise ValueError(f"Invalid build option: {build_opt_id}")
             build_opt: BuildOpt = result[0]
             return build_opt.language
-        
 
-
-# new code. above to be copied out of this dir eventually into ../database
+    # new code. above to be copied out of this dir eventually into ../database
     def shutdown(self):
-        """ Close DB connection """
+        """Close DB connection"""
         self.engine.dispose()
 
     # Unused except in tests
     def get_projects_row_by_id(self, repo_id) -> RepoDO:
-        """ Get the (readonly) project row (containing name, owner, url, etc) matching the given ID"""
+        """Get the (readonly) project row (containing name, owner, url, etc) matching the given ID"""
         with self.get_session() as session:
             query = select(RepoDO).where(RepoDO.id == repo_id)
             result = session.execute(query).first()
-            project : RepoDO = result[0]
-            session.expunge(project)  # turns "project" into a readonly object w/ no DB connection: prevents errors
+            project: RepoDO = result[0]
+            session.expunge(
+                project
+            )  # turns "project" into a readonly object w/ no DB connection: prevents errors
             return project
 
     def get_status_row_by_id(self, status_id) -> Status:
-        """ Get the (readonly) status row (contains build and clone status, etc) with its primary key id matching the provided ID.
-            Note that the id of a Status entry does NOT correspond to the ID of its corresponding Project entry. 
-            Status.id does match BuildDO.status_id.
+        """Get the (readonly) status row (contains build and clone status, etc) with its primary key id matching the provided ID.
+        Note that the id of a Status entry does NOT correspond to the ID of its corresponding Project entry.
+        Status.id does match BuildDO.status_id.
         """
         with self.get_session() as session:
             query = select(Status).where(Status.id == status_id)
             result = session.execute(query).first()
-            status : Status = result[0]
+            status: Status = result[0]
             session.expunge(status)
             return status
 
     def find_one_undisasmed_bin(self):
-        """ pop first binary haven't run ddisasm """
+        """pop first binary haven't run ddisasm"""
         with Session(self.engine) as session:
-            query = select(BuildDO).where(
-                BuildDO.disasmed == False).limit(1)
+            query = select(BuildDO).where(BuildDO.disasmed == False).limit(1)
             result = session.execute(query)
             return result[0][0]
 
     def update_undisassembed_bin(self, bin_id):
-        """  set a binary disassembled """
+        """set a binary disassembled"""
         with Session(self.engine) as session:
-            query = update(BuildDO).values(
-                disasmed=True).where(BuildDO.id == bin_id)
+            query = update(BuildDO).values(disasmed=True).where(BuildDO.id == bin_id)
             session.execute(query)
 
     # unused
     def find_build_opt_by_id(self, opt_id) -> BuildOpt:
-        """ fetch a build object from database by it's id """
+        """fetch a build object from database by it's id"""
         with self.get_session() as session:
             query = select(BuildOpt).where(BuildOpt.id == opt_id)
             row = session.execute(query).first()
-            buildopt : BuildOpt = row[0]
+            buildopt: BuildOpt = row[0]
             session.expunge(buildopt)
             return buildopt
 
     # Used in coordinator in recycler
     def find_repo_by_status(self, clone_status, build_status, build_opt_id=None, limit=-1):
-        """ find possible build target repo by given build/clone info. returns array of rows"""
+        """find possible build target repo by given build/clone info. returns array of rows"""
         with Session(self.engine) as session:
             query = select(RepoDO).join_from(RepoDO, Status)
             if build_opt_id is not None:
                 query = query.where(
                     Status.clone_status == clone_status,
                     Status.build_status == build_status,
-                    Status.build_opt_id == build_opt_id
+                    Status.build_opt_id == build_opt_id,
                 )
             else:
                 query = query.where(
-                    Status.clone_status == clone_status,
-                    Status.build_status == build_status)
+                    Status.clone_status == clone_status, Status.build_status == build_status
+                )
             query = query.order_by(desc(Status.priority))
             if limit > 0:
                 result = session.execute(query.limit(limit))
@@ -230,24 +234,31 @@ class DBManager:
     # TODO: refactor to add repodo size limit
     # unused
     def find_status_by_status_code(self, clone_status, build_opt_id, build_status=None, limit=-1):
-        """ find lines of record in status table by specific build/clone status code """
+        """find lines of record in status table by specific build/clone status code"""
         with Session(self.engine) as session:
             # make sure every type of worker has same chance to work, and also make query faster
-            enabled_opt_query = select(BuildOpt).where(
-                BuildOpt.id == build_opt_id)
+            enabled_opt_query = select(BuildOpt).where(BuildOpt.id == build_opt_id)
             boptid = session.execute(enabled_opt_query).all()
             build_sys = boptid[0][0].build_system
             if build_status:
-                query = select(Status).join_from(Status, RepoDO).where(
-                    Status.clone_status == clone_status,
-                    Status.build_status == build_status,
-                    Status.build_opt_id == build_opt_id,
+                query = (
+                    select(Status)
+                    .join_from(Status, RepoDO)
+                    .where(
+                        Status.clone_status == clone_status,
+                        Status.build_status == build_status,
+                        Status.build_opt_id == build_opt_id,
+                    )
                 )
             else:
-                query = select(Status).join_from(Status, RepoDO).where(
-                    Status.clone_status == clone_status,
-                    Status.build_opt_id == build_opt_id,
-                    RepoDO.build_system.contains(build_sys),
+                query = (
+                    select(Status)
+                    .join_from(Status, RepoDO)
+                    .where(
+                        Status.clone_status == clone_status,
+                        Status.build_opt_id == build_opt_id,
+                        RepoDO.build_system.contains(build_sys),
+                    )
                 )
             if limit > 0:
                 query = query.limit(limit)
@@ -259,71 +270,75 @@ class DBManager:
 
     # Used in coordinator
     def reset_timeout_status(self, timeout):
-        """ reset all timeout status record back to uncloned """
+        """reset all timeout status record back to uncloned"""
         with Session(self.engine) as session:
-            query = update(Status).values(
-                clone_status=CloneStatus.NOT_STARTED,
-                build_status=BuildStatus.INIT).where(
-                Status.clone_status == CloneStatus.PROCESSING,
+            query = (
+                update(Status)
+                .values(clone_status=CloneStatus.NOT_STARTED, build_status=BuildStatus.INIT)
+                .where(
+                    Status.clone_status == CloneStatus.PROCESSING,
+                )
             )
             session.execute(query)
             session.commit()
 
-
-    
     def get_dispatch_task(self, build_opt_id: int, reproduce_mode) -> BuilderTaskOut:
-        '''
-            Finds an un-dispatched task in the database and gets all of the matching rows
-        '''
+        """
+        Finds an un-dispatched task in the database and gets all of the matching rows
+        """
         with self.get_session() as session:
             # filter for unstarted tasks using this build config and limit to 1
-            query = select(Status).where(
-                Status.clone_status == CloneStatus.NOT_STARTED,
-                Status.build_status == BuildStatus.INIT,
-                Status.build_opt_id == build_opt_id,
-            ).limit(1)
+            query = (
+                select(Status)
+                .where(
+                    Status.clone_status == CloneStatus.NOT_STARTED,
+                    Status.build_status == BuildStatus.INIT,
+                    Status.build_opt_id == build_opt_id,
+                )
+                .limit(1)
+            )
             row = session.execute(query).first()
             if row is None:
                 return None
-            status : Status = row[0]
-            
-            # Get project referred to by the found status 
+            status: Status = row[0]
+
+            # Get project referred to by the found status
             query = select(RepoDO).where(RepoDO.id == status.repo_id)
-            project : RepoDO = session.execute(query).first()[0]
-            
+            project: RepoDO = session.execute(query).first()[0]
+
             # Get the build option of this project
             query = select(BuildOpt).where(BuildOpt.id == status.build_opt_id)
-            buildopt : BuildOpt = session.execute(query).first()[0]
+            buildopt: BuildOpt = session.execute(query).first()[0]
 
             ## all below this line isn't strictly db management code. could go in coordinator
 
             # Format certain fields as required for the BuilderTaskOut
             _url = patch_url(project.url)
-            _output_dir = f'{BIN_DIR}/{status.id}'
+            _output_dir = f"{BIN_DIR}/{status.id}"
             _updated_at = project.updated_at.strftime("%m/%d/%Y, %H:%M:%S")
 
             # Assemble build message
             build_message = BuilderTaskOut(
-                name = project.name,
-                url = _url,
-                task_id = status.id,
-                opt_id = buildopt.id,
-                output_dir = _output_dir,
-                repo_id = project.id,
-                updated_at = _updated_at,
-                build_system = project.build_system,
-                msg_time = time.time(),
-                compiler_flag = buildopt.compiler_flag,
+                name=project.name,
+                url=_url,
+                task_id=status.id,
+                opt_id=buildopt.id,
+                output_dir=_output_dir,
+                repo_id=project.id,
+                updated_at=_updated_at,
+                build_system=project.build_system,
+                msg_time=time.time(),
+                compiler_flag=buildopt.compiler_flag,
             )
             if reproduce_mode:
                 build_message.mod_timestamp = status.mod_timestamp
         return build_message
 
     def get_tasks_to_dispatch_on_opt(self, build_opt_id) -> int:
-        '''
-            Get how many tasks are left to dispatch on a given build option
-        '''
-    
+        """
+        Get how many tasks are left to dispatch on a given build option
+        """
+
         with self.get_session() as session:
             q = select(Status).where(
                 Status.clone_status == CloneStatus.NOT_STARTED,
@@ -332,9 +347,8 @@ class DBManager:
             )
 
             row = session.query(q.subquery()).count()
-            
-        return row
 
+        return row
 
     def ready_scraper_table(self) -> None:
         """
@@ -342,25 +356,25 @@ class DBManager:
         table with working scrapers. So clear all owner claims, as no scrapers are configured yet.
         """
         with self.get_session() as session:
-            query = update(ScraperData).values(
-                owner_uuid="")
+            query = update(ScraperData).values(owner_uuid="")
             session.execute(query)
             session.commit()
 
-    def register_scraper(self, worker_uuid : str, fallback_starttime : int, fallback_endtime : int) -> dict:
+    def register_scraper(
+        self, worker_uuid: str, fallback_starttime: int, fallback_endtime: int
+    ) -> dict:
         """
         Returns a start time and end time for scraper of given UUID. If there exists an unclaimed row of data in
-        the scraper data, claim it and return that row; otherwise, create a new row with the entered data and 
-        claim it for given UUID. 
+        the scraper data, claim it and return that row; otherwise, create a new row with the entered data and
+        claim it for given UUID.
         """
         with self.get_session() as session:
-
             # check to see if we already registered this scraper
             query = select(ScraperData).where(ScraperData.owner_uuid == worker_uuid)
             result = session.execute(query).scalars().first()
             if result != None:
                 logger.debug(f"Duplicate scraper registration request sent by {worker_uuid}")
-                
+
                 return {
                     "start_time": result.start_time,
                     "end_time": result.end_time,
@@ -368,46 +382,45 @@ class DBManager:
 
             query = select(ScraperData).where(ScraperData.owner_uuid == "")
             result = session.execute(query).scalars().first()
-            
+
             if result == None:
                 # must generate a row for this entry
-                logger.info(f"Generating new configuration for scraper {worker_uuid} from environment variables/defaults...")
+                logger.info(
+                    f"Generating new configuration for scraper {worker_uuid} from environment variables/defaults..."
+                )
                 new_row = ScraperData(
-                    start_time=fallback_starttime, 
-                    end_time=fallback_endtime, 
-                    owner_uuid=worker_uuid
+                    start_time=fallback_starttime, end_time=fallback_endtime, owner_uuid=worker_uuid
                 )
                 session.add(new_row)
                 result = new_row
 
             else:
                 # claim the result's row
-                logger.debug(f"Assigning existing config option {result.id} to scraper {worker_uuid}")
+                logger.debug(
+                    f"Assigning existing config option {result.id} to scraper {worker_uuid}"
+                )
                 result.owner_uuid = worker_uuid
 
-            
             return {
                 "start_time": result.start_time,
                 "end_time": result.end_time,
             }
-        
-        
-    def update_scraper(self, worker_uuid : str, start_time : int, fallback_endtime : int):
+
+    def update_scraper(self, worker_uuid: str, start_time: int, fallback_endtime: int):
         """
-        Update the stored start time, presumably progressing it toward the end time. 
+        Update the stored start time, presumably progressing it toward the end time.
         """
         with self.get_session() as session:
-
             query = select(ScraperData).where(ScraperData.owner_uuid == worker_uuid)
             result = session.execute(query).scalars().first()
-            
+
             if result == None:
                 # must generate a row for this entry
-                logger.warning(f"Could not find preexisting row for scraper {worker_uuid}. Generating new config option.")
+                logger.warning(
+                    f"Could not find preexisting row for scraper {worker_uuid}. Generating new config option."
+                )
                 new_row = ScraperData(
-                    start_time=start_time, 
-                    end_time=fallback_endtime, 
-                    owner_uuid=worker_uuid
+                    start_time=start_time, end_time=fallback_endtime, owner_uuid=worker_uuid
                 )
                 session.add(new_row)
 
@@ -415,9 +428,6 @@ class DBManager:
                 # update the start time
                 logger.debug(f"Old start time is {result.start_time}, new time is {start_time}")
                 result.start_time = start_time
-
-            
-            
 
     # Unused
 
@@ -464,32 +474,42 @@ class DBManager:
 
     # Used in coordinator
 
-    def update_repo_status(self, url=None, opt_id=None, status_id=None, build_time=-1,
-                           build_status=None, build_msg='', clone_status=None,
-                           clone_msg='', commit_hexsha='') -> None:
-        """ update the build/clone status of a repo for one build option """
-        status_val = {'mod_timestamp': time.time(), 'build_time': build_time}
+    def update_repo_status(
+        self,
+        url=None,
+        opt_id=None,
+        status_id=None,
+        build_time=-1,
+        build_status=None,
+        build_msg="",
+        clone_status=None,
+        clone_msg="",
+        commit_hexsha="",
+    ) -> None:
+        """update the build/clone status of a repo for one build option"""
+        status_val = {"mod_timestamp": time.time(), "build_time": build_time}
         if status_id is None:
             logger.warning("Status ID is required argument for update_repo_status")
         if build_status is None and clone_status is None:
             logger.info("No build status or clone status given, DB not updated")
             return
         if build_status is not None:
-            status_val['build_status'] = build_status
-            status_val['build_msg'] = build_msg
+            status_val["build_status"] = build_status
+            status_val["build_msg"] = build_msg
         if clone_status is not None:
-            status_val['clone_status'] = clone_status
-            status_val['clone_msg'] = clone_msg
-        status_val['commit_hexsha'] = commit_hexsha
+            status_val["clone_status"] = clone_status
+            status_val["clone_msg"] = clone_msg
+        status_val["commit_hexsha"] = commit_hexsha
         with Session(self.engine) as session:
             # fetch qualified repo
             # if status_id is not None:
-            update_stmt = update(Status).values(
-                **status_val).where(Status.id == status_id)
+            update_stmt = update(Status).values(**status_val).where(Status.id == status_id)
             session.execute(update_stmt)
             session.commit()
 
-    def fail_sibling_statuses(self, repo_id: int, exclude_status_id: int, msg: str = "Sibling build failed") -> int:
+    def fail_sibling_statuses(
+        self, repo_id: int, exclude_status_id: int, msg: str = "Sibling build failed"
+    ) -> int:
         """Mark all INIT b_status rows for the same repo as FAILED, excluding the given status_id."""
         with Session(self.engine) as session:
             update_stmt = (
@@ -503,7 +523,7 @@ class DBManager:
             session.commit()
             return result.rowcount
 
-# Unused
+    # Unused
 
     # def query_repo_info(self, command: str) -> Tuple:
     #     """
@@ -588,7 +608,6 @@ class DBManager:
         with Session(self.engine) as session:
             # looking for if a repo exists
             try:
-                
                 # Filter out keys that aren't in the RepoDO model
                 valid_keys = {c.name for c in RepoDO.__table__.columns}
                 filtered_msg = {k: v for k, v in repos_msg.items() if k in valid_keys}
@@ -597,29 +616,33 @@ class DBManager:
                 session.add(repo)
                 session.flush()
                 if "id" in repos_msg and repo.id != repos_msg["id"]:
-                    logging.info("Insert repo error %s", repos_msg['url'])
+                    logging.info("Insert repo error %s", repos_msg["url"])
                     return 0
                 all_opt = session.execute(select(BuildOpt)).all()
                 # logging.info("%s", all_opt)
                 if not repoonly:
                     for opt in all_opt:
-                        if repos_msg['build_system'] in opt[0].build_system or opt[0].build_system == "all":
+                        if (
+                            repos_msg["build_system"] in opt[0].build_system
+                            or opt[0].build_system == "all"
+                        ):
                             _s = Status()
                             _s.clone_status = CloneStatus.NOT_STARTED
-                            _s.clone_msg = ''
+                            _s.clone_msg = ""
                             _s.build_status = BuildStatus.INIT
-                            _s.build_msg = ''
+                            _s.build_msg = ""
                             _s.build_opt_id = opt[0].id
                             _s.mod_timestamp = int(time.time())
                             _s.repo_id = repo.id
                             session.add(_s)
                 session.commit()
-            except IntegrityError as e:
-                logger.error("Duplicate Key Error in insert project. Known and need to be fixed. project skipped for now")
+            except IntegrityError:
+                logger.error(
+                    "Duplicate Key Error in insert project. Known and need to be fixed. project skipped for now"
+                )
                 return 0
             except Exception as e:
-                logger.error(
-                    f"Something else when wrong inserting project: {e}")
+                logger.error(f"Something else when wrong inserting project: {e}")
                 return 0
         return 1
 
@@ -629,9 +652,7 @@ class DBManager:
         add a binary record into database, 1 buildopt may have multiple binaries.
         and binaries may already deleted on disk
         """
-        new_bin = BuildDO(
-            file_name=file_name, description=description,
-            status_id=status_id)
+        new_bin = BuildDO(file_name=file_name, description=description, status_id=status_id)
         with Session(self.engine) as session:
             session.add(new_bin)
             session.commit()
@@ -644,14 +665,25 @@ class DBManager:
     #         session.commit()
 
     # Used in bootstrap
-    def add_build_option(self, id, platform, language, compiler_name, compiler_flag,
-                         build_system, build_command, library, enable=True) -> None:
+    def add_build_option(
+        self,
+        id,
+        platform,
+        language,
+        compiler_name,
+        compiler_flag,
+        build_system,
+        build_command,
+        library,
+        enable=True,
+    ) -> None:
         """
         insert build option into BuildOpt table for repo contain certain build system&language
         """
         with Session(self.engine) as session:
-            stmt = select(BuildOpt).where(BuildOpt.compiler_name ==
-                                          compiler_name)  # Adjust field as needed
+            stmt = select(BuildOpt).where(
+                BuildOpt.compiler_name == compiler_name
+            )  # Adjust field as needed
             opt = session.execute(stmt).scalar_one_or_none()
 
             if not opt:
@@ -673,10 +705,7 @@ class DBManager:
             for repo in repos:
                 # logging.info("Adding buildopt %s, repo is %s", build_system, repo[0].build_system)
                 if build_system in repo[0].build_system:
-                    new_status = Status(
-                        repo_id=repo[0].id,
-                        build_opt_id=opt.id
-                    )
+                    new_status = Status(repo_id=repo[0].id, build_opt_id=opt.id)
                     status_.append(new_status)
             session.bulk_save_objects(status_)
             session.commit()
@@ -811,4 +840,3 @@ class DBManager:
     #         build_options = session.query(BuildOpt).where(
     #             BuildOpt.enable == true()).all()
     #         yield from build_options
-

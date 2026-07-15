@@ -9,6 +9,7 @@ These are the compatibility contract for the typed-message rewrite:
 - enum-valued fields must encode as the lowercase member VALUES,
 - the scrape bundle must serialize as a BARE JSON ARRAY.
 """
+
 import json
 import unittest
 from pathlib import Path
@@ -55,7 +56,8 @@ class TestMessage(unittest.TestCase):
                 wire = golden(name)
                 parsed = cls.from_json(wire)
                 self.assertEqual(
-                    json.loads(parsed.to_json()), json.loads(wire),
+                    json.loads(parsed.to_json()),
+                    json.loads(wire),
                     f"{cls.__name__} does not round-trip its golden wire form",
                 )
 
@@ -73,13 +75,14 @@ class TestMessage(unittest.TestCase):
         self.assertEqual(enums["BuildStatus"]["SUCCESS"], "success")
         self.assertEqual(enums["CloneStatus"]["NOT_STARTED"], "not_started")
         # live encoding still matches the frozen table
-        for enum_cls, table in ((BuildStatus, enums["BuildStatus"]),
-                                (CloneStatus, enums["CloneStatus"])):
+        for enum_cls, table in (
+            (BuildStatus, enums["BuildStatus"]),
+            (CloneStatus, enums["CloneStatus"]),
+        ):
             for member_name, wire_value in table.items():
                 self.assertEqual(enum_cls[member_name].value, wire_value)
         # and an enum inside a message serializes as its value
-        msg = CloneStatusMsgIn(url="u", opt_id=1,
-                               status=CloneStatus.SUCCESS, msg="m", task_id=2)
+        msg = CloneStatusMsgIn(url="u", opt_id=1, status=CloneStatus.SUCCESS, msg="m", task_id=2)
         self.assertEqual(json.loads(msg.to_json())["status"], "success")
 
     def test_clone_status_parses_through_buildstatus(self):
@@ -99,8 +102,7 @@ class TestMessage(unittest.TestCase):
         self.assertEqual(parsed.task_id, 42)
 
     def test_scraper_control_out_matches_goldens(self):
-        for name in ("scraper_control_task_out_setup",
-                     "scraper_control_task_out_request"):
+        for name in ("scraper_control_task_out_setup", "scraper_control_task_out_request"):
             with self.subTest(fixture=name):
                 wire = json.loads(golden(name))
                 rebuilt = ScraperControlTaskOut(**wire)

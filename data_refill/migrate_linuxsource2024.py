@@ -10,14 +10,13 @@ Behavior:
   - on successful tar, rm -rf source
   - leave unmatched (md5 not in db) folders alone
 """
+
 import argparse
 import hashlib
-import json
 import os
 import shutil
 import sqlite3
 import subprocess
-import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -54,7 +53,10 @@ def short_commit(git_dir):
     try:
         out = subprocess.run(
             ["git", "-C", str(git_dir), "rev-parse", "--short=12", "HEAD"],
-            check=True, capture_output=True, text=True, timeout=30,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         sha = out.stdout.strip()
         if len(sha) == 12 and all(c in "0123456789abcdef" for c in sha):
@@ -96,7 +98,8 @@ def process_one(md5: str, url: str):
     try:
         rc = subprocess.run(
             ["tar", "-czf", str(tmp), "-C", str(src), "."],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         if rc.returncode != 0:
             if tmp.exists():
@@ -105,8 +108,10 @@ def process_one(md5: str, url: str):
         os.replace(tmp, dst)
     except Exception as e:
         if tmp.exists():
-            try: tmp.unlink()
-            except OSError: pass
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
         return ("exception", md5, url, repr(e)[:200])
     # tar exited clean -> remove source
     try:
@@ -128,7 +133,7 @@ def main():
     work = [(h, u) for h, u in mapping.items() if h in existing]
     work.sort()
     if args.limit:
-        work = work[:args.limit]
+        work = work[: args.limit]
 
     print(f"distinct urls in db: {len(mapping)}")
     print(f"folders in {SRC_ROOT.name}: {len(existing)}")
@@ -138,11 +143,21 @@ def main():
             print(f"  would process {h} -> {u}")
         return
 
-    counts = {"done":0, "skip_exists":0, "tar_fail":0, "rm_fail":0,
-              "missing_src":0, "bad_url":0, "no_commit":0, "exception":0}
+    counts = {
+        "done": 0,
+        "skip_exists": 0,
+        "tar_fail": 0,
+        "rm_fail": 0,
+        "missing_src": 0,
+        "bad_url": 0,
+        "no_commit": 0,
+        "exception": 0,
+    }
     t0 = time.time()
     with open(LOG_PATH, "a") as logf:
-        logf.write(f"--- run start {time.strftime('%Y-%m-%d %H:%M:%S')} workers={args.workers} total={len(work)} ---\n")
+        logf.write(
+            f"--- run start {time.strftime('%Y-%m-%d %H:%M:%S')} workers={args.workers} total={len(work)} ---\n"
+        )
         logf.flush()
         with ThreadPoolExecutor(max_workers=args.workers) as ex:
             futs = {ex.submit(process_one, h, u): (h, u) for h, u in work}
@@ -158,10 +173,12 @@ def main():
                     rate = done_n / elapsed if elapsed else 0
                     eta = (len(work) - done_n) / rate if rate else 0
                     summary = " ".join(f"{k}={v}" for k, v in counts.items() if v)
-                    print(f"[{done_n}/{len(work)}] {summary}  rate={rate:.1f}/s  eta={eta/60:.1f}m")
+                    print(
+                        f"[{done_n}/{len(work)}] {summary}  rate={rate:.1f}/s  eta={eta / 60:.1f}m"
+                    )
         logf.write(f"--- run end {time.strftime('%Y-%m-%d %H:%M:%S')} ---\n")
     elapsed = time.time() - t0
-    print(f"\nFinished in {elapsed/60:.1f}m")
+    print(f"\nFinished in {elapsed / 60:.1f}m")
     for k, v in counts.items():
         if v:
             print(f"  {k}: {v}")

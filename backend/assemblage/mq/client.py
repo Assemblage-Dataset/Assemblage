@@ -1,20 +1,28 @@
-'''
+"""
 message queue client for worker
 Alex Duly
-'''
+"""
 
-from dataclasses import dataclass
 import logging
 import time
-from typing import Any, Callable
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any
+
 import pika
-from pika.adapters.blocking_connection import BlockingChannel, BlockingConnection
 import pika.exceptions
+from pika.adapters.blocking_connection import BlockingChannel, BlockingConnection
 from pika.exchange_type import ExchangeType
 from pika.spec import PERSISTENT_DELIVERY_MODE
-from assemblage.consts import (CHANNEL_HEARTBEAT, CHANNEL_TIMEOUT,
-                               CHANNEL_CONNECTION_ATTEMPTS, CHANNEL_RETRY_DELAY, InputQueue, OutputQueue)
 
+from assemblage.consts import (
+    CHANNEL_CONNECTION_ATTEMPTS,
+    CHANNEL_HEARTBEAT,
+    CHANNEL_RETRY_DELAY,
+    CHANNEL_TIMEOUT,
+    InputQueue,
+    OutputQueue,
+)
 
 # this reduces a lot of errors
 logger = logging.getLogger(__name__)
@@ -22,7 +30,6 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class MQQueue:
-
     name: InputQueue | OutputQueue
     callback: Callable | None = None
     exchange_name: str | None = None
@@ -44,22 +51,27 @@ class MQQueue:
 
 
 class Connection:
-    '''
+    """
     Wrapper for individual connection channel
     Pika is not thread safe so require 1 connection/channel per thread
 
     Multiple queues per channel/connections
 
-    '''
+    """
 
-    def __init__(self, mq_host: str, mq_port: int, conn_name: str,
-                 channel_name: str,
-                 heartbeat: int = CHANNEL_HEARTBEAT, timeout: int = CHANNEL_TIMEOUT,
-                 connection_attempts: int = CHANNEL_CONNECTION_ATTEMPTS,
-                 retry_delay: int = CHANNEL_RETRY_DELAY,
-                 username: str = "guest",
-                 password: str = "guest",
-                 ):
+    def __init__(
+        self,
+        mq_host: str,
+        mq_port: int,
+        conn_name: str,
+        channel_name: str,
+        heartbeat: int = CHANNEL_HEARTBEAT,
+        timeout: int = CHANNEL_TIMEOUT,
+        connection_attempts: int = CHANNEL_CONNECTION_ATTEMPTS,
+        retry_delay: int = CHANNEL_RETRY_DELAY,
+        username: str = "guest",
+        password: str = "guest",
+    ):
         self.mq_host = mq_host
         self.mq_port = mq_port
         self.heartbeat = heartbeat
@@ -78,7 +90,7 @@ class Connection:
     def __str__(self):
         # channel/connection named the same typically
         return f"Connection: {self.conn_name}"
-    
+
     def get_queue(self, queue: MQQueue):
         self.ensure_connection()
         self.ensure_queue(queue)
@@ -92,9 +104,14 @@ class Connection:
 
         credentials = pika.PlainCredentials(self.username, self.password)
         conn_params = pika.ConnectionParameters(
-            host=self.mq_host, port=self.mq_port,
-            connection_attempts=self.connection_attempts, retry_delay=self.retry_delay,
-            heartbeat=self.heartbeat, blocked_connection_timeout=self.timeout, credentials=credentials)
+            host=self.mq_host,
+            port=self.mq_port,
+            connection_attempts=self.connection_attempts,
+            retry_delay=self.retry_delay,
+            heartbeat=self.heartbeat,
+            blocked_connection_timeout=self.timeout,
+            credentials=credentials,
+        )
         attempt = 0
         while auto_retry:
             try:
@@ -103,32 +120,29 @@ class Connection:
                     logger.debug(f"{self} now open ")
                     return self.conn
             except pika.exceptions.AMQPConnectionError as e:
-                logger.error(
-                    f"Failed to create connection {self}. RabbitMQ connection error: {e}")
+                logger.error(f"Failed to create connection {self}. RabbitMQ connection error: {e}")
             except Exception as e:
-                logger.error(
-                    f"Failed to create connection: {self}. Unexpected error: {e}")
+                logger.error(f"Failed to create connection: {self}. Unexpected error: {e}")
             attempt += 1
             if not auto_retry:
                 break
             if retry_attempts is not None and attempt >= retry_attempts:
                 logger.error(
-                    f"Connection {self} failed. Maximum retry attempts ({retry_attempts}) reached.")
+                    f"Connection {self} failed. Maximum retry attempts ({retry_attempts}) reached."
+                )
                 break
             else:
-                logger.info(
-                    f"Retrying to connect on {self} in {self.retry_delay}s")
+                logger.info(f"Retrying to connect on {self} in {self.retry_delay}s")
                 time.sleep(self.retry_delay)
                 break
-        raise ConnectionError(
-            f"Failed to connect on {self} to RabbitMQ {self.host}")
+        raise ConnectionError(f"Failed to connect on {self} to RabbitMQ {self.host}")
 
     def create_channel(self):
-        '''
+        """
         Create the channel on the given connection
         If it already exists and is open, then it returns that channel
 
-        '''
+        """
         if self.chan and self.chan.is_open:
             return self.chan
         self.chan = self.conn.channel()
@@ -137,32 +151,35 @@ class Connection:
         return self.chan
 
     def add_queue(self, queue: MQQueue):
-        '''
+        """
         Declare queue and add it to queue map if successful
-        '''
+        """
         logger.debug(f"Adding: {queue} ")
         if not queue:
             raise ValueError("Queue cannot be none")
 
         try:
             if not self.chan or self.chan.is_closed:
-                raise Exception(
-                    f"Channel is closed, cannot create queue on {self}")
-            self.chan.queue_declare(queue=queue.name, durable=queue.durable,
-                                      exclusive=queue.exclusive,
-                                      auto_delete=queue.auto_delete)
+                raise Exception(f"Channel is closed, cannot create queue on {self}")
+            self.chan.queue_declare(
+                queue=queue.name,
+                durable=queue.durable,
+                exclusive=queue.exclusive,
+                auto_delete=queue.auto_delete,
+            )
             logger.debug(f"Created queue: {queue} on {self}")
             if queue.exchange_name and queue.routing_key:
                 logger.debug(
-                    f"Binding routing key {queue.routing_key}  and exchange {queue.exchange_name}")
-                self.chan.queue_bind(
-                    queue.name, queue.exchange_name, queue.routing_key)
+                    f"Binding routing key {queue.routing_key}  and exchange {queue.exchange_name}"
+                )
+                self.chan.queue_bind(queue.name, queue.exchange_name, queue.routing_key)
             self.queues[queue.name] = queue
 
             return queue
         except Exception as e:
             logger.error(f"Failed to create queue {queue} on {self} - {e} ")
             import traceback
+
             traceback.print_exc()
 
     def ensure_connection(self):
@@ -178,90 +195,101 @@ class Connection:
         try:
             self.chan.queue_delete(queue.name)
             self.queues.pop(queue.name)
-        except Exception as e:
+        except Exception:
             logger.error(f"Failed to delete {queue} on {self}")
 
     def add_topic_exchange(self, exchange_name):
-        ''' add a topic exchanger to channel '''
-        self.chan.exchange_declare(exchange=exchange_name,
-                                   exchange_type=ExchangeType.topic)
+        """add a topic exchanger to channel"""
+        self.chan.exchange_declare(exchange=exchange_name, exchange_type=ExchangeType.topic)
+
     def ensure_exchange(self, exchange_name, exchange_type=ExchangeType.topic):
         if exchange_name != "":
-            self.chan.exchange_declare(exchange=exchange_name,
-                                   exchange_type=exchange_type)
-        
+            self.chan.exchange_declare(exchange=exchange_name, exchange_type=exchange_type)
+
     def ensure_queue(self, queue: MQQueue):
-        '''
+        """
         Ensures a queue exists
-        '''
-        queue_check= self.queues.get(queue.name)
+        """
+        queue_check = self.queues.get(queue.name)
         if not queue_check:
             queue = self.add_queue(queue)
-        else: 
+        else:
             self.chan.queue_declare(queue=queue.name, passive=True)
 
-
-    def send_msg(self, queue: MQQueue, msg, exchange='', reply_to: str | None = None, corr_id: str | None = None, skip_declare: bool = False):
-        '''
+    def send_msg(
+        self,
+        queue: MQQueue,
+        msg,
+        exchange="",
+        reply_to: str | None = None,
+        corr_id: str | None = None,
+        skip_declare: bool = False,
+    ):
+        """
         send message into the queue, should only be used on Producer connections
         Set skip_declare=True when the queue was already declared by the consumer
         (e.g. reply queues with non-default flags).
-        '''
+        """
         try:
             self.ensure_connection()
             if not skip_declare:
                 self.ensure_queue(queue)
             self.ensure_exchange(exchange)
-            self.chan.basic_publish(exchange=exchange,
-                                    routing_key=queue.routing_key,
-                                    body=msg,
-                                    properties=pika.BasicProperties(delivery_mode=PERSISTENT_DELIVERY_MODE,
-                                                                    reply_to=reply_to,
-                                                                    correlation_id=corr_id,
-                                                                    ))
+            self.chan.basic_publish(
+                exchange=exchange,
+                routing_key=queue.routing_key,
+                body=msg,
+                properties=pika.BasicProperties(
+                    delivery_mode=PERSISTENT_DELIVERY_MODE,
+                    reply_to=reply_to,
+                    correlation_id=corr_id,
+                ),
+            )
 
         except Exception as err:
             logger.error(f"failed to send message to {queue}: {err}")
 
     def publish_to_exchange(self, exchange_name: str, routing_key: str, body: dict[Any, Any]):
-        '''
+        """
         Send message to an exchange instead of a queue
-        
-        '''
-        try: 
+
+        """
+        try:
             self.ensure_connection()
             self.ensure_exchange(exchange_name)
             self.chan.basic_publish(
-                        exchange=exchange_name, routing_key=routing_key,
-                        body=body,
-                        properties=pika.BasicProperties(delivery_mode=2))
+                exchange=exchange_name,
+                routing_key=routing_key,
+                body=body,
+                properties=pika.BasicProperties(delivery_mode=2),
+            )
         except Exception as e:
-            logger.error(f"Failed to publish message to exchange: {e}") 
-            
+            logger.error(f"Failed to publish message to exchange: {e}")
 
     def consume(self, queue: MQQueue, auto_ack=False):
         """Consume from specified queue."""
         logger.debug(f"Consuming from {queue}")
 
         # woudl it be better to just pass in mqqueue type and deal with exception later?
-        
+
         try:
             self.ensure_connection()
             self.ensure_queue(queue)
             self.consume_tag = self.chan.basic_consume(
-                queue=queue.name,
-                on_message_callback=queue.callback,
-                auto_ack=auto_ack
+                queue=queue.name, on_message_callback=queue.callback, auto_ack=auto_ack
             )
             self.chan.start_consuming()
-        except (pika.exceptions.AMQPConnectionError,
-                pika.exceptions.StreamLostError,
-                ConnectionError) as e:
+        except (
+            pika.exceptions.AMQPConnectionError,
+            pika.exceptions.StreamLostError,
+            ConnectionError,
+        ) as e:
             logger.error(f"{self}: Connection lost during consume: {e}")
             raise  # client decides retry policy
         except Exception as e:
             logger.critical(
-                f"{self}: Unexpected consume failure ({type(e).__name__}): {e}", exc_info=True)
+                f"{self}: Unexpected consume failure ({type(e).__name__}): {e}", exc_info=True
+            )
             raise e
 
     def close(self):
@@ -276,14 +304,17 @@ class Connection:
 
 
 class MessageClient:
-    ''' a rabbit mq wrapper for all different worker 
+    """a rabbit mq wrapper for all different worker
     Essentially a wrapper for a connection for each application
-    '''
+    """
 
-    def __init__(self, mq_host: str, mq_port: int,
-                 username: str = "guest",
-                 password: str = "guest",
-                 ):
+    def __init__(
+        self,
+        mq_host: str,
+        mq_port: int,
+        username: str = "guest",
+        password: str = "guest",
+    ):
         """
                 Initialize MessageClient (does not connect yet)
         Args:
@@ -303,15 +334,22 @@ class MessageClient:
         # self.consume_tag = ''
         self.connections: dict[str, Connection] = {}
 
-    def create_connection(self, conn_name: str, channel_name: str, heartbeat: int = CHANNEL_HEARTBEAT, timeout: int = CHANNEL_TIMEOUT,
-                          connection_attempts: int = CHANNEL_CONNECTION_ATTEMPTS,
-                          retry_delay: int = CHANNEL_RETRY_DELAY, auto_connect: bool = True) -> Connection:
-        '''
-        Create a new connection, 
+    def create_connection(
+        self,
+        conn_name: str,
+        channel_name: str,
+        heartbeat: int = CHANNEL_HEARTBEAT,
+        timeout: int = CHANNEL_TIMEOUT,
+        connection_attempts: int = CHANNEL_CONNECTION_ATTEMPTS,
+        retry_delay: int = CHANNEL_RETRY_DELAY,
+        auto_connect: bool = True,
+    ) -> Connection:
+        """
+        Create a new connection,
         Defaults to auto connect
 
-        if auto connect, then the connection is automatically opened 
-        '''
+        if auto connect, then the connection is automatically opened
+        """
         connection: Connection | None
         connection = self.connections.get(conn_name)
 
@@ -325,18 +363,17 @@ class MessageClient:
             connection_attempts=connection_attempts,
             retry_delay=retry_delay,
             username=self.username,
-            password=self.password
+            password=self.password,
         )
         if auto_connect:
-            logger.debug(
-                f"Auto connect enabled, tryng to connect {connection} now")
+            logger.debug(f"Auto connect enabled, tryng to connect {connection} now")
             connection.connect()
 
         self.connections[conn_name] = connection
         return connection
 
     def delete_connection(self, conn_name):
-        ''' remove a connection, return True if closed/deleted or it doesnt exist'''
+        """remove a connection, return True if closed/deleted or it doesnt exist"""
         connection: Connection | None = self.connections.get(conn_name)
         if not connection:
             return True
@@ -349,7 +386,7 @@ class MessageClient:
             return False
 
     def get_connection(self, conn_name):
-        '''Fetch a connection from the client, will return None if not in the connection dict  '''
+        """Fetch a connection from the client, will return None if not in the connection dict"""
         return self.connections.get(conn_name)
 
     def start_consumer(self, conn: Connection, queue: MQQueue, auto_ack=False, retry_delay=10):

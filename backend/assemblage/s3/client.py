@@ -1,18 +1,21 @@
-'''
+"""
 S3 client. AWS and Minio compatible
 
 Alex Duly Nov 25
 
-'''
-import os
-import boto3
+"""
+
 import logging
+import os
+
+import boto3
 from botocore.exceptions import ClientError
+
 # from concurrent.futures import ThreadPoolExecutor
 # from boto3.s3.transfer import TransferConfig
 
 
-# needed for some weird config 
+# needed for some weird config
 # config = TransferConfig(use_threads=False)
 # Quiet boto3 logs
 logging.getLogger("boto3").setLevel(logging.WARNING)
@@ -22,7 +25,15 @@ logger = logging.getLogger(__name__)
 
 
 class S3Client:
-    def __init__(self, host, access_key: str, port: int,secret_access_key: str,  region_name: str = "us-east-1", https: bool = True):
+    def __init__(
+        self,
+        host,
+        access_key: str,
+        port: int,
+        secret_access_key: str,
+        region_name: str = "us-east-1",
+        https: bool = True,
+    ):
         self.access_key = access_key
         self.secret_access_key = secret_access_key
         scheme = "https" if https else "http"
@@ -33,7 +44,7 @@ class S3Client:
             aws_access_key_id=access_key,
             aws_secret_access_key=secret_access_key,
             region_name=region_name,
-            use_ssl=https
+            use_ssl=https,
         )
 
     def ensure_bucket(self, bucket_name: str):
@@ -41,16 +52,16 @@ class S3Client:
             self._s3.head_bucket(Bucket=bucket_name)
             logger.info(f"Bucket '{bucket_name}' already exists.")
         except ClientError as e:
-            error_code = e.response['Error']['Code']
-            if str(error_code) == '404':
+            error_code = e.response["Error"]["Code"]
+            if str(error_code) == "404":
                 logger.info(f"Creating bucket '{bucket_name}'...")
                 try:
                     self._s3.create_bucket(
                         Bucket=bucket_name,
-                        CreateBucketConfiguration={'LocationConstraint': self._s3.meta.region_name}
+                        CreateBucketConfiguration={"LocationConstraint": self._s3.meta.region_name},
                     )
                 except ClientError as create_err:
-                    if create_err.response['Error']['Code'] == 'BucketAlreadyOwnedByYou':
+                    if create_err.response["Error"]["Code"] == "BucketAlreadyOwnedByYou":
                         logger.info(f"Bucket '{bucket_name}' was created by another process.")
                     else:
                         raise
@@ -82,12 +93,14 @@ class S3Bucket:
 
         # Upload the file
         try:
-            self.client._s3.upload_file(file_name, self.bucket_name, object_name) #, config=Config)
+            self.client._s3.upload_file(
+                file_name, self.bucket_name, object_name
+            )  # , config=Config)
         except ClientError as e:
             logging.error(e)
             return False
         return True
-    
+
     def download_file(self, object_name: str, file_path: str) -> bool:
         """Download a file from S3 bucket.
 
@@ -118,5 +131,3 @@ class S3Bucket:
         except ClientError as e:
             logging.error(e)
             return False
-
-

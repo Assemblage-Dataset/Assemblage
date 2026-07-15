@@ -1,20 +1,20 @@
-
+import assemblage.consts as const
 import assemblage.data.db as db
 import sqlalchemy as sqla
-import assemblage.consts as const 
-from alembic import context, command
+from alembic import command
 from alembic.config import Config
 
+
 def setup():
-    '''
-        Upgrades the assemblage-test-db with alembic upgrade head. 
-    '''
+    """
+    Upgrades the assemblage-test-db with alembic upgrade head.
+    """
     # DBManager calls create_engine, which creates DB if it doesn't exist
-    dbm = db.DBManager(const.TEST_DB_ADDR)  
-    
+    dbm = db.DBManager(const.TEST_DB_ADDR)
+
     # Overwrite the default DB address with the test address
     config = Config("/app/alembic.ini")
-    config.set_main_option("sqlalchemy.url", const.TEST_DB_ADDR)  
+    config.set_main_option("sqlalchemy.url", const.TEST_DB_ADDR)
 
     # Build tables
     command.upgrade(config, "head")
@@ -28,7 +28,14 @@ def setup():
     tables = set(inspector.get_table_names())
 
     print(f"SETUP: Found tables: {tables}")
-    expected_tables = {'b_status', 'projects', 'alembic_version', 'binaries', 'buildopt', 'scrapers'}
+    expected_tables = {
+        "b_status",
+        "projects",
+        "alembic_version",
+        "binaries",
+        "buildopt",
+        "scrapers",
+    }
     assert expected_tables == tables
     print("SETUP: Success. Exit and restart with proper command.")
     print("OK")

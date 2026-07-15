@@ -9,13 +9,12 @@ The .comment section is unreliable on its own because clang binaries also
 embed "GCC: (Ubuntu ...)" strings from libc startup objects, so DWARF is the
 authoritative source. .comment is only used when DWARF is unavailable.
 """
+
 from __future__ import annotations
 
 import argparse
 import json
 import multiprocessing as mp
-import os
-import sys
 import time
 from pathlib import Path
 
@@ -136,7 +135,7 @@ def main():
                     flush=True,
                 )
 
-    print(f"[detect] done in {time.time()-t0:.1f}s -> {args.out}", flush=True)
+    print(f"[detect] done in {time.time() - t0:.1f}s -> {args.out}", flush=True)
     print(f"[detect] counts: {counts}", flush=True)
 
 

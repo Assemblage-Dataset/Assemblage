@@ -1,7 +1,11 @@
 import json
 
-
-from assemblage.consts import CloneStatus, BuildStatus, OutputQueue, ScraperMsgType, ScraperOutputPolicy
+from assemblage.consts import (
+    CloneStatus,
+    OutputQueue,
+    ScraperMsgType,
+    ScraperOutputPolicy,
+)
 
 
 class MQMsg:
@@ -10,23 +14,23 @@ class MQMsg:
 
     @classmethod
     def from_json(cls, json_str: str):
-        '''
+        """
         Create Build Registration
-        '''
+        """
         data = json.loads(json_str)
         return cls(**data)
 
     def to_json(self) -> str:
-        '''
+        """
         Create JSON string for rabbit mq to send
-        '''
+        """
         return json.dumps(self.__dict__)
 
     def __str__(self):
-        '''
+        """
         Maybe do a better print?
-        '''
-        return f'{type(self)}:{self.to_json()}'
+        """
+        return f"{type(self)}:{self.to_json()}"
 
     def __eq__(self, other):
         if isinstance(other, self.__class__):
@@ -35,15 +39,24 @@ class MQMsg:
 
 
 class BuilderRegIn(MQMsg):
-    '''
+    """
     Create Builder Registration RabbitMQ message
     Sent from Builder worker to Coordinator on first start up
-    '''
+    """
 
-    def __init__(self, name: str, uuid: str, compiler: str,
-                 library: str, language: str,
-                 platform: str, compiler_flag: str, build_command: str,
-                 build_system: str, **kwargs):
+    def __init__(
+        self,
+        name: str,
+        uuid: str,
+        compiler: str,
+        library: str,
+        language: str,
+        platform: str,
+        compiler_flag: str,
+        build_command: str,
+        build_system: str,
+        **kwargs,
+    ):
         super().__init__()
         self.name = name
         self.uuid = uuid
@@ -57,31 +70,40 @@ class BuilderRegIn(MQMsg):
 
 
 class BuilderRegOut(MQMsg):
-    '''
+    """
     Messages that the cooridnator sends to the builder worker
-    '''
+    """
 
     def __init__(self, build_opt_id: int, build_opt_queue: str | None = None):
         super().__init__()
         self.build_opt_id: int = build_opt_id
         # what build option queue to listen to for the worker
-        self.build_opt_queue: str = build_opt_queue if build_opt_queue else f"{OutputQueue.BUILD_OPT}_{build_opt_id}"
+        self.build_opt_queue: str = (
+            build_opt_queue if build_opt_queue else f"{OutputQueue.BUILD_OPT}_{build_opt_id}"
+        )
 
 
 class BuilderTaskOut(MQMsg):
-    '''
-        Message sent from coordinator to builder to build a repo (clone then build)
-    '''
+    """
+    Message sent from coordinator to builder to build a repo (clone then build)
+    """
 
-    def __init__(self, name: str, url: str, task_id: int,
-                 opt_id: int, output_dir: str, repo_id: int,
-                 updated_at: str, build_system: str,
-                 msg_time: float,
-                 compiler_flag: str = "",
-                 commit_hexsha: str | None = None,
-                 mod_timestamp: str | None = None,
-                 **kwargs,
-                 ):
+    def __init__(
+        self,
+        name: str,
+        url: str,
+        task_id: int,
+        opt_id: int,
+        output_dir: str,
+        repo_id: int,
+        updated_at: str,
+        build_system: str,
+        msg_time: float,
+        compiler_flag: str = "",
+        commit_hexsha: str | None = None,
+        mod_timestamp: str | None = None,
+        **kwargs,
+    ):
         super().__init__()
         self.name = name
         self.url = url
@@ -98,16 +120,27 @@ class BuilderTaskOut(MQMsg):
 
 
 class ScraperDataOutSingle(MQMsg):
-    '''
+    """
     Format of a single repository message.
     By default, the scraper sends these in bundles of 10 (see ScraperDataOutBundle)
-    '''
+    """
 
-    def __init__(self, name: str, url: str, language: str,
-                 owner_id: int, description: str,
-                 created_at: str, updated_at: str, size: int,
-                 build_system: str, branch: str, commit_hexsha: str | None = None,
-                 license: str | None = None, **kwargs):
+    def __init__(
+        self,
+        name: str,
+        url: str,
+        language: str,
+        owner_id: int,
+        description: str,
+        created_at: str,
+        updated_at: str,
+        size: int,
+        build_system: str,
+        branch: str,
+        commit_hexsha: str | None = None,
+        license: str | None = None,
+        **kwargs,
+    ):
         super().__init__()
         self.name: str = name
         self.url: str = url
@@ -127,9 +160,9 @@ class ScraperDataOutSingle(MQMsg):
 
 
 class ScraperDataOutBundle(MQMsg):
-    '''
-        Represents an array of ScraperDataOutSingle (as dicts). Sent from scraper to coordinator
-    '''
+    """
+    Represents an array of ScraperDataOutSingle (as dicts). Sent from scraper to coordinator
+    """
 
     # type of repo_array should be ScraperDataOutSingle[]
     def __init__(self, repo_array=[], update_time: int | None = None):
@@ -139,17 +172,13 @@ class ScraperDataOutBundle(MQMsg):
 
     def to_json(self):
         # returns a json that converts to an array of dictionaries
-        return json.dumps(
-            [r.to_dict() for r in self.repos]
-        )
+        return json.dumps([r.to_dict() for r in self.repos])
 
     @classmethod
     def from_json(cls, json_str: str):  # the json_str should represent a list of dictionaries
         # Creates a new ScraperDataOutSingle for each dict in the json str
         body = json.loads(json_str)
-        return cls(
-            [ScraperDataOutSingle(**r) for r in body]
-        )
+        return cls([ScraperDataOutSingle(**r) for r in body])
 
     def __iter__(self):  # iterate over self data
         for r in self.repos:
@@ -163,8 +192,7 @@ class ScraperDataOutBundle(MQMsg):
 
 
 class CloneStatusMsgIn(MQMsg):
-    def __init__(self, url: str, opt_id: int, status: CloneStatus,
-                 msg: str, task_id: int):
+    def __init__(self, url: str, opt_id: int, status: CloneStatus, msg: str, task_id: int):
         super().__init__()
         self.url = url
         self.opt_id = opt_id
@@ -174,8 +202,17 @@ class CloneStatusMsgIn(MQMsg):
 
 
 class BuildStatusMsgIn(MQMsg):
-    def __init__(self, url: str, opt_id: int, status: CloneStatus,
-                 msg: str, task_id: int, build_time: int, commit_hexsha: str, **kwargs):
+    def __init__(
+        self,
+        url: str,
+        opt_id: int,
+        status: CloneStatus,
+        msg: str,
+        task_id: int,
+        build_time: int,
+        commit_hexsha: str,
+        **kwargs,
+    ):
         super().__init__()
         self.url = url
         self.opt_id = opt_id
@@ -202,25 +239,27 @@ class PostAnalysisTaskMsgIn(MQMsg):
 
 # maybe set up config option that's "pause until setup received on default"?
 
-class ScraperControlTaskOut(MQMsg):
-    '''
-        The type of messages sent from coordinator to scraper. 
-        SETUP: provides setup info to scraper (currently just the start and end scrape times)
-        // UPDATE: change scraper configs (such as requesting a different method of returning scraped repos)
-    '''
 
-    def __init__(self,
-                 message_type: ScraperMsgType,
-                 start_time: int | None = None,
-                 end_time: int | None = None,
-                 policy: ScraperOutputPolicy | None = None,
-                 request_amount: int = -1,
-                 specific_recipient: bool = True,
-                 qualifiers=None
-                 ):
-        '''
-            If specific_recipient is false, this message can be handled by any scraper
-        '''
+class ScraperControlTaskOut(MQMsg):
+    """
+    The type of messages sent from coordinator to scraper.
+    SETUP: provides setup info to scraper (currently just the start and end scrape times)
+    // UPDATE: change scraper configs (such as requesting a different method of returning scraped repos)
+    """
+
+    def __init__(
+        self,
+        message_type: ScraperMsgType,
+        start_time: int | None = None,
+        end_time: int | None = None,
+        policy: ScraperOutputPolicy | None = None,
+        request_amount: int = -1,
+        specific_recipient: bool = True,
+        qualifiers=None,
+    ):
+        """
+        If specific_recipient is false, this message can be handled by any scraper
+        """
         super().__init__()
         self.message_type = message_type
         self.start_time = start_time
@@ -232,8 +271,7 @@ class ScraperControlTaskOut(MQMsg):
 
 
 class ScraperControlTaskIn(MQMsg):
-    def __init__(self,
-                 message_type: ScraperMsgType, start_time: int, end_time: int):
+    def __init__(self, message_type: ScraperMsgType, start_time: int, end_time: int):
         self.message_type = message_type
         self.start_time = start_time
         self.end_time = end_time

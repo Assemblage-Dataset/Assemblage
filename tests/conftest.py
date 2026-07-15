@@ -10,6 +10,7 @@ importantly — no S3 (an S3_HOST in the environment makes Coordinator.__init__
 construct a real boto3 client and open sockets; that was the source of the
 historical "16 errors" baseline when secrets.env leaked into test runs).
 """
+
 import os
 
 os.environ.setdefault("DB_HOST", "localhost")

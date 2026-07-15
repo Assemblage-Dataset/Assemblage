@@ -123,7 +123,7 @@ def main():
         or env.get("S3_SECRET_ACCESS_KEY")
         or "minioadmin"
     )
-    s3_https = (env.get("S3_HTTPS", "false").lower() in ("1", "true", "yes"))
+    s3_https = env.get("S3_HTTPS", "false").lower() in ("1", "true", "yes")
     bucket = env.get("S3_ARTIFACTS_BUCKET", "artifacts")
 
     # Add the CLI directory to sys.path so we can import minio_pipeline

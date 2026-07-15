@@ -3,14 +3,13 @@
 
 import getpass
 import json
-import os
 import re
 import subprocess
 import sys
 import termios
 import time
 import tty
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 try:
@@ -124,20 +123,23 @@ class TUIConfig:
 def write_secrets_env(cfg: TUIConfig) -> Path:
     path = PROJECT_ROOT / SECRETS_FILE
     path.write_text(
-        "\n".join([
-            "DB_HOST=assemblage-db",
-            "DB_PORT=5432",
-            "POSTGRES_DATABASE=assemblage",
-            "POSTGRES_USER=assemblage",
-            f"POSTGRES_PASSWORD={cfg.db_password}",
-            f"GITHUB_TOKEN={cfg.github_token}",
-            f"S3_ACCESS_KEY={cfg.s3_user}",
-            f"S3_SECRET_ACCESS_KEY={cfg.s3_pass}",
-            f"MINIO_ROOT_USER={cfg.s3_user}",
-            f"MINIO_ROOT_PASSWORD={cfg.s3_pass}",
-            "S3_HOST=minio",
-            "S3_HTTPS=false",
-        ]) + "\n"
+        "\n".join(
+            [
+                "DB_HOST=assemblage-db",
+                "DB_PORT=5432",
+                "POSTGRES_DATABASE=assemblage",
+                "POSTGRES_USER=assemblage",
+                f"POSTGRES_PASSWORD={cfg.db_password}",
+                f"GITHUB_TOKEN={cfg.github_token}",
+                f"S3_ACCESS_KEY={cfg.s3_user}",
+                f"S3_SECRET_ACCESS_KEY={cfg.s3_pass}",
+                f"MINIO_ROOT_USER={cfg.s3_user}",
+                f"MINIO_ROOT_PASSWORD={cfg.s3_pass}",
+                "S3_HOST=minio",
+                "S3_HTTPS=false",
+            ]
+        )
+        + "\n"
     )
     return path
 
@@ -150,7 +152,9 @@ def write_compose_file(cfg: TUIConfig) -> Path:
     if cfg.gcc_enabled:
         compilers.append(("gcc", cfg.gcc_count, "docker/gcc/Dockerfile", "assemblage-gcc:default"))
     if cfg.clang_enabled:
-        compilers.append(("clang", cfg.clang_count, "docker/clang/Dockerfile", "assemblage-clang:default"))
+        compilers.append(
+            ("clang", cfg.clang_count, "docker/clang/Dockerfile", "assemblage-clang:default")
+        )
 
     for compiler, count, dockerfile, image in compilers:
         for i in range(count):
@@ -322,25 +326,25 @@ def _config_fields(cfg):
     """Return list of (label, kind, attr, display_value) for the config form.
     kind: 'str', 'secret', 'bool', 'int', 'action'."""
     return [
-        ("GitHub Token",   "secret", "github_token", _mask(cfg.github_token)),
-        ("DB Password",    "secret", "db_password",  _mask(cfg.db_password)),
-        ("S3 Username",    "str",    "s3_user",      cfg.s3_user),
-        ("S3 Password",    "secret", "s3_pass",      _mask(cfg.s3_pass)),
+        ("GitHub Token", "secret", "github_token", _mask(cfg.github_token)),
+        ("DB Password", "secret", "db_password", _mask(cfg.db_password)),
+        ("S3 Username", "str", "s3_user", cfg.s3_user),
+        ("S3 Password", "secret", "s3_pass", _mask(cfg.s3_pass)),
         None,  # separator
-        ("GCC Enabled",    "bool",   "gcc_enabled",  None),
-        ("GCC Builders",   "int",    "gcc_count",    None),
-        ("Clang Enabled",  "bool",   "clang_enabled", None),
-        ("Clang Builders", "int",    "clang_count",  None),
+        ("GCC Enabled", "bool", "gcc_enabled", None),
+        ("GCC Builders", "int", "gcc_count", None),
+        ("Clang Enabled", "bool", "clang_enabled", None),
+        ("Clang Builders", "int", "clang_count", None),
         None,  # separator
-        ("O0 (None)",      "bool",   "opt_none",     None),
-        ("O1 (Low)",       "bool",   "opt_low",      None),
-        ("O2 (Medium)",    "bool",   "opt_medium",   None),
-        ("O3 (High)",      "bool",   "opt_high",     None),
+        ("O0 (None)", "bool", "opt_none", None),
+        ("O1 (Low)", "bool", "opt_low", None),
+        ("O2 (Medium)", "bool", "opt_medium", None),
+        ("O3 (High)", "bool", "opt_high", None),
         None,  # separator
-        ("Restart Every",  "hours",  "restart_interval_hours", None),
+        ("Restart Every", "hours", "restart_interval_hours", None),
         None,  # separator
-        ("Save & Generate", "action", "_save",       None),
-        ("Back",            "action", "_back",       None),
+        ("Save & Generate", "action", "_save", None),
+        ("Back", "action", "_back", None),
     ]
 
 
@@ -356,7 +360,7 @@ def _draw_config(cfg, fields, cur, msg=""):
             console.print()
             continue
         label, kind, attr, display = f
-        selected = (row == cur)
+        selected = row == cur
         prefix = "[bold cyan]> " if selected else "    "
         suffix = "[/bold cyan]" if selected else ""
 
@@ -405,7 +409,7 @@ def _edit_field(cfg, kind, attr):
             pass
         return False
     elif kind == "secret":
-        val = getpass.getpass(f"  New value (enter to keep): ").strip()
+        val = getpass.getpass("  New value (enter to keep): ").strip()
         if val:
             setattr(cfg, attr, val)
             return True
@@ -452,9 +456,19 @@ def do_configure():
                 cfg.save()
                 write_secrets_env(cfg)
                 write_compose_file(cfg)
-                msg = "[green]Saved " + CONFIG_FILE + ", " + SECRETS_FILE + ", " + COMPOSE_FILE + "[/green]"
+                msg = (
+                    "[green]Saved "
+                    + CONFIG_FILE
+                    + ", "
+                    + SECRETS_FILE
+                    + ", "
+                    + COMPOSE_FILE
+                    + "[/green]"
+                )
                 if not cfg.github_token:
-                    msg += "\n  [yellow]Note: no GitHub token — scraper won't work without it[/yellow]"
+                    msg += (
+                        "\n  [yellow]Note: no GitHub token — scraper won't work without it[/yellow]"
+                    )
             elif kind == "bool":
                 setattr(cfg, attr, not getattr(cfg, attr))
             else:
@@ -463,7 +477,9 @@ def do_configure():
 
 def _compose_up():
     """Run docker compose up. Returns True on success."""
-    ret = subprocess.call(compose_cmd("up", "--build", "-d", "--remove-orphans"), cwd=str(PROJECT_ROOT))
+    ret = subprocess.call(
+        compose_cmd("up", "--build", "-d", "--remove-orphans"), cwd=str(PROJECT_ROOT)
+    )
     return ret == 0
 
 
@@ -486,7 +502,9 @@ def do_start():
 
     restart_secs = cfg.restart_interval_hours * 3600 if cfg.restart_interval_hours > 0 else 0
     if restart_secs:
-        console.print(f"\n  [green]Started. Auto-restart every {cfg.restart_interval_hours}h. Tailing logs (Ctrl+C to stop)...[/green]\n")
+        console.print(
+            f"\n  [green]Started. Auto-restart every {cfg.restart_interval_hours}h. Tailing logs (Ctrl+C to stop)...[/green]\n"
+        )
     else:
         console.print("\n  [green]Started. Tailing logs (Ctrl+C to stop)...[/green]\n")
 
@@ -519,11 +537,13 @@ def do_start():
             if not restart_secs:
                 break
 
-            console.print(f"\n  [yellow]Auto-restarting containers...[/yellow]\n")
+            console.print("\n  [yellow]Auto-restarting containers...[/yellow]\n")
             if not _compose_restart():
                 console.print("\n  [red]Restart failed[/red]")
                 break
-            console.print(f"\n  [green]Restarted. Next restart in {cfg.restart_interval_hours}h.[/green]\n")
+            console.print(
+                f"\n  [green]Restarted. Next restart in {cfg.restart_interval_hours}h.[/green]\n"
+            )
     except KeyboardInterrupt:
         try:
             proc.terminate()
@@ -538,16 +558,16 @@ def do_start():
 
 def do_stop():
     console.clear()
-    console.print(f"\n  [bold]Stopping Assemblage[/bold]\n")
+    console.print("\n  [bold]Stopping Assemblage[/bold]\n")
     subprocess.call(compose_cmd("down", "--remove-orphans"), cwd=str(PROJECT_ROOT))
     pause()
 
 
 def do_status():
     console.clear()
-    console.print(f"\n  [bold]Container Status[/bold]\n")
+    console.print("\n  [bold]Container Status[/bold]\n")
     subprocess.call(compose_cmd("ps"), cwd=str(PROJECT_ROOT))
-    console.print(f"\n  [bold]Logs[/bold]  [dim](Ctrl+C to stop)[/dim]\n")
+    console.print("\n  [bold]Logs[/bold]  [dim](Ctrl+C to stop)[/dim]\n")
     try:
         proc = subprocess.Popen(
             compose_cmd("logs", "-f", "--tail", "20"),
@@ -596,13 +616,16 @@ def main():
         cfg_ok = (PROJECT_ROOT / CONFIG_FILE).exists()
         status = "[green]configured[/green]" if cfg_ok else "[red]not configured[/red]"
 
-        choice = select(f"ASSEMBLAGE  [dim]({status})[/dim]", [
-            "Configure",
-            "Start",
-            "Stop",
-            "Status",
-            "Quit",
-        ])
+        choice = select(
+            f"ASSEMBLAGE  [dim]({status})[/dim]",
+            [
+                "Configure",
+                "Start",
+                "Stop",
+                "Status",
+                "Quit",
+            ],
+        )
 
         if choice == 0:
             do_configure()

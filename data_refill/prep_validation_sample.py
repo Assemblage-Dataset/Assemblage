@@ -7,6 +7,7 @@ Output:
   data_refill/.validation/binary_<id>.json  — full extracted data per binary
   data_refill/.validation/batch_<i>.json    — list of binary_ids for agent i (0..9)
 """
+
 from __future__ import annotations
 
 import json
@@ -74,7 +75,7 @@ def main() -> None:
         if fn_ids:
             placeholders = ",".join(["?"] * len(fn_ids))
             rvas_rows = con.execute(
-                f"SELECT id, start, \"end\", function_id FROM rvas WHERE function_id IN ({placeholders})",
+                f'SELECT id, start, "end", function_id FROM rvas WHERE function_id IN ({placeholders})',
                 fn_ids,
             ).fetchall()
             rvas_cols = [d[0] for d in con.description]
@@ -142,9 +143,9 @@ def main() -> None:
 
     on_disk = sum(1 for m in manifest if m["binary_exists_on_disk"])
     print(f"binaries present on disk: {on_disk}/{len(manifest)}")
-    print(f"manifest at {OUT_DIR/'manifest.json'}")
+    print(f"manifest at {OUT_DIR / 'manifest.json'}")
     print(f"per-binary data files at {OUT_DIR}/binary_<id>.json")
-    print(f"agent batches at {OUT_DIR}/batch_<0..{N_AGENTS-1}>.json")
+    print(f"agent batches at {OUT_DIR}/batch_<0..{N_AGENTS - 1}>.json")
 
 
 if __name__ == "__main__":

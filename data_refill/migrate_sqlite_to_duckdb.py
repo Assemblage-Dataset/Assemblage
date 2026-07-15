@@ -5,6 +5,7 @@ Uses DuckDB's sqlite_scanner extension to ATTACH the SQLite database
 read-only and stream-copy each table via CREATE TABLE AS SELECT.
 Resumable: tables already migrated with matching row counts are skipped.
 """
+
 from __future__ import annotations
 
 import sys
@@ -79,15 +80,11 @@ def main() -> int:
         ).fetchone()[0]
 
         if existing:
-            dst_n = con.execute(
-                f'SELECT count(*) FROM main."{tbl}"'
-            ).fetchone()[0]
+            dst_n = con.execute(f'SELECT count(*) FROM main."{tbl}"').fetchone()[0]
             if dst_n == expected:
                 log(f"{tbl}: already migrated ({dst_n:,} rows), skipping")
                 continue
-            log(
-                f"{tbl}: partial copy detected ({dst_n:,} != {expected:,}), dropping"
-            )
+            log(f"{tbl}: partial copy detected ({dst_n:,} != {expected:,}), dropping")
             con.execute(f'DROP TABLE main."{tbl}"')
 
         log(f"{tbl}: starting copy (~{expected:,} rows expected)")
@@ -98,10 +95,7 @@ def main() -> int:
 
         dst_n = con.execute(f'SELECT count(*) FROM main."{tbl}"').fetchone()[0]
         rate = dst_n / elapsed if elapsed > 0 else 0
-        log(
-            f"{tbl}: copied {dst_n:,} rows in {fmt_secs(elapsed)} "
-            f"({rate:,.0f} rows/s)"
-        )
+        log(f"{tbl}: copied {dst_n:,} rows in {fmt_secs(elapsed)} ({rate:,.0f} rows/s)")
         if dst_n != expected:
             log(f"ERROR: {tbl} row mismatch: expected={expected} dst={dst_n}")
             return 2

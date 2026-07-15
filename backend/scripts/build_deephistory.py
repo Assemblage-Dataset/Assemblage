@@ -41,18 +41,24 @@ import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from assemblage.consts import BINPATH
 from assemblage.legacy.conan_strategy import (
-    ConanBuildStrategy,
     DEEPHISTORY_BUILD_MODES,
     DEEPHISTORY_OPTIMIZATIONS,
+    ConanBuildStrategy,
 )
-from assemblage.consts import BINPATH
 
 logger = logging.getLogger("deephistory")
 
 
-def identifier_exists(output_base: str, github_url: str, package_name: str,
-                      build_mode: str, toolset: str, optimization: str) -> bool:
+def identifier_exists(
+    output_base: str,
+    github_url: str,
+    package_name: str,
+    build_mode: str,
+    toolset: str,
+    optimization: str,
+) -> bool:
     """Check if a build identifier folder already exists."""
     url_hash = hashlib.md5((github_url or package_name).encode()).hexdigest()
     identifier = f"{url_hash}_x64_{build_mode}_{toolset}_{optimization}"
@@ -66,30 +72,43 @@ def load_manifest(manifest_path: str) -> dict:
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Build DeepHistory binary dataset using Conan"
+    parser = argparse.ArgumentParser(description="Build DeepHistory binary dataset using Conan")
+    parser.add_argument(
+        "--manifest", type=str, default=None, help="Path to deephistory_manifest.json"
     )
-    parser.add_argument("--manifest", type=str, default=None,
-                        help="Path to deephistory_manifest.json")
-    parser.add_argument("--packages", nargs="+", default=None,
-                        help="Specific packages to build")
-    parser.add_argument("--versions", nargs="+", default=None,
-                        help="Specific versions (only with single --package)")
-    parser.add_argument("--build-modes", nargs="+", default=None,
-                        choices=["Debug", "RelWithDebInfo", "Release"],
-                        help=f"Build modes (default: {DEEPHISTORY_BUILD_MODES})")
-    parser.add_argument("--optimizations", nargs="+", default=None,
-                        choices=["Od", "O1", "O2", "Ox"],
-                        help=f"Optimization levels (default: {DEEPHISTORY_OPTIMIZATIONS})")
-    parser.add_argument("--output", type=str,
-                        default=os.getenv("DEEPHISTORY_OUTPUT", os.path.join(BINPATH, "deephistory")),
-                        help="Output base directory")
-    parser.add_argument("--resume", action="store_true",
-                        help="Skip builds whose output folder already exists")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="List what would be built without building")
-    parser.add_argument("--log-level", default="INFO",
-                        choices=["DEBUG", "INFO", "WARNING", "ERROR"])
+    parser.add_argument("--packages", nargs="+", default=None, help="Specific packages to build")
+    parser.add_argument(
+        "--versions", nargs="+", default=None, help="Specific versions (only with single --package)"
+    )
+    parser.add_argument(
+        "--build-modes",
+        nargs="+",
+        default=None,
+        choices=["Debug", "RelWithDebInfo", "Release"],
+        help=f"Build modes (default: {DEEPHISTORY_BUILD_MODES})",
+    )
+    parser.add_argument(
+        "--optimizations",
+        nargs="+",
+        default=None,
+        choices=["Od", "O1", "O2", "Ox"],
+        help=f"Optimization levels (default: {DEEPHISTORY_OPTIMIZATIONS})",
+    )
+    parser.add_argument(
+        "--output",
+        type=str,
+        default=os.getenv("DEEPHISTORY_OUTPUT", os.path.join(BINPATH, "deephistory")),
+        help="Output base directory",
+    )
+    parser.add_argument(
+        "--resume", action="store_true", help="Skip builds whose output folder already exists"
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="List what would be built without building"
+    )
+    parser.add_argument(
+        "--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"]
+    )
 
     args = parser.parse_args()
 
@@ -159,9 +178,7 @@ def main():
         logger.info(f"[{i}/{total}] {pkg}/{ver} [{bm}] [/{opt}]")
 
         try:
-            final_dir, status, meta = strategy.build_package(
-                pkg, ver, bm, opt, gh
-            )
+            final_dir, status, meta = strategy.build_package(pkg, ver, bm, opt, gh)
             if status == "success":
                 success_count += 1
             else:
@@ -177,17 +194,19 @@ def main():
             )
 
     elapsed = time.time() - start_time
-    print(f"\n{'='*60}")
-    print(f"DeepHistory build complete")
+    print(f"\n{'=' * 60}")
+    print("DeepHistory build complete")
     print(f"  Total:     {total}")
     print(f"  Succeeded: {success_count}")
     print(f"  Failed:    {fail_count}")
     print(f"  Skipped:   {skip_count}")
-    print(f"  Time:      {elapsed:.0f}s ({elapsed/60:.1f}m)")
+    print(f"  Time:      {elapsed:.0f}s ({elapsed / 60:.1f}m)")
     print(f"  Output:    {args.output}")
-    print(f"{'='*60}")
-    print(f"\nTo build SQLite DB from output:")
-    print(f"  python Assemblage_dataset_cli/cli.py -g --data {args.output} --dbfile deephistory.sqlite --functions --lines --rvas --pdbs")
+    print(f"{'=' * 60}")
+    print("\nTo build SQLite DB from output:")
+    print(
+        f"  python Assemblage_dataset_cli/cli.py -g --data {args.output} --dbfile deephistory.sqlite --functions --lines --rvas --pdbs"
+    )
 
 
 if __name__ == "__main__":
