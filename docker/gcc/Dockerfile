@@ -35,8 +35,11 @@ RUN apt-get -y update && DEBIAN_FRONTEND="noninteractive" apt-get install -y reb
 
 RUN curl -fsSL https://deb.nodesource.com/setup_current.x | bash - && apt-get update && apt-get install -y nodejs
 
-RUN curl https://raw.githubusercontent.com/pshved/timeout/master/timeout | \
-    tee /usr/local/bin/timeout && chmod 755 /usr/local/bin/timeout
+# NOTE: an earlier revision curled pshved/timeout (a Perl script with
+# `timeout -t SECS cmd` syntax) into /usr/local/bin, shadowing coreutils
+# timeout. build_method.py invokes `timeout 10m make ...` (coreutils
+# syntax), so every make/configure build on this image failed instantly.
+# coreutils timeout ships with the base image — nothing to install.
 
 COPY ./backend/ /app
 
