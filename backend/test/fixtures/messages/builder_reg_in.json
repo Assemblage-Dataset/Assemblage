@@ -1,0 +1,1 @@
+{"name": "gcc-O2", "uuid": "1c9f1f9e-0000-1111-2222-333344445555", "compiler": "gcc", "library": "x64", "language": "c++", "platform": "linux", "compiler_flag": "-O2", "build_command": "", "build_system": "all"}

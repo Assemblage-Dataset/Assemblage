@@ -1,7 +1,7 @@
 """add license column to projects
 
 Revision ID: b1c2d3e4f5a6
-Revises: 26c6a564c43e
+Revises: fa6e74da04d4
 Create Date: 2026-03-09 00:00:00.000000
 
 """

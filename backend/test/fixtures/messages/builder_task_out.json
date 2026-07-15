@@ -1,0 +1,1 @@
+{"name": "DOOM", "url": "https://github.com/id-Software/DOOM", "task_id": 42, "opt_id": 7, "output_dir": "/binaries/7/DOOM", "repo_id": 13, "updated_at": "2024-05-24 13:18:59", "build_system": "make", "msg_time": 1742083200.0, "commit_hexsha": "a77dbb7db76c1cff2a3c9a1049671c1e64f9d716", "mod_timestamp": "0", "compiler_flag": "-O2"}

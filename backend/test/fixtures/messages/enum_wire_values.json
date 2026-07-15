@@ -1,0 +1,30 @@
+{
+  "BuildStatus": {
+    "BLACKLIST": "blacklist",
+    "COMMAND_FAILED": "command_failed",
+    "EXCLUDE": "exclude",
+    "FAILED": "failed",
+    "INIT": "init",
+    "OUTDATED_MSG": "outdated_msg",
+    "PROCESSING": "processing",
+    "SUCCESS": "success",
+    "TIMEOUT": "timeout"
+  },
+  "CloneStatus": {
+    "COMMAND_FAILED": "command_failed",
+    "FAILED": "failed",
+    "NOT_STARTED": "not_started",
+    "PROCESSING": "processing",
+    "SUCCESS": "success",
+    "TIMEOUT": "timeout"
+  },
+  "ScraperMsgType": {
+    "REQUEST_REPOS": "request_repos",
+    "SETUP": "setup",
+    "UPDATE": "update"
+  },
+  "ScraperOutputPolicy": {
+    "CONTINUOUS": "continuous",
+    "ON_REQUEST": "on_request"
+  }
+}
