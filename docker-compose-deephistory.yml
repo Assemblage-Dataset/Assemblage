@@ -1,0 +1,116 @@
+# DeepHistory Linux Builder
+# Builds Linux binaries for all packages in deephistory/packages.json
+# using the existing Assemblage build infrastructure.
+#
+# Prerequisites: MinIO must be running (start main docker-compose.yml first)
+#
+# Usage:
+#   # Build images + start all workers (8 configs x 8 replicas = 64 workers)
+#   docker compose -f docker-compose-deephistory.yml up --build -d
+#
+#   # Scale a specific config:
+#   docker compose -f docker-compose-deephistory.yml up -d --scale gcc-O2=8
+
+x-common-env: &common-env
+  PYTHONUNBUFFERED: "1"
+  S3_HOST: minio
+  S3_PORT: "9000"
+  S3_HTTPS: "false"
+  S3_ACCESS_KEY: minioadmin
+  S3_SECRET_ACCESS_KEY: minioadmin
+
+x-gcc-builder: &gcc-builder
+  image: deephistory-gcc:latest
+  build:
+    context: .
+    dockerfile: docker/deephistory/Dockerfile.gcc
+  volumes:
+    - ./deephistory:/data
+    - ./backend:/app
+  networks:
+    - assemblage
+  restart: on-failure
+  mem_limit: 32g
+  mem_reservation: 1g
+  stop_grace_period: 10s
+  deploy:
+    replicas: 2
+
+x-clang-builder: &clang-builder
+  image: deephistory-clang:latest
+  build:
+    context: .
+    dockerfile: docker/deephistory/Dockerfile.clang
+  volumes:
+    - ./deephistory:/data
+    - ./backend:/app
+  networks:
+    - assemblage
+  restart: on-failure
+  mem_limit: 32g
+  mem_reservation: 1g
+  stop_grace_period: 10s
+  deploy:
+    replicas: 2
+
+services:
+  gcc-O0:
+    <<: *gcc-builder
+    environment:
+      <<: *common-env
+      COMPILER: gcc
+      COMPILER_FLAG: "-O0"
+
+  gcc-O1:
+    <<: *gcc-builder
+    environment:
+      <<: *common-env
+      COMPILER: gcc
+      COMPILER_FLAG: "-O1"
+
+  gcc-O2:
+    <<: *gcc-builder
+    environment:
+      <<: *common-env
+      COMPILER: gcc
+      COMPILER_FLAG: "-O2"
+
+  gcc-O3:
+    <<: *gcc-builder
+    environment:
+      <<: *common-env
+      COMPILER: gcc
+      COMPILER_FLAG: "-O3"
+
+  clang-O0:
+    <<: *clang-builder
+    environment:
+      <<: *common-env
+      COMPILER: clang
+      COMPILER_FLAG: "-O0"
+
+  clang-O1:
+    <<: *clang-builder
+    environment:
+      <<: *common-env
+      COMPILER: clang
+      COMPILER_FLAG: "-O1"
+
+  clang-O2:
+    <<: *clang-builder
+    environment:
+      <<: *common-env
+      COMPILER: clang
+      COMPILER_FLAG: "-O2"
+
+  clang-O3:
+    <<: *clang-builder
+    environment:
+      <<: *common-env
+      COMPILER: clang
+      COMPILER_FLAG: "-O3"
+
+networks:
+  assemblage:
+    external: true
+    name: assemblage_default

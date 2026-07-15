@@ -1,0 +1,33 @@
+services:
+
+  win_builder:
+    image: assemblage-windows:latest
+    build:
+      context: .
+      dockerfile: docker/windows/Dockerfile
+    command: ["powershell", "-File", "C:\\app\\scripts\\start_windows_worker.ps1"]
+    healthcheck:
+      test: ["CMD", "powershell", "-Command", "Get-Process | Where-Object CommandLine -like '*start_worker.py*' | Select-Object -First 1; if ($$?) { exit 0 } else { exit 1 }"]  
+      interval: 10s
+      start_period: 5s
+    environment:
+      PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
+      name: win_builder
+      PYTHONPATH: "C:\\app;"
+      TYPE: builder
+      LANGUAGE: "c++"
+      COMPILER: "MSVC"
+    env_file:
+      - secrets.env
+    deploy:
+      restart_policy:
+        condition: on-failure
+    volumes:
+      - ./backend:C:\app 
+      - ./binaries:C:\binaries
+    mem_limit: 250g
+
+volumes:
+  builder-data:
+    driver: local
+ 

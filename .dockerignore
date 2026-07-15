@@ -1,0 +1,8 @@
+*
+!backend
+!docker
+!requirements.txt
+!start*
+!ccwrapper
+!aws
+!frontend

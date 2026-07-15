@@ -1,0 +1,1 @@
+DB_HOST=localhost MINIO_ENDPOINT=localhost:9000 python run_daily_dataset.py

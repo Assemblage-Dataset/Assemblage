@@ -1,0 +1,64 @@
+FROM  ubuntu:noble-20250910
+
+RUN apt-get update && apt-get -y upgrade 
+
+RUN DEBIAN_FRONTEND="noninteractive" apt-get -y install tzdata cmake build-essential gcc g++
+
+# set up grpc
+# ENV GRPC_RELEASE_TAG v1.12.x
+# RUN rm -rf /var/local/git/grpc
+# RUN git clone https://github.com/grpc/grpc /var/local/git/grpc --recurse-submodules && \
+#     cd /var/local/git/grpc && \
+#     git submodule update --init && \
+#     mkdir -p cmake/build && \
+#     cd cmake/build && \
+#     cmake ../.. && \
+#     make -j64 && make install
+
+# setup python
+
+# ENV PYENV_ROOT /root/.pyenv
+# ENV PATH $PYENV_ROOT/shims:$PYENV_ROOT/bin:$PATH
+
+RUN apt-get -y update && DEBIAN_FRONTEND="noninteractive" apt-get install -y rebar \
+                libhdf5-dev exuberant-ctags postgresql postgresql-server-dev-all \
+                libglu1-mesa-dev freeglut3-dev mesa-common-dev \
+                python3-opencv \
+                openjdk-11-jdk \
+                ocaml \
+                erlang \
+                mono-xbuild \
+                qtbase5-dev qtchooser qt5-qmake qtbase5-dev-tools \
+                swig \
+                tree \
+                python3-pip python3.12-venv libjpeg-dev zlib1g-dev
+
+RUN curl -fsSL https://deb.nodesource.com/setup_current.x | bash - && apt-get update && apt-get install -y nodejs
+
+RUN curl https://raw.githubusercontent.com/pshved/timeout/master/timeout | \
+    tee /usr/local/bin/timeout && chmod 755 /usr/local/bin/timeout
+
+COPY ./backend/ /app
+
+WORKDIR /app
+ENV PIP_USE_PEP517=1
+
+RUN python3 -m venv /venv
+ENV PATH="/venv/bin:$PATH"
+ENV PYTHONPATH=/app
+
+RUN pip install --upgrade pip setuptools wheel
+RUN pip install -r requirements.txt
+
+
+ENV CC 'gcc'
+ENV CXX 'g++'
+ENV COMPILER="gcc"
+ENV LANGUAGE="c++"
+
+
+RUN echo '1:gcc' >> /conf
+
+
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 CMD bash -c "pgrep -f start_worker.py > /dev/null"
+ENTRYPOINT ["python3", "/app/scripts/start_worker.py"]

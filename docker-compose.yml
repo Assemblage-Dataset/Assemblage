@@ -1,0 +1,396 @@
+services:
+
+  database:
+    container_name: assemblage-db
+    image: postgres:18.0-alpine3.22
+    env_file:
+      - secrets.env
+    environment:
+      - POSTGRES_USER=assemblage # do not change!
+    ports:
+      - "5432:5432"
+    volumes:
+      - db-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "assemblage"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    environment:
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: -rabbit consumer_timeout 1800000
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 5s
+      timeout: 10s
+      retries: 25
+      start_period: 10s
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    ports:
+      - 5672:5672
+
+  coordinator:
+    image: assemblage-gcc:default
+    build:
+      context: .
+      dockerfile: docker/gcc/Dockerfile
+    environment: # do not remove!!
+      PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
+      PYTHONUNBUFFERED: 1
+      TYPE: coordinator
+      name: coordinator
+    env_file:
+      - secrets.env
+    depends_on:
+      database:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - ./backend:/app
+
+  scraper_0:
+    image: assemblage-gcc:default
+    build:
+      context: .
+      dockerfile: docker/gcc/Dockerfile
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
+      name: scraper_0
+      TYPE: scraper
+      SCRAPER_POLICY: continuous
+    env_file:
+      - secrets.env
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2048M
+    volumes:
+      - ./backend:/app
+
+  # clang-O0
+  builder_0:
+    image: assemblage-clang:default
+    build:
+      context: .
+      dockerfile: docker/clang/Dockerfile
+    command: python3 /app/scripts/start_worker.py --type builder --id 0
+    environment:
+      PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
+      TYPE: builder
+      compiler: clang
+      language: c++
+      name: clang-O0
+      COMPILER_FLAG: "-O0"
+    env_file:
+      - secrets.env
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 10s
+    deploy:
+      replicas: 10
+    volumes:
+      - ./backend:/app
+    mem_limit: 16g
+
+  # clang-O1
+  builder_1:
+    image: assemblage-clang:default
+    build:
+      context: .
+      dockerfile: docker/clang/Dockerfile
+    command: python3 /app/scripts/start_worker.py --type builder --id 1
+    environment:
+      PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
+      TYPE: builder
+      compiler: clang
+      language: c++
+      name: clang-O1
+      COMPILER_FLAG: "-O1"
+    env_file:
+      - secrets.env
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 10s
+    deploy:
+      replicas: 10
+    volumes:
+      - ./backend:/app
+    mem_limit: 16g
+
+  # clang-O2
+  builder_2:
+    image: assemblage-clang:default
+    build:
+      context: .
+      dockerfile: docker/clang/Dockerfile
+    command: python3 /app/scripts/start_worker.py --type builder --id 2
+    environment:
+      PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
+      TYPE: builder
+      compiler: clang
+      language: c++
+      name: clang-O2
+      COMPILER_FLAG: "-O2"
+    env_file:
+      - secrets.env
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 10s
+    deploy:
+      replicas: 10
+    volumes:
+      - ./backend:/app
+    mem_limit: 16g
+
+  # clang-O3
+  builder_3:
+    image: assemblage-clang:default
+    build:
+      context: .
+      dockerfile: docker/clang/Dockerfile
+    command: python3 /app/scripts/start_worker.py --type builder --id 3
+    environment:
+      PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
+      TYPE: builder
+      compiler: clang
+      language: c++
+      name: clang-O3
+      COMPILER_FLAG: "-O3"
+    env_file:
+      - secrets.env
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 10s
+    deploy:
+      replicas: 10
+    volumes:
+      - ./backend:/app
+    mem_limit: 16g
+
+  # gcc-O0
+  builder_4:
+    image: assemblage-gcc:default
+    build:
+      context: .
+      dockerfile: docker/gcc/Dockerfile
+    command: python3 /app/scripts/start_worker.py --type builder --id 4
+    environment:
+      PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
+      TYPE: builder
+      compiler: gcc
+      language: c++
+      name: gcc-O0
+      COMPILER_FLAG: "-O0"
+    env_file:
+      - secrets.env
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 10s
+    deploy:
+      replicas: 10
+    volumes:
+      - ./backend:/app
+    mem_limit: 16g
+
+  # gcc-O1
+  builder_5:
+    image: assemblage-gcc:default
+    build:
+      context: .
+      dockerfile: docker/gcc/Dockerfile
+    command: python3 /app/scripts/start_worker.py --type builder --id 5
+    environment:
+      PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
+      TYPE: builder
+      compiler: gcc
+      language: c++
+      name: gcc-O1
+      COMPILER_FLAG: "-O1"
+    env_file:
+      - secrets.env
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 10s
+    deploy:
+      replicas: 10
+    volumes:
+      - ./backend:/app
+    mem_limit: 16g
+
+  # gcc-O2
+  builder_6:
+    image: assemblage-gcc:default
+    build:
+      context: .
+      dockerfile: docker/gcc/Dockerfile
+    command: python3 /app/scripts/start_worker.py --type builder --id 6
+    environment:
+      PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
+      TYPE: builder
+      compiler: gcc
+      language: c++
+      name: gcc-O2
+      COMPILER_FLAG: "-O2"
+    env_file:
+      - secrets.env
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 10s
+    deploy:
+      replicas: 10
+    volumes:
+      - ./backend:/app
+    mem_limit: 16g
+
+  # gcc-O3
+  builder_7:
+    image: assemblage-gcc:default
+    build:
+      context: .
+      dockerfile: docker/gcc/Dockerfile
+    command: python3 /app/scripts/start_worker.py --type builder --id 7
+    environment:
+      PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
+      TYPE: builder
+      compiler: gcc
+      language: c++
+      name: gcc-O3
+      COMPILER_FLAG: "-O3"
+    env_file:
+      - secrets.env
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 10s
+    deploy:
+      replicas: 10
+    volumes:
+      - ./backend:/app
+    mem_limit: 16g
+
+  # clang-Os
+  builder_8:
+    image: assemblage-clang:default
+    build:
+      context: .
+      dockerfile: docker/clang/Dockerfile
+    command: python3 /app/scripts/start_worker.py --type builder --id 8
+    environment:
+      PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
+      TYPE: builder
+      compiler: clang
+      language: c++
+      name: clang-Os
+      COMPILER_FLAG: "-Os"
+    env_file:
+      - secrets.env
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 10s
+    deploy:
+      replicas: 10
+    volumes:
+      - ./backend:/app
+    mem_limit: 16g
+
+  # gcc-Os
+  builder_9:
+    image: assemblage-gcc:default
+    build:
+      context: .
+      dockerfile: docker/gcc/Dockerfile
+    command: python3 /app/scripts/start_worker.py --type builder --id 9
+    environment:
+      PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
+      TYPE: builder
+      compiler: gcc
+      language: c++
+      name: gcc-Os
+      COMPILER_FLAG: "-Os"
+    env_file:
+      - secrets.env
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 10s
+    deploy:
+      replicas: 10
+    volumes:
+      - ./backend:/app
+    mem_limit: 16g
+
+# self host s3 bucket
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    healthcheck:
+      test: ["CMD-SHELL", "curl -l -f http://127.0.0.1:9001/minio/healthcheck/live || exit 1"]
+      interval: 10s
+      start_period: 5s
+    ports:
+      - "9010:9000"      # API port (host 9010 -> container 9000)
+      # Console port (9001) not exposed on host
+    env_file:
+      - secrets.env
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    restart: unless-stopped
+
+
+volumes:
+  db-data:
+    driver: local
+  rabbitmq-data:
+    driver: local
+  minio_data:
+    driver: local

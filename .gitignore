@@ -1,0 +1,93 @@
+# Editors
+.vscode/
+.idea/
+
+# Environments
+.env
+*secrets.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# db
+*.db
+*.db_shm
+*.db_wal
+
+# python
+__pycache__/
+*.pyc
+
+# tmp
+.tmp/ 
+.bin/
+
+# log
+*.log
+
+# config.json
+
+.DS_Store
+
+build_msgs.txt
+
+# data
+*.csv
+*.json
+!example_search_github.json
+*.out
+*.txt
+db-data/
+dump_*
+*.txt
+*.out
+local_config/
+!backend/requirements.txt
+
+
+# TUI generated files
+docker-compose-tui.yml
+
+# temporarily
+frontend/
+binaries*
+
+*dataset
+
+# deephistory: runtime data only — source code under deephistory/ stays tracked
+deephistory/binaries/
+deephistory/claims/
+deephistory/progress/
+deephistory/deephistory/
+deephistory/*.sqlite*
+!deephistory/packages.json
+
+# ---------------------------------------------------------------------------
+# Large data artifacts (added 2026-07-15 during git recovery — these are NOT
+# source and would each break a commit: winpe.sqlite is 102 GB, hf_binaries/
+# 361 GB, data_refill/linux_licensed.duckdb 127 GB).
+# ---------------------------------------------------------------------------
+hf_binaries/
+*.sqlite
+*.sqlite3
+*.duckdb
+*.duckdb.zst
+*.zst
+*.xz
+*.tar
+*.tar.gz
+*.tar.xz
+*.tgz
+*.jsonl
+*.metadata
+*.stdout
+*.pcode
+*.dwarf.json

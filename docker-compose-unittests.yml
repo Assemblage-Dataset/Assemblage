@@ -1,0 +1,19 @@
+services:
+  tests:
+    image: assemblage-gcc:default
+    build:
+      context: .
+      dockerfile: docker/gcc/Dockerfile
+    ## run all unit tests except the one in assemblage/windows/parsers:
+    entrypoint: ["python3", "-m", "unittest", "discover", "-s", "test/unit_tests/workers", "-p", '*_test.py']
+    ## run one test:
+    #entrypoint: ["python3", "/app/test/unit_tests/workers/scraper_test.py", "TestScraper.test_github_time_to_mysql_time_good"]
+    environment: # do not remove!!
+      PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
+      PYTHONUNBUFFERED: 1
+      TYPE: tests
+      name: tests
+    env_file:
+      - secrets.env
+    volumes:
+      - ./backend:/app 

@@ -1,0 +1,116 @@
+FROM assemblage-clang:default
+
+# Extra build dependencies for deephistory packages
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    pkg-config \
+    uuid-dev \
+    liblz4-dev \
+    libzstd-dev \
+    libtbb-dev \
+    libgtest-dev \
+    libre2-dev \
+    libsdl2-dev \
+    libsdl2-image-dev \
+    ninja-build \
+    nasm \
+    yasm \
+    meson \
+    libx11-dev \
+    libxrandr-dev \
+    libxi-dev \
+    libgl-dev \
+    libglu1-mesa-dev \
+    libasound2-dev \
+    libpulse-dev \
+    libdbus-1-dev \
+    libudev-dev \
+    libsystemd-dev \
+    libwayland-dev \
+    libxkbcommon-dev \
+    libdrm-dev \
+    libegl-dev \
+    libgbm-dev \
+    libpcre2-dev \
+    libevent-dev \
+    libprotobuf-dev \
+    protobuf-compiler \
+    libgrpc++-dev \
+    libusb-1.0-0-dev \
+    libimath-dev \
+    libhdf5-dev \
+    libeigen3-dev \
+    libgflags-dev \
+    libgoogle-glog-dev \
+    libsuitesparse-dev \
+    libapr1-dev \
+    libaprutil1-dev \
+    libxml2-dev \
+    autoconf \
+    automake \
+    libtool \
+    autopoint \
+    gettext \
+    flex \
+    bison \
+    libtinyxml2-dev \
+    libasio-dev \
+    libzip-dev \
+    libminizip-dev \
+    libjpeg-dev \
+    ocl-icd-opencl-dev \
+    libhiredis-dev \
+    libogg-dev \
+    libpq-dev \
+    libbenchmark-dev \
+    libsnappy-dev \
+    libbz2-dev \
+    libboost-all-dev \
+    nlohmann-json3-dev \
+    gfortran \
+    libfreetype-dev \
+    libvorbis-dev \
+    libflac-dev \
+    libfdk-aac-dev \
+    libavutil-dev \
+    libavcodec-dev \
+    libglew-dev \
+    libopenal-dev \
+    libxtst-dev \
+    libsqlite3-dev \
+    libabsl-dev \
+    sqlite3 \
+    catch2 \
+    libaom-dev \
+    libvulkan-dev \
+    default-jdk \
+    tcl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install newer cmake (3.31) - needed for alembic and others
+RUN pip install cmake==3.31.6 && \
+    ln -sf /venv/bin/cmake /usr/local/bin/cmake
+
+# Vendor SPIRV-Headers so spirv-tools can locate grammar JSON files
+RUN git clone --depth=50 https://github.com/KhronosGroup/SPIRV-Headers /opt/SPIRV-Headers
+
+# Install SDL_sound (required by ags 6.x Engine) — not in Ubuntu apt
+RUN git clone --depth=1 --branch v2.0.4 https://github.com/icculus/SDL_sound /tmp/sdl_sound && \
+    cd /tmp/sdl_sound && \
+    cmake -B build -DSDLSOUND_BUILD_TEST=OFF -DSDLSOUND_BUILD_SAMPLES=OFF && \
+    cmake --build build -j 4 && \
+    cmake --install build --prefix /usr/local && \
+    ldconfig && \
+    rm -rf /tmp/sdl_sound
+
+# Compiler wrappers that strip ALL -Werror variants (-Werror, -Werror=foo, --warning-as-errors).
+# Must wrap ALL compiler binaries including versioned ones (gcc-13, g++-13)
+# since ExternalProject may call them directly.
+RUN for compiler in clang clang++ gcc g++ cc c++ gcc-13 g++-13 x86_64-linux-gnu-gcc-13 x86_64-linux-gnu-g++-13; do \
+      p=$(which $compiler 2>/dev/null) || continue; \
+      [ -f "$p" ] && [ ! -f "${p}.real" ] && file "$p" | grep -q ELF && \
+      mv "$p" "${p}.real" && \
+      printf '#!/bin/bash\nargs=()\nfor a in "$@"; do case "$a" in -Werror|-Werror=*|--warning-as-errors) ;; *) args+=("$a");; esac; done\nexec "%s.real" "${args[@]}"\n' "$p" > "$p" && \
+      chmod +x "$p"; \
+    done
+
+ENTRYPOINT ["python3", "/data/deephistory_builder.py"]
