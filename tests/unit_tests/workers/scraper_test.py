@@ -10,6 +10,8 @@
 
 import json
 import unittest
+
+import pytest
 from unittest.mock import patch, MagicMock, ANY
 import logging
 from requests import Response
@@ -18,7 +20,7 @@ import assemblage.worker.scraper as scraper
 import assemblage.config as settings
 from assemblage.mq.messages import ScraperDataOutSingle
 from assemblage.consts import (ScrapeSource, InputQueue, SCRAPER_PAGE_SIZE, GITHUB_REPO_URL, SCRAPER_REQUEST_TIMEOUT_S, TEST_MESSAGE_LEVEL)
-import test.unit_tests.helper_func as helper
+import tests.unit_tests.helper_func as helper
 
 
 logging.basicConfig(format="%(asctime)s [TEST] %(levelname)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S", level=TEST_MESSAGE_LEVEL)
@@ -53,6 +55,7 @@ class TestScraper(unittest.TestCase):
             "Function should return fallback value (2000-01-01...)"
         )
 
+    @pytest.mark.live_github
     def test_live_get_request_repo_fields_as_expected(self):
         '''
         Tests that GitHub REST API returns all the expected fields for a repo (regression test)
@@ -89,6 +92,7 @@ class TestScraper(unittest.TestCase):
         )
         self.assertTrue(elapsed > 0)
 
+    @pytest.mark.live_github
     def test_live_get_request_search_fields_as_expected(self):
         '''
         Tests that expected fields are present in the search API

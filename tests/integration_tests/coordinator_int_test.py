@@ -2,6 +2,7 @@
     [Stub] Tests the coordinator on the test db
 '''
 
+import pytest
 import unittest
 from unittest.mock import patch, MagicMock, ANY
 import logging
@@ -10,7 +11,7 @@ import datetime
 
 import assemblage.config as settings
 import assemblage.data.db as db
-import test.integration_tests.integration_helper as helper
+import tests.integration_tests.integration_helper as helper
 import assemblage.database.models as model
 import assemblage.mq.messages as msg
 import assemblage.consts as const 
@@ -18,6 +19,8 @@ import sqlalchemy as sqla
 from assemblage.coordinator.coordinator import Coordinator 
 
 
+
+pytestmark = pytest.mark.integration  # needs the live test database
 logging.basicConfig(format="%(asctime)s [TEST] %(levelname)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S", level=const.TEST_MESSAGE_LEVEL)
 logger = logging.getLogger(__name__)
 

@@ -4,6 +4,7 @@
 '''
 
 import json
+import os
 from unittest.mock import MagicMock, ANY
 from requests import Response
 
@@ -77,7 +78,8 @@ def scr_full_repo_response_tree():
 def scr_full_repo_response_search():
     '''A Search API response with 3 entries (#1 is DOOM, #2 and #3 are anonymized)'''
     mock_response = Response()
-    with open('test/unit_tests/workers/example_search_github.json', 'r') as file:
+    fixture = os.path.join(os.path.dirname(__file__), 'workers', 'example_search_github.json')
+    with open(fixture, 'r') as file:
         info = json.load(file)
         info = json.dumps(info).encode()
         mock_response._content = info
@@ -138,9 +140,10 @@ def scr_skeleton_404_response():
 ## Other scraper only funcs
 
 def scr_doom_messagestr():
-    return json.dumps(json.loads('''{"name": "DOOM", "url": "https://api.github.com/repos/id-Software/DOOM", 
-    "language": "c++", "owner_id": 1395534, "description": "DOOM Open Source Release", "created_at": "2012-01-31 21:28:06", 
-    "updated_at": "2024-05-24 13:18:59", "size": 149, "build_system": "others", "branch": "master", "commit_hexsha": "a77d"}'''))
+    return json.dumps(json.loads('''{"name": "DOOM", "url": "https://api.github.com/repos/id-Software/DOOM",
+    "language": "c++", "owner_id": 1395534, "description": "DOOM Open Source Release", "created_at": "2012-01-31 21:28:06",
+    "updated_at": "2024-05-24 13:18:59", "size": 149, "build_system": "others", "branch": "master", "commit_hexsha": "a77d",
+    "license": "GNU General Public License v2.0"}'''))
 
 
 

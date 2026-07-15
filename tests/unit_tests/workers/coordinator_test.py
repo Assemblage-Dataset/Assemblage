@@ -28,7 +28,7 @@ import assemblage.config as settings
 import assemblage.mq.messages as msg
 import assemblage.mq.client as client
 from assemblage.consts import BuildStatus, CloneStatus, COORDINATOR_DATABASE_SYNC_TIMEOUT, InputQueue, BIN_DIR, OutputQueue, TEST_MESSAGE_LEVEL
-import test.unit_tests.helper_func as helper
+import tests.unit_tests.helper_func as helper
 
 
 logging.basicConfig(format="%(asctime)s [TEST] %(levelname)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S", level=TEST_MESSAGE_LEVEL)
@@ -205,8 +205,10 @@ class TestCoordinator(unittest.TestCase):
         mock_task = MagicMock()
         mock_task.clone_status = CloneStatus.SUCCESS
         mock_db.get_status_row_by_id.return_value = mock_task
+        # FAILED builds fail their sibling statuses; the count is compared to 0
+        mock_db.fail_sibling_statuses.return_value = 0
 
-        input_msg = {  # note: even a failed build is a "good" build message 
+        input_msg = {  # note: even a failed build is a "good" build message
             "url": "5.com", "opt_id":1, "status":BuildStatus.FAILED, "msg":"finished",
             "task_id":10001, "build_time": 5, "commit_hexsha":"xxxxxx"
                      }
@@ -446,6 +448,10 @@ class TestCoordinator(unittest.TestCase):
 
         input_method = MagicMock()
         input_props = MagicMock()
+        # Frozen handshake: coordinator replies on the caller-provided reply_to
+        # queue with the caller's correlation_id (not the shared builder_ctrl).
+        input_props.reply_to = "builder_ctrl_6a70"
+        input_props.correlation_id = "6a70..."
         mock_body = msg.BuilderRegIn(
             name= "clang-builder",
             uuid="6a70...", 
@@ -481,11 +487,11 @@ class TestCoordinator(unittest.TestCase):
         mock_channel.basic_ack.assert_called_once_with(delivery_tag=input_method.delivery_tag)
         mock_channel.basic_publish.assert_called_once_with(
             exchange='',
-            routing_key=OutputQueue.BUILDER_CTRL,
-            properties=BasicProperties( 
-                correlation_id=input_props.correlation_id,
+            routing_key="builder_ctrl_6a70",
+            properties=BasicProperties(
+                correlation_id="6a70...",
                 delivery_mode=2,
-                reply_to=input_props.reply_to
+                reply_to="builder_ctrl_6a70"
                 ),
             body=msg.BuilderRegOut(3).to_json()
         )
@@ -716,6 +722,8 @@ class TestCoordinator(unittest.TestCase):
             compiler_flag="-O2",
         )
         mock_db.get_dispatch_task.return_value = expected_build_message
+        # dispatch checks queue depth via passive declare before sending
+        mock_channel.queue_declare.return_value.method.message_count = 0
 
 
         c = coordinator.Coordinator(DefaultSettings)
@@ -732,7 +740,7 @@ class TestCoordinator(unittest.TestCase):
         publish_args : unittest.mock.call = mock_channel.basic_publish.call_args
         # Was called with correct settings
         self.assertEqual(publish_args.kwargs['exchange'], 'build_opt')
-        self.assertEqual(publish_args.kwargs['routing_key'], 'builder.opt.2')
+        self.assertEqual(publish_args.kwargs['routing_key'], 'build_opt_2')
 
         # Body was correct
         self.assertEqual(
