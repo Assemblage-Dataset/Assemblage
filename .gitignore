@@ -1,8 +1,9 @@
-# Editors
+# --- Editors / OS -----------------------------------------------------------
 .vscode/
 .idea/
+.DS_Store
 
-# Environments
+# --- Environments / secrets --------------------------------------------------
 .env
 *secrets.env
 .venv
@@ -12,60 +13,68 @@ ENV/
 env.bak/
 venv.bak/
 
-# mypy
+# --- Tooling caches ----------------------------------------------------------
 .mypy_cache/
 .dmypy.json
 dmypy.json
-
-# db
-*.db
-*.db_shm
-*.db_wal
-
-# python
+.ruff_cache/
+.pytest_cache/
+.coverage
+coverage.xml
 __pycache__/
 *.pyc
 
-# tmp
-.tmp/ 
-.bin/
-
-# log
+# --- Logs / temp -------------------------------------------------------------
 *.log
-
-# config.json
-
-.DS_Store
-
+.tmp/
+.bin/
+/var/
 build_msgs.txt
-
-# data
-*.csv
-*.json
-!example_search_github.json
-*.out
-*.txt
-db-data/
 dump_*
-*.txt
-*.out
 local_config/
-!backend/requirements.txt
+/.assemblage-tui.json
 
-
-# TUI generated files
+# --- Generated compose (retired in the infra phase) --------------------------
 docker-compose-tui.yml
 
-# temporarily
-frontend/
-binaries*
+# --- Data stores (never source, wherever they appear) -------------------------
+*.db
+*.db_shm
+*.db_wal
+*.sqlite
+*.sqlite3
+*.duckdb
+*.duckdb.zst
+*.zst
+db-data/
 
-*dataset
+# --- Pipeline byproducts ------------------------------------------------------
+*.dwarf.json
+*.pcode
+*.metadata
+*.stdout
 
-# deephistory: runtime data only — source code under deephistory/ stays tracked
+# --- Large local data, anchored to where it actually lives --------------------
+# (winpe.sqlite 102 GB, hf_binaries/ 361 GB, binaries/ is a live MinIO backend,
+#  data_refill/ holds a 136 GB duckdb; none of it is source)
+/winpe.sqlite*
+/hf_binaries/
+/binaries/
+/assemblage_dataset/
+/restart_loop.log
+/data_refill/*
+!/data_refill/*.py
+!/data_refill/README.md
+/frontend/
+
+# deephistory: runtime data only — source under deephistory/ stays tracked
 deephistory/binaries/
 deephistory/claims/
 deephistory/progress/
 deephistory/deephistory/
 deephistory/*.sqlite*
 !deephistory/packages.json
+
+# --- Test fixtures are always tracked, whatever their extension ---------------
+!tests/fixtures/**
+!backend/test/**/*.json
