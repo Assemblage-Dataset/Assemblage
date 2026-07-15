@@ -1,0 +1,19 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.0
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-added-large-files
+        args: [--maxkb=500] # would have caught the 12 MB dia2dump .pch
+      - id: detect-private-key
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+      - id: end-of-file-fixer
+        exclude: ^backend/test/fixtures/|^tests/fixtures/
+      - id: trailing-whitespace
+        exclude: ^backend/test/fixtures/|^tests/fixtures/
