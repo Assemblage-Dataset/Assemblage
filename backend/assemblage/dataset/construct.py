@@ -61,6 +61,26 @@ def get_md5(s):
     return hashlib.md5(s.encode()).hexdigest()
 
 
+def staged_name_matches(entry_file, staged_filename):
+    """Whether a Binary_info_list entry's ``file`` refers to ``staged_filename``.
+
+    A ``Binary_info_list`` entry's ``file`` can be a bare name, a POSIX path, or
+    a Windows path, and — when the entry was produced by the daily pipeline's
+    re-extraction — it carries the download's ``{binary_id}_`` prefix (the DWARF
+    extractor names the entry after the on-disk file, e.g. ``1005_hello``).
+    db_construct compares against the cleaned ``staged_filename`` (``hello``), so
+    the two never matched and every daily-pipeline function was dropped (the
+    "Known defect"). Match the entry's basename both raw and with a leading
+    ``{digits}_`` stripped so both the re-extracted names and the builder's
+    already-clean names (Rust) resolve.
+    """
+    if not entry_file:
+        return False
+    base = os.path.basename(str(entry_file).replace("\\", "/"))
+    stripped = re.sub(r"^\d+_", "", base)
+    return staged_filename in (base, stripped)
+
+
 def assign_path(s):
     s = str(s)[::-1]
     path_layers = re.findall(".{2}", str(s))
@@ -294,6 +314,16 @@ def db_construct(dbfile, target_dir, include_lines, include_functions, include_r
                 "size": os.path.getsize(os.path.join(target_dir, path, filename)) // 1024,
                 "hash": sha256sum(os.path.join(target_dir, path, filename)),
                 "license": license,
+                # Compiler/build identity threaded from the PG buildopt join via
+                # the staging metadata (nullable; empty for legacy metas). Lets a
+                # Rust row record rustc/rust/llvm/RelWithDebInfo directly.
+                "compiler": pdbinfo.get("Compiler", pdbinfo.get("compiler", "")),
+                "language": pdbinfo.get(
+                    "Language", pdbinfo.get("language", pdbinfo.get("Repo_language", ""))
+                ),
+                "codegen_backend": pdbinfo.get(
+                    "Codegen_backend", pdbinfo.get("codegen_backend", "")
+                ),
             }
             pdb_ds.extend([{"binary_id": binary_id, "pdb_path": x} for x in pdb_paths_moved])
             seen = set()
@@ -325,7 +355,7 @@ def db_construct(dbfile, target_dir, include_lines, include_functions, include_r
                     if mapped_memory is None:
                         print(f"Can't map {binary_fmt or 'unknown'} image for {filename}, skip")
                         continue
-                    if binary_file["file"] != filename:
+                    if not staged_name_matches(binary_file["file"], filename):
                         continue
                     bin_id = binary_rela[filename]
                     # Recognized non-function ELF section names that the legacy
@@ -377,6 +407,11 @@ def db_construct(dbfile, target_dir, include_lines, include_functions, include_r
                             "source_codes": "",
                             "prototype": "",
                             "source_file": "",
+                            # Rust-only; NULL for C/C++ (the extractor emits
+                            # neither). demangled_name is the rustfilt v0 form,
+                            # origin is in_repo/dependency/stdlib.
+                            "demangled_name": function_info.get("demangled_name"),
+                            "origin": function_info.get("origin"),
                         }
                         if "source_codes" in function_info:
                             function_obj["source_codes"] = function_info["source_codes"]
