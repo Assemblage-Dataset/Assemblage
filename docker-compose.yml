@@ -132,11 +132,21 @@ services:
     image: rabbitmq:3-management
     environment:
       RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: -rabbit consumer_timeout 1800000
+      # Erlang sizes its scheduler pool from _SC_NPROCESSORS_CONF, which glibc
+      # derives from /sys/devices/system/cpu/possible. Cloud hosts pad that for
+      # hotplug (this one: possible=0-239 vs 128 online), so every VM the CLI
+      # boots gets 240 schedulers + 240 dirty. The healthcheck below boots one
+      # such VM per run: measured 10.4 cores burned continuously to support a
+      # broker doing 0.09 cores of real work. Cap the CLI's VM instead.
+      RABBITMQ_CTL_ERL_ARGS: "+S 2:2 +SDcpu 1:1"
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-guest}
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
-      interval: 5s
+      # 30s, not 5s: each probe costs an Erlang VM boot. Docker 20.10/compose
+      # 2.12 here have no start_interval, so this also gates first boot — with
+      # retries: 25 that still allows ~12 min for rabbitmq to come up.
+      interval: 30s
       timeout: 10s
       retries: 25
       start_period: 10s
