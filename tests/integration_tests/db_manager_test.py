@@ -16,12 +16,13 @@ import pytest
 import sqlalchemy as sqla
 
 import tests.integration_tests.integration_helper as helper
+from tests.constants import TEST_DB_ADDR, TEST_MESSAGE_LEVEL
 
 pytestmark = pytest.mark.integration  # needs the live test database
 logging.basicConfig(
     format="%(asctime)s [TEST] %(levelname)s: %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
-    level=const.TEST_MESSAGE_LEVEL,
+    level=TEST_MESSAGE_LEVEL,
 )
 logger = logging.getLogger(__name__)
 
@@ -31,7 +32,7 @@ class TestDBManager(unittest.TestCase):
         """
         This creates an infinite loop (useful for looking inside the test DB)
         """
-        dbm = db.DBManager(const.TEST_DB_ADDR)  # creates DB if it doesn't exist
+        dbm = db.DBManager(TEST_DB_ADDR)  # creates DB if it doesn't exist
         while True:
             time.sleep(10)
             logger.info("Running...")
@@ -75,7 +76,7 @@ class TestDBManager(unittest.TestCase):
         }
         # expected_row = model.RepoDO(**expected_data)   # comparing dicts directly gives more useful error message
 
-        dbm = db.DBManager(const.TEST_DB_ADDR)
+        dbm = db.DBManager(TEST_DB_ADDR)
         out = dbm.get_projects_row_by_id(INPUT_ID)
 
         self.assertEqual(
@@ -116,7 +117,7 @@ class TestDBManager(unittest.TestCase):
             "commit_hexsha",
         }
 
-        dbm = db.DBManager(const.TEST_DB_ADDR)
+        dbm = db.DBManager(TEST_DB_ADDR)
         out: model.Status = dbm.get_status_row_by_id(INPUT_ID)
 
         self.assertEqual(
@@ -160,7 +161,7 @@ class TestDBManager(unittest.TestCase):
             "build_type": "RelWithDebInfo",
         }
 
-        dbm = db.DBManager(const.TEST_DB_ADDR)
+        dbm = db.DBManager(TEST_DB_ADDR)
         out: model.Status = dbm.find_build_opt_by_id(INPUT_ID)
 
         self.assertEqual(
@@ -209,7 +210,7 @@ class TestDBManager(unittest.TestCase):
             commit_hexsha="",
             mod_timestamp="",
         )
-        dbm = db.DBManager(const.TEST_DB_ADDR)
+        dbm = db.DBManager(TEST_DB_ADDR)
         message_actual = None
         with dbm.get_session() as session:
             # set up the task to be dispatched
@@ -230,7 +231,7 @@ class TestDBManager(unittest.TestCase):
         single_msg1_json: str = '{"name": "DOOM", "url": "https://api.github.com/repos/id-Software/DOOM", "language": "C++", "owner_id": 1395534, "description": "DOOM Open Source Release", "created_at": "2012-01-31 21:28:06", "updated_at": "2024-05-24 13:18:59", "size": 149, "build_system": "others", "branch": "master"}'
         repomsg = msg.ScraperDataOutSingle.from_json(single_msg1_json)
 
-        dbm = db.DBManager(const.TEST_DB_ADDR)
+        dbm = db.DBManager(TEST_DB_ADDR)
 
         dbm.insert_repos(repomsg.to_dict())
 
@@ -254,7 +255,7 @@ class TestDBManager(unittest.TestCase):
         helper.seed_database_buildopts()
         helper.seed_database_statuses_unstarted()
 
-        dbm = db.DBManager(const.TEST_DB_ADDR)
+        dbm = db.DBManager(TEST_DB_ADDR)
         # status id and clone status (most common)
         dbm.update_repo_status(status_id=1, clone_status=const.CloneStatus.FAILED)
 
@@ -312,7 +313,7 @@ class TestDBManager(unittest.TestCase):
             "NAME2", "0004", "GCC", "x64", "c++", "linux", "comp_flag", "", "all"
         )
 
-        dbm = db.DBManager(const.TEST_DB_ADDR)
+        dbm = db.DBManager(TEST_DB_ADDR)
 
         ret = dbm.register_build_opt(msg1)
         self.assertTrue(ret == 1)
@@ -344,7 +345,7 @@ class TestDBManager(unittest.TestCase):
         helper.seed_database_buildopts()
         helper.seed_database_statuses_unstarted()
 
-        dbm = db.DBManager(const.TEST_DB_ADDR)
+        dbm = db.DBManager(TEST_DB_ADDR)
 
         dbm.insert_binary("FILENAME", "DESCRIPTION", 3)
         dbm.insert_binary("FILENAME2", "DESCRIPTION", 3)

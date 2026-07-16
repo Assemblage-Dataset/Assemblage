@@ -12,7 +12,8 @@ import pytest
 import sqlalchemy as sqla
 from alembic import command
 from alembic.config import Config
-from assemblage.consts import TEST_DB_ADDR
+
+from tests.constants import TEST_DB_ADDR
 
 # backend/alembic.ini — %(here)s inside it resolves script_location to
 # backend/alembic, so this works regardless of the process cwd.

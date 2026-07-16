@@ -13,7 +13,7 @@ todo:
 import logging
 import unittest
 
-from assemblage.consts import TEST_MESSAGE_LEVEL
+from tests.constants import TEST_MESSAGE_LEVEL
 
 logging.basicConfig(
     format="%(asctime)s [TEST] %(levelname)s: %(message)s",

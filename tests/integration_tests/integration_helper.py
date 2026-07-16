@@ -10,7 +10,8 @@ import assemblage.data.db as db
 import assemblage.database.models as model
 import assemblage.mq.messages as msg
 import sqlalchemy as sqla
-from assemblage.consts import TEST_DB_ADDR
+
+from tests.constants import TEST_DB_ADDR
 
 helper_dbm = db.DBManager(TEST_DB_ADDR)
 

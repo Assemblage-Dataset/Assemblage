@@ -27,7 +27,6 @@ import assemblage.mq.messages as msg
 from assemblage.consts import (
     BIN_DIR,
     COORDINATOR_DATABASE_SYNC_TIMEOUT,
-    TEST_MESSAGE_LEVEL,
     BuildStatus,
     CloneStatus,
     InputQueue,
@@ -36,6 +35,7 @@ from pika import BasicProperties
 from pika.exchange_type import ExchangeType
 
 import tests.unit_tests.helper_func as helper
+from tests.constants import TEST_MESSAGE_LEVEL
 
 logging.basicConfig(
     format="%(asctime)s [TEST] %(levelname)s: %(message)s",

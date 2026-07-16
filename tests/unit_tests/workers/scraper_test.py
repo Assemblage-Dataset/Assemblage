@@ -20,7 +20,6 @@ from assemblage.consts import (
     GITHUB_REPO_URL,
     SCRAPER_PAGE_SIZE,
     SCRAPER_REQUEST_TIMEOUT_S,
-    TEST_MESSAGE_LEVEL,
     InputQueue,
     ScrapeSource,
 )
@@ -28,6 +27,7 @@ from assemblage.mq.messages import ScraperDataOutSingle
 from requests import Response
 
 import tests.unit_tests.helper_func as helper
+from tests.constants import TEST_MESSAGE_LEVEL
 
 logging.basicConfig(
     format="%(asctime)s [TEST] %(levelname)s: %(message)s",

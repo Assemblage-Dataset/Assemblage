@@ -48,8 +48,6 @@ from assemblage.enums import (
 )
 
 __all__ = [
-    "AWS_AUTO_REBOOT_PREFIX",
-    "AWS_REBOOT_SLEEP_INTERVAL",
     "BINPATH",
     # constants
     "BIN_DIR",
@@ -67,15 +65,12 @@ __all__ = [
     "MAX_MQ_SIZE",
     "RATE_LIMIT_UPDATE_INTERVAL",
     "RATE_LIMIT_WAIT",
-    "REPO_SIZE_THRESHOLD",
     "SCRAPER_PAGE_SIZE",
     "SCRAPER_RATE_INTERVAL",
     "SCRAPER_REPO_BUNDLESIZE",
     "SCRAPER_REQUEST_TIMEOUT_S",
     "SECONDARY_RATE_LIMIT_WAIT",
     "TASK_TIMEOUT_THRESHOLD",
-    "TEST_DB_ADDR",
-    "TEST_MESSAGE_LEVEL",
     "WAIT_AFTER_REQ_INTERVAL",
     # enums
     "BuildStatus",
@@ -131,19 +126,7 @@ else:
 
 TASK_TIMEOUT_THRESHOLD = 600
 MAX_MQ_SIZE = 3600
-REPO_SIZE_THRESHOLD = 50
 CLEAN_OVERTIME_INTERVAL = 600
 COORDINATOR_DATABASE_SYNC_TIMEOUT = 10
 CHANNEL_CONNECTION_ATTEMPTS = 35
 CHANNEL_RETRY_DELAY = 20
-AWS_AUTO_REBOOT_PREFIX = "auto-worker"
-AWS_REBOOT_SLEEP_INTERVAL = 1200
-
-# Integration-test configuration (moves into tests/ when those tests are
-# rewritten). The conftest refuses to run against a DB literally named
-# 'assemblage' so the live corpus can never be truncated by a test.
-TEST_MESSAGE_LEVEL = "DEBUG"
-TEST_DB_ADDR = os.getenv(
-    "TEST_DB_ADDR",
-    "postgresql+psycopg2://assemblage:assemblage@assemblage-test-db:5432/assemblage",
-)

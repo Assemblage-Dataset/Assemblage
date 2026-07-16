@@ -15,12 +15,13 @@ import sqlalchemy as sqla
 from assemblage.coordinator.coordinator import Coordinator
 
 import tests.integration_tests.integration_helper as helper
+from tests.constants import TEST_MESSAGE_LEVEL
 
 pytestmark = pytest.mark.integration  # needs the live test database
 logging.basicConfig(
     format="%(asctime)s [TEST] %(levelname)s: %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
-    level=const.TEST_MESSAGE_LEVEL,
+    level=TEST_MESSAGE_LEVEL,
 )
 logger = logging.getLogger(__name__)
 
