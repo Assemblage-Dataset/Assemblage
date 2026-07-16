@@ -9,9 +9,7 @@ import logging.config
 import os
 import sys
 
-from assemblage.config import ScraperSettings
-from assemblage.consts import WorkerType
-from assemblage.worker.scraper import Scraper
+from assemblage.enums import WorkerType
 
 if __name__ == "__main__":
     worker_type_env = os.getenv("TYPE")
@@ -45,16 +43,11 @@ if __name__ == "__main__":
 
             sys.exit(builder_main())
         case WorkerType.Scraper:
-            settings = ScraperSettings()
-            # print(settings.dict())
-            scraper = Scraper(settings=settings, workerid=0)
-            logging.basicConfig(
-                format="%(asctime)s %(levelname)s:%(message)s",
-                datefmt="%Y-%m-%d %H:%M:%S",
-                level=settings.logLevel,
-            )  # if i could figure out how to set this in the config that would be much better but alas. no
-            scraper.run()
-            # call start scraper
+            # Re-architected scraper: composition root owns its own settings,
+            # logging, supervisor and graceful-shutdown exit code.
+            from assemblage.scraper.app import main as scraper_main
+
+            sys.exit(scraper_main())
         case WorkerType.LegacyConan:
             # DeepHistory legacy builder - standalone Conan-based pipeline
             # Does NOT use RabbitMQ/coordinator. Reads manifest, builds via Conan, writes to SQLite.
@@ -68,7 +61,7 @@ if __name__ == "__main__":
             )
             deephistory_args = os.getenv("DEEPHISTORY_ARGS", "")
             argv_override = shlex.split(deephistory_args) if deephistory_args else sys.argv[1:]
-            sys.argv = [sys.argv[0]] + argv_override
+            sys.argv = [sys.argv[0], *argv_override]
             from scripts.build_deephistory import main as deephistory_main
 
             deephistory_main()

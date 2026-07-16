@@ -1,9 +1,10 @@
 """Tunable constants for the Assemblage runtime.
 
 The canonical home for numeric/string tunables used by the re-architected
-coordinator, builder and scraper. ``consts.py`` re-exports these so un-ported
-modules keep importing ``assemblage.consts`` unchanged.
+coordinator, builder and scraper.
 """
+
+import os
 
 # --- Coordinator dispatch pacing ---------------------------------------------
 
@@ -61,3 +62,7 @@ CHANNEL_TIMEOUT = 350
 
 BIN_DIR = "/binaries"
 """Root directory for builder work trees and produced binaries."""
+
+BINPATH = "C:/binaries" if os.name == "nt" else "/binaries"
+"""Platform-specific binaries root used by the frozen legacy (Windows/Conan)
+build strategies and the DeepHistory script."""
