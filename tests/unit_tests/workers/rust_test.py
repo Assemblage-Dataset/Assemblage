@@ -211,9 +211,7 @@ class TestClassifyOrigin(unittest.TestCase):
         with tempfile.TemporaryDirectory() as clone:
             os.makedirs(os.path.join(clone, "golden_lib", "src"))
             open(os.path.join(clone, "golden_lib", "src", "lib.rs"), "w").close()
-            self.assertEqual(
-                classify_origin("golden_lib/src/lib.rs", clone, "/cargo"), "in_repo"
-            )
+            self.assertEqual(classify_origin("golden_lib/src/lib.rs", clone, "/cargo"), "in_repo")
 
     def test_relative_non_repo_is_other(self):
         # std's relative "library/..." path does not resolve under the clone dir.
