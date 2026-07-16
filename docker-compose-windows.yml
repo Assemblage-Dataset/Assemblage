@@ -4,7 +4,7 @@ services:
     image: assemblage-windows:latest
     build:
       context: .
-      dockerfile: docker/windows/Dockerfile
+      dockerfile: docker/legacy/windows/Dockerfile
     command: ["powershell", "-File", "C:\\app\\scripts\\start_windows_worker.ps1"]
     healthcheck:
       test: ["CMD", "powershell", "-Command", "Get-Process | Where-Object CommandLine -like '*start_worker.py*' | Select-Object -First 1; if ($$?) { exit 0 } else { exit 1 }"]  

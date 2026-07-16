@@ -59,7 +59,9 @@ services:
     image: assemblage-gcc:default
     build:
       context: .
-      dockerfile: docker/gcc/Dockerfile
+      dockerfile: docker/worker/Dockerfile
+      args:
+        TOOLCHAIN: gcc
     environment:
       <<: *e2e-env
       TYPE: coordinator

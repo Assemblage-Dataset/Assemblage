@@ -95,7 +95,9 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: docker/gcc/Dockerfile
+          file: docker/worker/Dockerfile
+          build-args: |
+            TOOLCHAIN=gcc
           tags: assemblage-gcc:default
           load: true
           cache-from: type=gha
