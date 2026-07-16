@@ -1,6 +1,6 @@
 """Schema drift gate.
 
-Proves the SQLModel ORM (assemblage.database.models) still describes exactly
+Proves the SQLModel ORM (assemblage.db.models) still describes exactly
 what the Alembic migrations produce, so no future `alembic revision
 --autogenerate` can silently propose a destructive change and the models stay
 frozen to the live database (backend/alembic/README.md).

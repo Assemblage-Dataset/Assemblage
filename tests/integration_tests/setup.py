@@ -1,4 +1,3 @@
-import assemblage.data.db as db
 import sqlalchemy as sqla
 from alembic import command
 from alembic.config import Config
@@ -10,9 +9,6 @@ def setup():
     """
     Upgrades the assemblage-test-db with alembic upgrade head.
     """
-    # DBManager calls create_engine, which creates DB if it doesn't exist
-    dbm = db.DBManager(TEST_DB_ADDR)
-
     # Overwrite the default DB address with the test address
     config = Config("/app/alembic.ini")
     config.set_main_option("sqlalchemy.url", TEST_DB_ADDR)

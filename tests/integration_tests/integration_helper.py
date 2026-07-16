@@ -1,173 +1,104 @@
-"""
-Various functions for seeding and clearing data, as well as constants used by integration testing.
-I don't touch the alembic tables, but everything else is fair game.
+"""Seeding and teardown helpers for the coordinator integration tests.
+
+Rewritten for the P6 store: everything goes through ``CoordinatorStore`` /
+``db.models`` (the old ``DBManager`` / ``mq.messages`` seed path is gone).
 """
 
+import datetime
 import logging
 
-import assemblage.consts as const
-import assemblage.data.db as db
-import assemblage.database.models as model
-import assemblage.mq.messages as msg
 import sqlalchemy as sqla
+from assemblage.db.engine import make_engine, session_scope
+from assemblage.db.models import BuildOpt, RepoDO, Status
+from assemblage.enums import BuildStatus, CloneStatus
+from assemblage.settings import DatabaseSettings
 
 from tests.constants import TEST_DB_ADDR
 
-helper_dbm = db.DBManager(TEST_DB_ADDR)
-
 logger = logging.getLogger(__name__)
 
+_engine = make_engine(TEST_DB_ADDR)
 
-def apply_test_db_settings(settings):
-    """Point a Settings object at TEST_DB_ADDR.
+_CREATED_AT = datetime.datetime(2025, 11, 15, 12, 28, 25)
+_UPDATED_AT = datetime.datetime(2025, 11, 15, 12, 41, 59)
 
-    Coordinator (and any code that builds its engine from ``settings``) then
-    talks to the same database the helpers seed, regardless of whether that is
-    the old compose ``assemblage-test-db`` host or a scratch db on localhost.
-    """
+
+def make_store():
+    """A CoordinatorStore pointed at the scratch test database."""
+    from assemblage.db.store import CoordinatorStore
+
+    return CoordinatorStore(make_engine(TEST_DB_ADDR))
+
+
+def test_database_settings() -> DatabaseSettings:
+    """A ``DatabaseSettings`` describing ``TEST_DB_ADDR`` (for app-level wiring)."""
     url = sqla.engine.make_url(TEST_DB_ADDR)
-    settings.db_host = url.host
-    settings.db_port = url.port or 5432
-    settings.db_name = url.database
-    settings.db_user = url.username
-    settings.db_pass = url.password
-    return settings
+    return DatabaseSettings(
+        host=url.host or "localhost",
+        port=url.port or 5432,
+        database=url.database or "assemblage_test",
+        user=url.username or "assemblage",
+        password=url.password or "assemblage",
+    )
 
 
-def seed_database_projects():
-    """
-    Seeds the database with:
-    * 3 test projects: PROJECT_1, PROJECT_2, PROJECT_3
-    """
-
-    dict1 = msg.ScraperDataOutSingle(
-        "PROJECT_1",
-        "URL_1",
-        "LANG",
-        11,
-        "DESCRIPTION",
-        "2025-11-15 12:28:25",
-        "2025-11-15 12:41:59",
-        5,
-        "BUILD_SYS",
-        "BRANCH",
-    ).to_dict()
-    dict2 = msg.ScraperDataOutSingle(
-        "PROJECT_2",
-        "URL_2",
-        "LANG",
-        12,
-        "DESCRIPTION",
-        "2025-11-15 12:28:25",
-        "2025-11-15 12:41:59",
-        10,
-        "BUILD_SYS",
-        "BRANCH",
-    ).to_dict()
-    dict3 = msg.ScraperDataOutSingle(
-        "PROJECT_3",
-        "URL_3",
-        "LANG",
-        13,
-        "DESCRIPTION",
-        "2025-11-15 12:28:25",
-        "2025-11-15 12:41:59",
-        15,
-        "BUILD_SYS",
-        "BRANCH",
-    ).to_dict()
-    with helper_dbm.get_session() as session:
-        session.add(model.RepoDO(**dict1))
-        session.add(model.RepoDO(**dict2))
-        session.add(model.RepoDO(**dict3))
+def seed_database_projects() -> None:
+    """Seed three projects: PROJECT_1, PROJECT_2, PROJECT_3."""
+    with session_scope(_engine) as session:
+        for i, owner in enumerate((11, 12, 13), start=1):
+            session.add(
+                RepoDO(
+                    name=f"PROJECT_{i}",
+                    url=f"URL_{i}",
+                    language="LANG",
+                    owner_id=owner,
+                    description="DESCRIPTION",
+                    created_at=_CREATED_AT,
+                    updated_at=_UPDATED_AT,
+                    size=5 * i,
+                    build_system="BUILD_SYS",
+                    branch="BRANCH",
+                )
+            )
 
 
-def seed_database_buildopts():
-    buildopt1 = {
-        "platform": "linux",
-        "language": "c++",
-        "compiler_name": "clang",
-        "build_system": "all",
-        "library": "x64",
-        "enable": True,
-        "compiler_version": "10.0.0",
-        "save_assembly": True,
-    }
-    buildopt2 = {
-        "platform": "linux",
-        "language": "c++",
-        "compiler_name": "gcc",
-        "build_system": "all",
-        "library": "x64",
-        "enable": True,
-        "compiler_version": "10.0.0",
-        "save_assembly": True,
-    }
-    with helper_dbm.get_session() as session:
-        session.add(model.BuildOpt(**buildopt1))
-        session.add(model.BuildOpt(**buildopt2))
+def seed_database_buildopts() -> None:
+    """Seed two 'all' build options (clang, gcc)."""
+    with session_scope(_engine) as session:
+        for compiler in ("clang", "gcc"):
+            session.add(
+                BuildOpt(
+                    platform="linux",
+                    language="c++",
+                    compiler_name=compiler,
+                    compiler_flag="",
+                    build_system="all",
+                    build_command="",
+                    library="x64",
+                    enable=True,
+                    compiler_version="10.0.0",
+                    save_assembly=True,
+                )
+            )
 
 
-def seed_database_statuses_unstarted():
-    """
-    Seeds the database with 6 total build status options (every project has 2 build opts)
-    """
-    project1_b1 = {
-        "clone_status": const.CloneStatus.NOT_STARTED,
-        "build_status": const.BuildStatus.INIT,
-        "build_opt_id": 1,
-        "repo_id": 1,
-    }
-    project1_b2 = {
-        "clone_status": const.CloneStatus.NOT_STARTED,
-        "build_status": const.BuildStatus.INIT,
-        "build_opt_id": 2,
-        "repo_id": 1,
-    }
-    project2_b1 = {
-        "clone_status": const.CloneStatus.NOT_STARTED,
-        "build_status": const.BuildStatus.INIT,
-        "build_opt_id": 1,
-        "repo_id": 2,
-    }
-    project2_b2 = {
-        "clone_status": const.CloneStatus.NOT_STARTED,
-        "build_status": const.BuildStatus.INIT,
-        "build_opt_id": 2,
-        "repo_id": 2,
-    }
-    project3_b1 = {
-        "clone_status": const.CloneStatus.NOT_STARTED,
-        "build_status": const.BuildStatus.INIT,
-        "build_opt_id": 1,
-        "repo_id": 3,
-    }
-    project3_b2 = {
-        "clone_status": const.CloneStatus.NOT_STARTED,
-        "build_status": const.BuildStatus.INIT,
-        "build_opt_id": 2,
-        "repo_id": 3,
-    }
-    with helper_dbm.get_session() as session:
-        session.add(model.Status(**project1_b1))
-        session.add(model.Status(**project1_b2))
-        session.add(model.Status(**project2_b1))
-        session.add(model.Status(**project2_b2))
-        session.add(model.Status(**project3_b1))
-        session.add(model.Status(**project3_b2))
+def seed_database_statuses_unstarted() -> None:
+    """Seed six un-started statuses (each of 3 projects x 2 build options)."""
+    with session_scope(_engine) as session:
+        for repo_id in (1, 2, 3):
+            for opt_id in (1, 2):
+                session.add(
+                    Status(
+                        clone_status=CloneStatus.NOT_STARTED,
+                        build_status=BuildStatus.INIT,
+                        build_opt_id=opt_id,
+                        repo_id=repo_id,
+                    )
+                )
 
 
-def truncate_all():
-    """
-    Clears all the tables. Note that these commands are database specific and may need to be changed if
-    we migrate from the current PostgreSQL system. Doesn't touch Alembic table since we don't test on it.
-
-    The three primary parts of this command are 1) delete all table rows 2) restart any identity sequences
-    3) cascade across other tables if foreign keys are involved. Not all tables need 2) and 3), but including
-    them in all the commands allows for flexibility if the schema changes.
-    """
-    with helper_dbm.get_session() as session:
-        session.execute(sqla.sql.text("TRUNCATE TABLE b_status RESTART IDENTITY CASCADE"))
-        session.execute(sqla.sql.text("TRUNCATE TABLE binaries RESTART IDENTITY CASCADE"))
-        session.execute(sqla.sql.text("TRUNCATE TABLE buildopt RESTART IDENTITY CASCADE"))
-        session.execute(sqla.sql.text("TRUNCATE TABLE projects RESTART IDENTITY CASCADE"))
+def truncate_all() -> None:
+    """Clear the five ORM tables (PostgreSQL-specific; leaves alembic_version)."""
+    with session_scope(_engine) as session:
+        for table in ("b_status", "binaries", "buildopt", "projects"):
+            session.execute(sqla.text(f"TRUNCATE TABLE {table} RESTART IDENTITY CASCADE"))
