@@ -45,10 +45,11 @@ is at [assemblage-dataset.net](https://assemblage-dataset.net); see the
   appends them (with DWARF function/RVA/line info) to a cumulative SQLite corpus.
 
 **Rust support.** Alongside the C/C++ flow, Assemblage builds Rust (cargo)
-repositories: a dedicated `scraper_rust` service scrapes `language:rust`, and 9
+repositories: a dedicated `scraper_rust` service scrapes `language:rust`, and 20
 `builder_rust_*` services compile each repo with `rustc`'s three
-`-Zcodegen-backend` targets (LLVM, Cranelift, and GCC/cg_gcc) across build modes
-and optimization levels, all from one pinned nightly (`docker/rust/Dockerfile`,
+`-Zcodegen-backend` targets (LLVM, Cranelift, and GCC/cg_gcc) across three build
+modes (Debug / RelWithDebInfo / Release) and the `-O0..-O3, -Os, -Oz` flag
+spread, all from one pinned nightly (`docker/rust/Dockerfile`,
 image `assemblage-rust:default`). Rust binaries carry the same DWARF
 function/line metadata as the C corpus, plus demangled names and per-function
 origin tags (in-repo vs. dependency vs. stdlib). Tier notes: LLVM and Cranelift

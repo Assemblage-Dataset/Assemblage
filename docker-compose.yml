@@ -408,6 +408,111 @@ services:
       COMPILER_FLAG: "-O2"
       name: rust-gcc-O2
 
+  # --- matrix widening (2026-07-16): diversified opt levels per tier ---------
+  # llvm/RelWithDebInfo gains -Oz; cg_gcc (a genuinely different optimizer)
+  # gets the full flag spread; Release covers the realistic production levels;
+  # Debug adds optimized-debug points; cranelift adds one optimized point
+  # (it barely optimizes by design — two levels capture its behavior).
+
+  builder_rust_llvm_oz:
+    <<: *builder-rust
+    environment:
+      <<: *rust-worker-env
+      CODEGEN_BACKEND: llvm
+      BUILD_MODE: RelWithDebInfo
+      COMPILER_FLAG: "-Oz"
+      name: rust-llvm-Oz
+
+  builder_rust_llvm_dbg_o1:
+    <<: *builder-rust
+    environment:
+      <<: *rust-worker-env
+      CODEGEN_BACKEND: llvm
+      BUILD_MODE: Debug
+      COMPILER_FLAG: "-O1"
+      name: rust-llvm-dbg-O1
+
+  builder_rust_llvm_dbg_o2:
+    <<: *builder-rust
+    environment:
+      <<: *rust-worker-env
+      CODEGEN_BACKEND: llvm
+      BUILD_MODE: Debug
+      COMPILER_FLAG: "-O2"
+      name: rust-llvm-dbg-O2
+
+  builder_rust_llvm_rel_o3:
+    <<: *builder-rust
+    environment:
+      <<: *rust-worker-env
+      CODEGEN_BACKEND: llvm
+      BUILD_MODE: Release
+      COMPILER_FLAG: "-O3"
+      name: rust-llvm-rel-O3
+
+  builder_rust_llvm_rel_os:
+    <<: *builder-rust
+    environment:
+      <<: *rust-worker-env
+      CODEGEN_BACKEND: llvm
+      BUILD_MODE: Release
+      COMPILER_FLAG: "-Os"
+      name: rust-llvm-rel-Os
+
+  builder_rust_llvm_rel_oz:
+    <<: *builder-rust
+    environment:
+      <<: *rust-worker-env
+      CODEGEN_BACKEND: llvm
+      BUILD_MODE: Release
+      COMPILER_FLAG: "-Oz"
+      name: rust-llvm-rel-Oz
+
+  builder_rust_clift_o2:
+    <<: *builder-rust
+    environment:
+      <<: *rust-worker-env
+      CODEGEN_BACKEND: cranelift
+      BUILD_MODE: RelWithDebInfo
+      COMPILER_FLAG: "-O2"
+      name: rust-clift-O2
+
+  builder_rust_gcc_o0:
+    <<: *builder-rust
+    environment:
+      <<: *rust-worker-env
+      CODEGEN_BACKEND: gcc
+      BUILD_MODE: RelWithDebInfo
+      COMPILER_FLAG: "-O0"
+      name: rust-gcc-O0
+
+  builder_rust_gcc_o1:
+    <<: *builder-rust
+    environment:
+      <<: *rust-worker-env
+      CODEGEN_BACKEND: gcc
+      BUILD_MODE: RelWithDebInfo
+      COMPILER_FLAG: "-O1"
+      name: rust-gcc-O1
+
+  builder_rust_gcc_o3:
+    <<: *builder-rust
+    environment:
+      <<: *rust-worker-env
+      CODEGEN_BACKEND: gcc
+      BUILD_MODE: RelWithDebInfo
+      COMPILER_FLAG: "-O3"
+      name: rust-gcc-O3
+
+  builder_rust_gcc_os:
+    <<: *builder-rust
+    environment:
+      <<: *rust-worker-env
+      CODEGEN_BACKEND: gcc
+      BUILD_MODE: RelWithDebInfo
+      COMPILER_FLAG: "-Os"
+      name: rust-gcc-Os
+
 volumes:
   cargo-registry:
     driver: local
