@@ -10,8 +10,19 @@ the message tests and a `basic_ack` mock defect, both fixed).
 - `integration_tests/` — real PostgreSQL/RabbitMQ (`store_test`,
   `coordinator_int_test`, the schema-`drift_test`).
 - `e2e/` — the golden-repo end-to-end gate (`injector.py`, driven by `make e2e`).
+  Covers **both** languages in one run: `hello-make` (c++) and `rust-golden`
+  (rust) are published in a single scrape bundle, and the gate asserts dispatch
+  isolation (a c++ repo never lands on a rust buildopt and vice versa), S3 key
+  layout (C flat prefix + Rust backend/mode prefix), and DWARF function/line/rva
+  facts for each.
 - `invariants/`, `fixtures/` — wire goldens and frozen fixtures. **Do not edit
   fixtures to make a test pass** — if code can't satisfy a golden, the code is wrong.
+  - `fixtures/repos/rust-golden/` — a 2-crate cargo workspace (bin + lib, a
+    generic `pair_sum` with two instantiations, a closure, an inlined helper;
+    source lines are frozen ground truth — see its `README.md`).
+  - `fixtures/golden/rust-golden.-O0.metadata.norm.json` and `…-O2.…` — the
+    normalized Rust metadata goldens (llvm codegen) the e2e gate diffs against,
+    beside the C `hello-make.metadata.norm.json`.
 
 ## Markers (see `pyproject.toml`)
 
