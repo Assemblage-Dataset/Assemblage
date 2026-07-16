@@ -32,9 +32,9 @@ from elftools.common.exceptions import ELFError
 from sqlalchemy import create_engine, text
 
 # dataset_utils lives in the same directory
-from dataset_utils import db_construct, METAFILE
-from dataset_orm import migrate_existing_db, init_clean_database
-from db import Dataset_DB
+from assemblage.dataset.construct import db_construct, METAFILE
+from assemblage.dataset.orm import migrate_existing_db, init_clean_database
+from assemblage.dataset.store import Dataset_DB
 
 logging.basicConfig(
     format="%(asctime)s %(levelname)s %(message)s",

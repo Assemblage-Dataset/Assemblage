@@ -17,7 +17,7 @@ from sqlalchemy.sql.schema import ForeignKey
 from sqlalchemy_utils import create_database, database_exists
 from sqlalchemy.engine import Engine
 from sqlalchemy import event
-from dataset_orm import Binary, Function, Line, Base, init_clean_database, RVA, PDB
+from assemblage.dataset.orm import Binary, Function, Line, Base, init_clean_database, RVA, PDB
 
 BULK_CHUNK_SIZE = 5000
 
