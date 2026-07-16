@@ -1,6 +1,12 @@
 # Golden-repo E2E gate topology — hermetic: no secrets.env, no persistent
 # volumes, fixture repos served over file:// (zero network in the build path).
 # Run via `make e2e`. The injector's exit code is the gate.
+#
+# The explicit project name keeps the gate in its own compose namespace: without
+# it, both this file and docker-compose.yml resolve to the directory-name project
+# `assemblage`, and running the gate while the production stack is up would
+# recreate production containers from this file's hermetic config.
+name: assemblage-e2e
 
 x-e2e-env: &e2e-env
   PYTHONUNBUFFERED: "1"
