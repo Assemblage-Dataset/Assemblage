@@ -13,9 +13,17 @@ un-ported workers and is removed in P8.
 import socket
 from datetime import UTC, datetime
 from platform import machine, system
+from typing import Annotated
 
-from pydantic import AliasChoices, Field, SecretStr, computed_field, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import (
+    AliasChoices,
+    Field,
+    SecretStr,
+    computed_field,
+    field_validator,
+    model_validator,
+)
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from assemblage.enums import (
     RuntimeEnv,
@@ -151,6 +159,20 @@ class ScraperSettings(WorkerSettings):
         default=ScraperOutputPolicy.ON_REQUEST, validation_alias="SCRAPER_POLICY"
     )
     wait_for_config: bool = True
-    qualifiers: set[str] = Field(default_factory=lambda: {"language:c++"})
+    # Comma-separated in the environment ("language:rust" or
+    # "language:rust,stars:>10"); NoDecode skips pydantic-settings' JSON
+    # parsing so the raw string reaches the validator below.
+    qualifiers: Annotated[set[str], NoDecode] = Field(
+        default_factory=lambda: {"language:c++"},
+        validation_alias="SCRAPE_QUALIFIERS",
+    )
     proxies: list[str] = Field(default_factory=list)
     source: ScrapeSource = Field(default=ScrapeSource.GITHUB, validation_alias="SCRAPE_DATASOURCE")
+
+    @field_validator("qualifiers", mode="before")
+    @classmethod
+    def _split_qualifiers(cls, value: object) -> object:
+        """Parse a comma-separated SCRAPE_QUALIFIERS string into a set."""
+        if isinstance(value, str):
+            return {part.strip() for part in value.split(",") if part.strip()}
+        return value

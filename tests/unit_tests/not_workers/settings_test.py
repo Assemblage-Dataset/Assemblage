@@ -124,11 +124,23 @@ class TestScraperSettings(unittest.TestCase):
         with mock.patch.dict("os.environ", {}, clear=False):
             import os
 
-            for key in ("SCRAPER_POLICY", "GITHUB_TOKEN", "SCRAPE_DATASOURCE"):
+            for key in ("SCRAPER_POLICY", "GITHUB_TOKEN", "SCRAPE_DATASOURCE", "SCRAPE_QUALIFIERS"):
                 os.environ.pop(key, None)
             settings = ScraperSettings()
         self.assertEqual(settings.qualifiers, {"language:c++"})
         self.assertEqual(settings.default_policy, ScraperOutputPolicy.ON_REQUEST)
+
+    def test_scrape_qualifiers_single(self):
+        env = {"SCRAPE_QUALIFIERS": "language:rust"}
+        with mock.patch.dict("os.environ", env, clear=False):
+            settings = ScraperSettings()
+        self.assertEqual(settings.qualifiers, {"language:rust"})
+
+    def test_scrape_qualifiers_comma_separated(self):
+        env = {"SCRAPE_QUALIFIERS": "language:rust, stars:>10"}
+        with mock.patch.dict("os.environ", env, clear=False):
+            settings = ScraperSettings()
+        self.assertEqual(settings.qualifiers, {"language:rust", "stars:>10"})
 
     def test_runtime_env_alias(self):
         with mock.patch.dict("os.environ", {"RUNTIME_ENV": "development"}, clear=False):
