@@ -1,5 +1,18 @@
 #!/usr/bin/env bash
 #
+# HISTORICAL — retired as of R5 (2026-07-16). DO NOT RUN as an acceptance gate.
+#
+# This script proved the P10 DWARF-extractor/S3-layout swap left the daily
+# corpus BYTE-IDENTICAL (parity vs the pre-P10 tree). R5 deliberately CHANGES
+# that output: the db_construct name-matching fix makes the daily pipeline store
+# functions/rvas/lines for the first time (previously zero), and Rust rows add
+# demangled_name/origin columns. Parity-vs-HEAD~ would therefore rightly FAIL.
+# The R5 acceptance instrument is tests/e2e/dataset_correctness.sh
+# (`make dataset-gate`), which asserts the corpus is *correctly populated*
+# rather than *unchanged*. This file is kept only for provenance of the P10
+# claim; it is not wired into any current gate.
+#
+# ----------------------------------------------------------------------------
 # Dataset parity gate (P10).
 #
 # Proves that sharing the DWARF extractor (assemblage.dwarf.extract) and the S3
