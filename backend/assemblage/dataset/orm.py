@@ -5,7 +5,9 @@ Chang Liu
 
 import datetime
 import json
+import sqlite3
 
+from sqlalchemy.dialects import sqlite as sqlite_dialect
 from sqlalchemy.orm import Session
 from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, create_engine, LargeBinary, Float, BigInteger
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
@@ -107,3 +109,61 @@ def init_clean_database(db_str):
     except Exception as err:
         print(err)
     print("Finished")
+
+
+# Indexes the dataset queries depend on (documented in CLAUDE.md's SQLite
+# schema section): (index name, table, column).
+_DATASET_INDEXES = (
+    ("ix_functions_binary_id", "functions", "binary_id"),
+    ("ix_rvas_function_id", "rvas", "function_id"),
+    ("ix_lines_function_id", "lines", "function_id"),
+)
+
+
+def migrate_existing_db(db_path):
+    """Idempotently bring an existing SQLite dataset database up to the current
+    ORM schema.
+
+    The daily pipeline appends into a cumulative SQLite file that may have been
+    created by an older revision of these models. For every table the ORM knows
+    about, add any column the ORM defines but the on-disk table is missing
+    (SQLite ``ALTER TABLE ... ADD COLUMN``), then create the lookup indexes the
+    dataset queries rely on. Safe to run repeatedly: every mutation is guarded
+    by a ``PRAGMA table_info`` / ``sqlite_master`` check or by
+    ``CREATE INDEX IF NOT EXISTS``.
+
+    ``db_path`` is a filesystem path to the SQLite file (not a SQLAlchemy URL).
+    """
+    dialect = sqlite_dialect.dialect()
+    conn = sqlite3.connect(db_path)
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+        existing_tables = {row[0] for row in cur.fetchall()}
+
+        for table in Base.metadata.sorted_tables:
+            if table.name not in existing_tables:
+                # Absent entirely: fresh databases are created by
+                # init_clean_database / create_all, not patched here.
+                continue
+            cur.execute(f'PRAGMA table_info("{table.name}")')
+            existing_columns = {row[1] for row in cur.fetchall()}
+            for col in table.columns:
+                if col.name in existing_columns:
+                    continue
+                coltype = col.type.compile(dialect=dialect)
+                cur.execute(
+                    f'ALTER TABLE "{table.name}" ADD COLUMN "{col.name}" {coltype}'
+                )
+
+        for index_name, table_name, column_name in _DATASET_INDEXES:
+            if table_name not in existing_tables:
+                continue
+            cur.execute(
+                f'CREATE INDEX IF NOT EXISTS "{index_name}" '
+                f'ON "{table_name}" ("{column_name}")'
+            )
+
+        conn.commit()
+    finally:
+        conn.close()
