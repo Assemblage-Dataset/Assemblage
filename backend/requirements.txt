@@ -35,7 +35,7 @@ idna==3.10  # used by email validator? figure this one out
 #oauthlib==3.3.1 # for google stuff
 pefile==2021.9.3  # used by builder and loader
 future==0.18.2  # required by pefile
-pika==1.2.0  # required for rabbitmq
+pika==1.3.2  # required for rabbitmq
 # proto-plus==1.26.1  # only possibly used in the unused cloner_new worker
 # protobuf==6.31.1  # only possibly used in the unused cloner_new worker
 psycopg2-binary==2.9.10  # used by DB/SQL
