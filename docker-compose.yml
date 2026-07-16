@@ -59,6 +59,44 @@ x-builder-clang: &builder-clang
     args:
       TOOLCHAIN: clang
 
+# Rust builder base: its own image (docker/rust/Dockerfile — one pinned nightly,
+# three -Zcodegen-backend targets), a shared cargo registry cache volume, and a
+# lighter replica default (Rust builds are heavier per task than C). Scale via
+# RUST_BUILDER_REPLICAS / BUILDER_MEM; per-service env sets backend/mode/flag.
+x-builder-rust: &builder-rust
+  image: assemblage-rust:default
+  build:
+    context: .
+    dockerfile: docker/rust/Dockerfile
+  env_file:
+    - secrets.env
+  restart: unless-stopped
+  depends_on:
+    rabbitmq:
+      condition: service_healthy
+    minio:
+      condition: service_healthy
+  stop_grace_period: 10s
+  deploy:
+    replicas: ${RUST_BUILDER_REPLICAS:-2}
+  mem_limit: ${BUILDER_MEM:-16g}
+  volumes:
+    - ./backend:/app
+    - cargo-registry:/cargo
+
+# Env common to every rust builder (compose merges the per-service backend/mode/
+# flag/name on top). CARGO_HOME points at the shared cargo-registry volume so the
+# crates.io package cache persists across tasks (cargo file-locks it — concurrent
+# replicas on one volume are safe). BUILD_TIMEOUT_S widens the C flow's tight
+# per-task budget because Rust link+monomorphization is slower.
+x-rust-worker-env: &rust-worker-env
+  <<: *worker-env
+  TYPE: builder
+  compiler: rustc
+  language: rust
+  CARGO_HOME: /cargo
+  BUILD_TIMEOUT_S: "1800"
+
 services:
 
   database:
@@ -133,6 +171,26 @@ services:
       TYPE: scraper
       name: scraper_0
       SCRAPER_POLICY: continuous
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 2048M
+
+  # Dedicated Rust scraper: same stanza as scraper_0 but its GitHub query is
+  # language:rust (SCRAPE_QUALIFIERS is env-driven). A distinct NAME keeps the
+  # scrapers-table handshake and per-uuid control queue independent from the C++
+  # scraper, so GitHub search quotas and date-windowing stay separate.
+  scraper_rust:
+    <<: *worker
+    environment:
+      <<: *worker-env
+      TYPE: scraper
+      name: scraper_rust
+      SCRAPER_POLICY: continuous
+      SCRAPE_QUALIFIERS: "language:rust"
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -241,7 +299,105 @@ services:
       name: gcc-Os
       COMPILER_FLAG: "-Os"
 
+  # --- Rust matrix: 9 buildopts over one pinned nightly ---------------------
+  # Each service registers a distinct rust buildopt (language=rust ×
+  # codegen_backend × build_mode × flag) → its own build_opt_{id} queue, so
+  # rust repos never land on the C++ opts and vice-versa (language-aware
+  # dispatch). Backends verified empirically 2026-07-16 (see CLAUDE.md worker
+  # matrix): llvm + cranelift + gcc all emit functions+lines on the golden repo.
+
+  # llvm — RelWithDebInfo across the -O spread (parity with the C flag matrix).
+  builder_rust_llvm_o0:
+    <<: *builder-rust
+    environment:
+      <<: *rust-worker-env
+      CODEGEN_BACKEND: llvm
+      BUILD_MODE: RelWithDebInfo
+      COMPILER_FLAG: "-O0"
+      name: rust-llvm-O0
+
+  builder_rust_llvm_o1:
+    <<: *builder-rust
+    environment:
+      <<: *rust-worker-env
+      CODEGEN_BACKEND: llvm
+      BUILD_MODE: RelWithDebInfo
+      COMPILER_FLAG: "-O1"
+      name: rust-llvm-O1
+
+  builder_rust_llvm_o2:
+    <<: *builder-rust
+    environment:
+      <<: *rust-worker-env
+      CODEGEN_BACKEND: llvm
+      BUILD_MODE: RelWithDebInfo
+      COMPILER_FLAG: "-O2"
+      name: rust-llvm-O2
+
+  builder_rust_llvm_o3:
+    <<: *builder-rust
+    environment:
+      <<: *rust-worker-env
+      CODEGEN_BACKEND: llvm
+      BUILD_MODE: RelWithDebInfo
+      COMPILER_FLAG: "-O3"
+      name: rust-llvm-O3
+
+  builder_rust_llvm_os:
+    <<: *builder-rust
+    environment:
+      <<: *rust-worker-env
+      CODEGEN_BACKEND: llvm
+      BUILD_MODE: RelWithDebInfo
+      COMPILER_FLAG: "-Os"
+      name: rust-llvm-Os
+
+  # llvm — canonical debug build (dev profile, debug-assertions on).
+  builder_rust_llvm_dbg_o0:
+    <<: *builder-rust
+    environment:
+      <<: *rust-worker-env
+      CODEGEN_BACKEND: llvm
+      BUILD_MODE: Debug
+      COMPILER_FLAG: "-O0"
+      name: rust-llvm-dbg-O0
+
+  # llvm — stripped-debuginfo realism tier (Release keeps symtab via strip=none).
+  builder_rust_llvm_rel_o2:
+    <<: *builder-rust
+    environment:
+      <<: *rust-worker-env
+      CODEGEN_BACKEND: llvm
+      BUILD_MODE: Release
+      COMPILER_FLAG: "-O2"
+      name: rust-llvm-rel-O2
+
+  # cranelift — barely optimizes regardless of -O, so one level suffices.
+  builder_rust_clift_o0:
+    <<: *builder-rust
+    environment:
+      <<: *rust-worker-env
+      CODEGEN_BACKEND: cranelift
+      BUILD_MODE: RelWithDebInfo
+      COMPILER_FLAG: "-O0"
+      name: rust-clift-O0
+
+  # gcc (cg_gcc) — experimental tier. ENABLED: 2026-07-16 backend smoke on
+  # rust-golden built exit 0 with non-empty DWARF (20k+ line entries); at -O0 it
+  # emits golden_bin::mul3 / golden_lib::add / pair_sum cleanly, at -O2 those
+  # small fns inline away (expected optimization, not a backend defect).
+  builder_rust_gcc_o2:
+    <<: *builder-rust
+    environment:
+      <<: *rust-worker-env
+      CODEGEN_BACKEND: gcc
+      BUILD_MODE: RelWithDebInfo
+      COMPILER_FLAG: "-O2"
+      name: rust-gcc-O2
+
 volumes:
+  cargo-registry:
+    driver: local
   db-data:
     driver: local
   rabbitmq-data:
