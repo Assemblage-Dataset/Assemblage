@@ -232,7 +232,16 @@ class CrawlService(Service):
             end_time=self._search.crawl_time_end,
         )
         try:
-            publisher.publish(SCRAPER_REG, msg.model_dump_json(), correlation_id=self._uuid)
+            # reply_to our own ctrl queue so the coordinator's UPDATE ack is
+            # routable: the old scraper omitted it and relied on the coordinator
+            # swallowing the unroutable reply; the substrate now *raises* on an
+            # unroutable publish, which would requeue this UPDATE forever.
+            publisher.publish(
+                SCRAPER_REG,
+                msg.model_dump_json(),
+                correlation_id=self._uuid,
+                reply_to=self._ctrl_queue_name,
+            )
         except PublishError as error:
             logger.warning("could not publish UPDATE sync: %s", error)
             return
