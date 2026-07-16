@@ -90,9 +90,11 @@ x-builder-rust: &builder-rust
 # replicas on one volume are safe). BUILD_TIMEOUT_S widens the C flow's tight
 # per-task budget because Rust link+monomorphization is slower.
 # DWARF_SIZE_LIMIT: statically linked Rust binaries with full debug info blow
-# past the extractor's 150 MB C-era default; measured cost is ~42x file size in
-# RAM (a 220 MB binary peaked at 9.3 GB), so 250 MB is the most a 16 g container
-# can digest with headroom. Skipped binaries are logged with size + limit.
+# past the extractor's 150 MB C-era default; measured cost on a 220 MB binary is
+# ~9.6 GB RSS (~42x file size) and >20 min of single-core extraction time, so
+# 250 MB is the most a 16 g container can digest — and each such binary parks
+# its builder for tens of minutes. Tune DOWN for throughput, not up. Skipped
+# binaries are logged with size + limit.
 x-rust-worker-env: &rust-worker-env
   <<: *worker-env
   TYPE: builder
