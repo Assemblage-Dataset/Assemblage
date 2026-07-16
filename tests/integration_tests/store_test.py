@@ -22,18 +22,38 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def _registration(compiler: str, flag: str = "") -> BuilderRegistration:
+def _registration(
+    compiler: str,
+    flag: str = "",
+    language: str = "c++",
+    build_system: str = "all",
+    **fields: str,
+) -> BuilderRegistration:
     return BuilderRegistration(
         name=f"{compiler}-builder",
         uuid="0001",
         compiler=compiler,
         library="x64",
-        language="c++",
+        language=language,
         platform="linux",
         compiler_flag=flag,
         build_command="",
-        build_system="all",
+        build_system=build_system,
+        **fields,
     )
+
+
+def _repo(name: str, language: str, build_system: str = "make") -> dict[str, object]:
+    return {
+        "name": name,
+        "url": f"https://github.com/test/{name}",
+        "language": language,
+        "owner_id": 1,
+        "description": "d",
+        "size": 1,
+        "build_system": build_system,
+        "branch": "master",
+    }
 
 
 class TestCoordinatorStore(unittest.TestCase):
@@ -80,6 +100,117 @@ class TestCoordinatorStore(unittest.TestCase):
                 {"o": opt_id},
             ).scalar_one()
         self.assertEqual(n, 3)  # one per existing repo
+
+    def test_register_build_opt_identity_is_nine_columns(self):
+        """build_type and codegen_backend joined the identity (Rust rollout)."""
+        helper.truncate_all()
+        store = helper.make_store()
+
+        base = store.register_build_opt(_registration("gcc", "-O2"))
+        same = store.register_build_opt(_registration("gcc", "-O2"))
+        debug = store.register_build_opt(_registration("gcc", "-O2", build_mode="Debug"))
+        rust = store.register_build_opt(
+            _registration("rustc", "-O2", language="rust", codegen_backend="llvm")
+        )
+
+        self.assertEqual(same, base)  # defaults re-match
+        self.assertNotEqual(debug, base)  # build_mode differentiates
+        self.assertNotIn(rust, {base, debug})  # codegen_backend differentiates
+
+        with store._engine.connect() as conn:
+            rows = dict(
+                conn.execute(
+                    sqla.text("SELECT id, build_type || '|' || codegen_backend FROM buildopt")
+                ).all()
+            )
+        self.assertEqual(rows[base], "RelWithDebInfo|")
+        self.assertEqual(rows[debug], "Debug|")
+        self.assertEqual(rows[rust], "RelWithDebInfo|llvm")
+
+    def test_reregister_existing_c_identity_no_churn(self):
+        """A current C builder re-registers onto its migrated live row.
+
+        The row is seeded via raw SQL WITHOUT build_type/codegen_backend so the
+        server defaults fill them — exactly what migration e9d4c1f2a3b5 leaves
+        behind on the live database. A default registration (wire defaults
+        'RelWithDebInfo' / '') must return the same id with zero new rows.
+        """
+        helper.truncate_all()
+        helper.seed_database_projects()
+        store = helper.make_store()
+
+        with store._engine.begin() as conn:
+            live_id = conn.execute(
+                sqla.text(
+                    "INSERT INTO buildopt (platform, language, compiler_name, compiler_flag,"
+                    " build_system, build_command, library, enable)"
+                    " VALUES ('linux', 'c++', 'gcc', '-O2', 'all', '', 'x64', true)"
+                    " RETURNING id"
+                )
+            ).scalar_one()
+
+        opt_id = store.register_build_opt(_registration("gcc", "-O2"))
+
+        self.assertEqual(opt_id, live_id)
+        with store._engine.connect() as conn:
+            opts = conn.execute(sqla.text("SELECT count(*) FROM buildopt")).scalar_one()
+            statuses = conn.execute(sqla.text("SELECT count(*) FROM b_status")).scalar_one()
+        self.assertEqual(opts, 1)  # no duplicate buildopt row
+        self.assertEqual(statuses, 0)  # identity match never back-fills
+
+    def test_register_build_opt_backfill_is_language_aware(self):
+        """A new rust buildopt back-fills b_status ONLY for rust repos; a new
+        c++ buildopt covers the c/cpp/CPP family including legacy rows."""
+        helper.truncate_all()
+        store = helper.make_store()
+        self.assertEqual(store.insert_repos(_repo("cpp-repo", "c++")), 1)
+        self.assertEqual(store.insert_repos(_repo("legacy-repo", "CPP")), 1)
+        self.assertEqual(store.insert_repos(_repo("c-repo", "c")), 1)
+        self.assertEqual(store.insert_repos(_repo("rust-repo", "rust", "cargo")), 1)
+
+        rust_opt = store.register_build_opt(
+            _registration("rustc", "-O0", language="rust", codegen_backend="llvm")
+        )
+        cpp_opt = store.register_build_opt(_registration("gcc", "-O0"))
+
+        with store._engine.connect() as conn:
+            rows = conn.execute(
+                sqla.text(
+                    "SELECT s.build_opt_id, p.name FROM b_status s"
+                    " JOIN projects p ON p.id = s.repo_id"
+                )
+            ).all()
+        by_opt: dict[int, set[str]] = {}
+        for opt_id, name in rows:
+            by_opt.setdefault(opt_id, set()).add(name)
+        self.assertEqual(by_opt.get(rust_opt), {"rust-repo"})
+        self.assertEqual(by_opt.get(cpp_opt), {"cpp-repo", "legacy-repo", "c-repo"})
+
+    def test_insert_repos_fanout_is_language_aware(self):
+        """insert_repos creates b_status rows only on matching-language opts."""
+        helper.truncate_all()
+        store = helper.make_store()
+        cpp_opt = store.register_build_opt(_registration("gcc", "-O1"))
+        rust_opt = store.register_build_opt(
+            _registration("rustc", "-O1", language="rust", codegen_backend="llvm")
+        )
+
+        self.assertEqual(store.insert_repos(_repo("cpp-repo", "c++")), 1)
+        self.assertEqual(store.insert_repos(_repo("legacy-repo", "CPP")), 1)
+        self.assertEqual(store.insert_repos(_repo("rust-repo", "rust", "cargo")), 1)
+
+        with store._engine.connect() as conn:
+            rows = conn.execute(
+                sqla.text(
+                    "SELECT s.build_opt_id, p.name FROM b_status s"
+                    " JOIN projects p ON p.id = s.repo_id"
+                )
+            ).all()
+        by_opt: dict[int, set[str]] = {}
+        for opt_id, name in rows:
+            by_opt.setdefault(opt_id, set()).add(name)
+        self.assertEqual(by_opt.get(cpp_opt), {"cpp-repo", "legacy-repo"})
+        self.assertEqual(by_opt.get(rust_opt), {"rust-repo"})
 
     def test_insert_repos_creates_repo_and_statuses(self):
         helper.truncate_all()

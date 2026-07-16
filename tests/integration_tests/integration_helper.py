@@ -42,15 +42,19 @@ def test_database_settings() -> DatabaseSettings:
     )
 
 
-def seed_database_projects() -> None:
-    """Seed three projects: PROJECT_1, PROJECT_2, PROJECT_3."""
+def seed_database_projects(language: str = "c++") -> None:
+    """Seed three projects: PROJECT_1, PROJECT_2, PROJECT_3.
+
+    ``language`` defaults to ``"c++"`` (what the scraper stores) so the seeded
+    repos match the seeded c++ buildopts under language-aware fan-out.
+    """
     with session_scope(_engine) as session:
         for i, owner in enumerate((11, 12, 13), start=1):
             session.add(
                 RepoDO(
                     name=f"PROJECT_{i}",
                     url=f"URL_{i}",
-                    language="LANG",
+                    language=language,
                     owner_id=owner,
                     description="DESCRIPTION",
                     created_at=_CREATED_AT,

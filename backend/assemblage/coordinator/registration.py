@@ -31,12 +31,14 @@ def handle_builder_registration(
 ) -> AckDecision:
     """Register (or re-enable) the builder's build option, reply, start dispatch."""
     logger.info(
-        "builder %s registering: %s %s on %s (%s)",
+        "builder %s registering: %s %s on %s (%s, build_mode=%s, codegen_backend=%s)",
         msg.name,
         msg.compiler,
         msg.compiler_flag,
         msg.platform,
         msg.language,
+        msg.build_mode,
+        msg.codegen_backend or "-",
     )
     opt_id = store.register_build_opt(msg)
     reply(BuilderRegistered(build_opt_id=opt_id))

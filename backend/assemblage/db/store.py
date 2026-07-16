@@ -30,6 +30,27 @@ logger = logging.getLogger(__name__)
 # repo dict before constructing a RepoDO.
 _REPO_COLUMNS: frozenset[str] = frozenset(RepoDO.model_fields) - {"statuses"}
 
+# Languages the corpus builds with the c++ buildopts: GitHub reports C and C++
+# repos separately (the scraper lowercases them) and 1,594 legacy projects rows
+# store 'CPP'; all of them belong to the C/C++ pipeline.
+_C_FAMILY: frozenset[str] = frozenset({"c", "cpp", "c++"})
+
+
+def languages_match(repo_language: str, opt_language: str) -> bool:
+    """True when a repo of ``repo_language`` belongs on an ``opt_language`` buildopt.
+
+    Both sides are normalized via ``lower()``; the C family ``{'c', 'cpp',
+    'c++'}`` (including the legacy uppercase ``'CPP'`` rows) collapses to
+    ``'c++'``. Anything else must match exactly (``'rust'`` only matches
+    ``'rust'``).
+    """
+
+    def canon(language: str) -> str:
+        lowered = language.lower()
+        return "c++" if lowered in _C_FAMILY else lowered
+
+    return canon(repo_language) == canon(opt_language)
+
 
 @dataclass(frozen=True)
 class DispatchCandidate:
@@ -71,10 +92,13 @@ class CoordinatorStore:
     def register_build_opt(self, reg: BuilderRegistration) -> int:
         """Match-or-create the build option identified by a builder registration.
 
-        Identity is the seven original buildopt columns (platform, language,
-        compiler_name, compiler_flag, build_system, build_command, library). A
-        matching row is re-enabled; a new row is created and back-filled with a
-        ``b_status`` for every existing repo whose build system it covers.
+        Identity is nine buildopt columns: the seven original ones (platform,
+        language, compiler_name, compiler_flag, build_system, build_command,
+        library) plus build_type and codegen_backend (Rust rollout; the wire
+        defaults 'RelWithDebInfo' / '' make C builders re-match their existing
+        live rows exactly). A matching row is re-enabled; a new row is created
+        and back-filled with a ``b_status`` for every existing repo whose build
+        system AND language it covers.
         """
         with session_scope(self._engine) as session:
             existing = (
@@ -87,6 +111,8 @@ class CoordinatorStore:
                         col(BuildOpt.build_system) == reg.build_system,
                         col(BuildOpt.build_command) == reg.build_command,
                         col(BuildOpt.library) == reg.library,
+                        col(BuildOpt.build_type) == reg.build_mode,
+                        col(BuildOpt.codegen_backend) == reg.codegen_backend,
                     )
                 )
                 .scalars()
@@ -109,6 +135,8 @@ class CoordinatorStore:
                 build_command=reg.build_command,
                 library=reg.library,
                 enable=True,
+                build_type=reg.build_mode,
+                codegen_backend=reg.codegen_backend,
             )
             session.add(opt)
             session.flush()
@@ -116,7 +144,8 @@ class CoordinatorStore:
             new_statuses = [
                 Status(repo_id=repo.id, build_opt_id=opt.id)
                 for repo in session.execute(select(RepoDO)).scalars()
-                if reg.build_system in repo.build_system or reg.build_system == "all"
+                if (reg.build_system in repo.build_system or reg.build_system == "all")
+                and languages_match(repo.language, reg.language)
             ]
             session.bulk_save_objects(new_statuses)
 
@@ -255,12 +284,17 @@ class CoordinatorStore:
     def insert_repos(self, repo: dict[str, object]) -> int:
         """Insert one scraped repo plus a ``b_status`` per covering build option.
 
+        A build option covers a repo when its build system matches AND
+        :func:`languages_match` holds (a rust repo lands only on rust opts, a
+        c/c++/CPP repo only on c++ opts).
+
         Returns 1 on success, 0 on a duplicate (IntegrityError) or any other
         failure — the corpus has many duplicate URLs, so a duplicate is a normal
         skip, not an error worth failing the whole bundle over.
         """
         filtered = {k: v for k, v in repo.items() if k in _REPO_COLUMNS}
         build_system = str(repo.get("build_system", ""))
+        language = str(repo.get("language", ""))
         with session_scope(self._engine) as session:
             try:
                 repo_row = RepoDO(**filtered)
@@ -268,7 +302,9 @@ class CoordinatorStore:
                 session.flush()
                 for opt in session.execute(select(BuildOpt)).scalars():
                     opt_bs = opt.build_system or ""
-                    if build_system in opt_bs or opt_bs == "all":
+                    if (build_system in opt_bs or opt_bs == "all") and languages_match(
+                        language, opt.language
+                    ):
                         session.add(
                             Status(
                                 clone_status=CloneStatus.NOT_STARTED,
