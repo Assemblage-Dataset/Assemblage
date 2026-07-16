@@ -54,6 +54,7 @@ packages = ["backend/assemblage"]
 target-version = "py312"
 line-length = 100
 extend-exclude = [
+    "Assemblage_dataset_cli",      # submodule: formatted after the P9 absorption
     "backend/assemblage/windows",  # frozen legacy quarantine
     "backend/assemblage/legacy",
     "backend/alembic/versions",    # migrations: historical record
