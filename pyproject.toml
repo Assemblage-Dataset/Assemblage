@@ -162,6 +162,7 @@ module = [
     "assemblage.build.detect",
     "assemblage.build.discovery",
     "assemblage.build.linux",
+    "assemblage.build.rust",
     "assemblage.build.strategy",
     "assemblage.builder.app",
     "assemblage.builder.artifacts",

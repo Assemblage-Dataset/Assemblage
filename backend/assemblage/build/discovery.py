@@ -39,6 +39,18 @@ _BINARY_EXTS = (".pdb", ".exe", ".dll", ".lib")
 _ASSEMBLY_EXTS = (".s", ".ii", ".bc", ".S", ".obj", ".asm", ".cod")
 
 
+def is_elf_executable(path: str) -> bool:
+    """Whether ``path`` is an ELF ``ET_EXEC``/``ET_DYN`` file (the linux magic
+    check ``find_binaries`` applies inline). Used by the Rust strategy's
+    cargo-JSON fallback walk so both discovery paths agree on what "a binary" is.
+    """
+    try:
+        with open(path, "rb") as f:
+            return ELFFile(f).header["e_type"] in ("ET_EXEC", "ET_DYN")
+    except (OSError, ELFError):
+        return False
+
+
 def find_binaries(path: str, *, platform: str, save_assembly: bool) -> set[str]:
     """Find ELF/PE executables and (optionally) assembly artifacts under ``path``."""
     logger.info("Finding executables in %s, saving assembly files too: %s", path, save_assembly)

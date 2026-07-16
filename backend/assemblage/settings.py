@@ -27,6 +27,7 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from assemblage.enums import (
     RuntimeEnv,
+    RustCodegenBackend,
     ScraperOutputPolicy,
     ScrapeSource,
     SupportedArchitecture,
@@ -139,6 +140,18 @@ class BuilderSettings(WorkerSettings):
     wait_for_build_opt_minutes: int = 5
     config_check_interval_s: int = 5
     binaries_root: str = "/binaries"
+    # Rust-only knobs (ignored by the C/C++ Linux strategy). codegen_backend and
+    # build_mode also flow into the builder's registration identity.
+    codegen_backend: RustCodegenBackend = Field(
+        default=RustCodegenBackend.LLVM,
+        validation_alias=AliasChoices("codegen_backend", "CODEGEN_BACKEND"),
+    )
+    build_mode: str = Field(
+        default="RelWithDebInfo",
+        validation_alias=AliasChoices("build_mode", "BUILD_MODE"),
+    )
+    build_timeout_s: int = Field(default=1800, validation_alias="BUILD_TIMEOUT_S")
+    cargo_home: str = Field(default="/cargo", validation_alias="CARGO_HOME")
 
 
 class ScraperSettings(WorkerSettings):

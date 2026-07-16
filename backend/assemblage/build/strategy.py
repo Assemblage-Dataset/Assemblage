@@ -17,7 +17,7 @@ reference to the frozen legacy package).
 import logging
 from abc import ABC, abstractmethod
 
-from assemblage.enums import BuildStatus, SupportedPlatform
+from assemblage.enums import BuildStatus, SupportedLanguage, SupportedPlatform
 from assemblage.settings import BuilderSettings
 
 logger = logging.getLogger(__name__)
@@ -60,6 +60,11 @@ class BuildStrategy(ABC):
 def make_strategy(settings: BuilderSettings) -> BuildStrategy:
     """Construct the build strategy for the configured platform."""
     if settings.build_os == SupportedPlatform.LINUX:
+        if settings.language == SupportedLanguage.RUST:
+            from assemblage.build.rust import RustBuildStrategy
+
+            return RustBuildStrategy(settings)
+
         from assemblage.build.linux import LinuxBuildStrategy
 
         return LinuxBuildStrategy(settings)
