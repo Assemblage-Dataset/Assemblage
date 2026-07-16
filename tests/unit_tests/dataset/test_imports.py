@@ -89,9 +89,12 @@ def test_migrate_existing_db_adds_columns_and_indexes(tmp_path):
     # Columns the ORM defines but the old schema lacked are now present.
     bin_cols = _columns(db_path, "binaries")
     assert {"optimization", "hash", "binary_format", "repo_commit", "license"} <= bin_cols
-    assert {"top_comments", "source_codes", "prototype", "source_file"} <= _columns(
-        db_path, "functions"
-    )
+    # The six columns R5 adds for Rust support (build_mode already rode along on
+    # binaries; the other five are net-new). All must be added idempotently.
+    assert {"compiler", "language", "codegen_backend", "build_mode"} <= bin_cols
+    func_cols = _columns(db_path, "functions")
+    assert {"top_comments", "source_codes", "prototype", "source_file"} <= func_cols
+    assert {"demangled_name", "origin"} <= func_cols
     assert {"start", "end"} <= _columns(db_path, "rvas")
     assert {"line_number", "rva", "length", "source_code"} <= _columns(db_path, "lines")
     assert "pdb_path" in _columns(db_path, "pdbs")

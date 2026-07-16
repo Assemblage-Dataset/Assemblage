@@ -50,6 +50,14 @@ class Binary(Base):
     hash = Column(String(length=64))
     repo_commit = Column(String(length=64))
     binary_format = Column(String(length=8), default="")  # "PE" or "ELF"
+    # Compiler/build identity recovered from the PG buildopt join (nullable; old
+    # C/C++ rows predate these columns and stay NULL). build_mode above keeps
+    # riding as before; codegen_backend/language/compiler are net-new so a Rust
+    # binary records its rustc backend and language directly rather than only
+    # via the S3 path string.
+    compiler = Column(String(length=32), nullable=True)
+    language = Column(String(length=32), nullable=True)
+    codegen_backend = Column(String(length=32), nullable=True)
 
 
 class Function(Base):
@@ -64,6 +72,12 @@ class Function(Base):
     # source_codes_ctags = Column(Text)
     prototype = Column(Text)
     source_file = Column(Text)
+    # `name` above stays the mangled/linkage symbol (the stable unique id, as
+    # today). demangled_name is net-new: the builder demangles Rust v0 symbols
+    # (rustfilt) at build time; C/C++ rows leave it NULL. origin classifies a
+    # function as in_repo / dependency / stdlib (Rust only; NULL for C/C++).
+    demangled_name = Column(String(length=1024), nullable=True)
+    origin = Column(String(length=16), nullable=True)
 
 
 class RVA(Base):
