@@ -52,8 +52,36 @@ jobs:
           name: coverage-xml
           path: coverage.xml
 
-  # Integration (live PG + RabbitMQ via services:) joins in the DB-alignment
-  # phase once TEST_DB_ADDR is env-configurable.
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      # A scratch database named 'assemblage_test' (never 'assemblage' — the
+      # integration guard refuses that name). The drift test additionally
+      # CREATE/DROPs a throwaway database, which the default superuser can do.
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: assemblage
+          POSTGRES_PASSWORD: assemblage
+          POSTGRES_DB: assemblage_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U assemblage"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DB_ADDR: postgresql+psycopg2://assemblage:assemblage@localhost:5432/assemblage_test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false # dataset CLI not needed for integration tests
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: ${{ env.UV_VERSION }}
+      - run: uv sync --frozen --dev
+      - run: uv run pytest tests/ -m integration
 
   e2e:
     runs-on: ubuntu-latest
