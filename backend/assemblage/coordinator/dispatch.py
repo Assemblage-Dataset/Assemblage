@@ -12,6 +12,7 @@ observable change. The frozen semantics live here unchanged:
   silent-failing publish never reached the broker).
 """
 
+import json
 import logging
 import threading
 import time
@@ -19,6 +20,7 @@ import time
 import pika.exceptions
 
 from assemblage.constants import (
+    BIN_DIR,
     COORDINATOR_REPO_REQUEST_THRESHOLD,
     DISPATCH_INTERVAL,
     WAIT_AFTER_REQ_INTERVAL,
@@ -125,13 +127,29 @@ class DispatcherService(Service):
             msg_time=time.time(),
             compiler_flag=candidate.compiler_flag,
         )
-        publisher.publish(self._queue, task.model_dump_json())
+        publisher.publish(self._queue, self._encode(task))
         # publish-confirmed-first: only now is the task really in flight.
         self._store.mark_clone_processing(candidate.task_id)
         self._dispatched += 1
         if self._dispatched % 100 == 0:
             logger.info("dispatched %d tasks on build_opt_%d", self._dispatched, self._opt_id)
         stop.wait(DISPATCH_INTERVAL)
+
+    @staticmethod
+    def _encode(task: BuildTask) -> str:
+        """Serialize a task, re-adding the write-only keys the legacy builder needs.
+
+        The new ``BuildTask`` drops ``output_dir`` / ``mod_timestamp``, but the
+        not-yet-rewritten builder's ``BuilderTaskOut`` still requires
+        ``output_dir`` positionally (it would raise ``TypeError`` on a missing
+        key). We re-add both here — the builder ignores their values — so the
+        pipeline keeps working across the P6/P7 boundary. Once P7's builder
+        parses ``BuildTask`` (``extra="ignore"``) this shim can drop away.
+        """
+        payload = task.model_dump()
+        payload["output_dir"] = f"{BIN_DIR}/{task.task_id}"
+        payload["mod_timestamp"] = "0"
+        return json.dumps(payload)
 
 
 class DispatchManager:

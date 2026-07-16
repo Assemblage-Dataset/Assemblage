@@ -264,6 +264,10 @@ class TestDispatcher(unittest.TestCase):
         self.assertEqual(task.url, "https://github.com/id-Software/DOOM")
         self.assertEqual(task.task_id, 42)
         self.assertEqual(task.compiler_flag, "-O2")
+        # transitional compat keys the legacy builder still requires on the wire
+        raw = json.loads(body)
+        self.assertEqual(raw["output_dir"], "/binaries/42")
+        self.assertIn("mod_timestamp", raw)
 
         # PROCESSING only after the confirmed publish
         store.mark_clone_processing.assert_called_once_with(42)
