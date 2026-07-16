@@ -103,6 +103,11 @@ x-rust-worker-env: &rust-worker-env
   CARGO_HOME: /cargo
   BUILD_TIMEOUT_S: "1800"
   DWARF_SIZE_LIMIT: "262144000"
+  # cargo defaults --jobs to the HOST core count (128 here) per container; 18
+  # rust replicas would request ~2300 compile threads and swamp the box (first
+  # full-stack boot hit loadavg ~550). 4 jobs x 18 replicas + ~100 single-job
+  # C++ builders ≈ 1.3x the 128 cores — busy but civil.
+  CARGO_BUILD_JOBS: "4"
 
 services:
 
