@@ -734,6 +734,12 @@ def run_pipeline(
         shutil.rmtree(staging_dir, ignore_errors=True)
         return
 
+    # Bring an existing cumulative DB up to the current schema BEFORE inserting
+    # (older files predate the Rust columns; db_construct now writes them, so the
+    # inserts would fail on a stale schema).
+    if os.path.exists(sqlite_path):
+        migrate_existing_db(sqlite_path)
+
     logger.info("Running db_construct() -> %s", sqlite_path)
     db_construct(
         dbfile=sqlite_path,
@@ -743,6 +749,11 @@ def run_pipeline(
         include_rvas=True,
         include_pdbs=False,
     )
+
+    # db_construct creates a fresh DB via create_all(), which does not build the
+    # imperatively-defined lookup indexes; run the idempotent migration so a
+    # freshly-created linux_licensed.sqlite carries the three indexes too.
+    migrate_existing_db(sqlite_path)
 
     # db_construct moves binaries out of staging into its own hash-based layout;
     # copy final processed tree into the date binaries dir
