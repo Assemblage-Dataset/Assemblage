@@ -52,8 +52,12 @@ class TestExtractRealBinary(unittest.TestCase):
         self.assertIn(2, line_numbers)  # the `return a + b;` line
 
     def test_size_limit_skips(self):
-        # A 0-byte size limit skips every binary.
-        self.assertIsNone(extract.extract_dwarf_info(self.prog, size_limit=0))
+        # A 0-byte size limit skips every binary — and NEVER silently: the skip
+        # must be attributable from the logs (senior-verification finding: real
+        # >150 MB Rust binaries lost their whole Binary_info_list untraceably).
+        with self.assertLogs("assemblage.dwarf.extract", level="WARNING") as cm:
+            self.assertIsNone(extract.extract_dwarf_info(self.prog, size_limit=0))
+        self.assertTrue(any("DWARF_SIZE_LIMIT" in line for line in cm.output))
 
     def test_alarm_armed_on_main_thread(self):
         # A generous timeout arms + disarms SIGALRM without tripping.

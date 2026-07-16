@@ -82,9 +82,20 @@ def extract_dwarf_info(
     if size_limit is None:
         size_limit = int(os.environ.get("DWARF_SIZE_LIMIT", _DEFAULT_SIZE_LIMIT))
     try:
-        if os.path.getsize(binfile) > size_limit:
-            return None
+        size = os.path.getsize(binfile)
     except OSError:
+        return None
+    if size > size_limit:
+        # Never skip silently: a RelWithDebInfo binary losing its whole
+        # Binary_info_list must be attributable from the logs (statically
+        # linked Rust binaries trip this routinely; raise DWARF_SIZE_LIMIT
+        # per-service when the memory budget allows).
+        logger.warning(
+            "skipping DWARF extraction for %s: %d bytes > DWARF_SIZE_LIMIT=%d",
+            binfile,
+            size,
+            size_limit,
+        )
         return None
 
     try:

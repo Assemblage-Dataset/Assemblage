@@ -131,8 +131,10 @@ def _persist_success(
         commit_hexsha=commit_hexsha,
         compiler_flag=ctx.compiler_flag,
     )
-    if dwarf_list:
-        metadata["Binary_info_list"] = dwarf_list
+    # Always present, even when extraction yielded nothing — Binary_info_list is
+    # part of the frozen metadata key set, and an explicit [] distinguishes
+    # "no debug info extracted" from a malformed document.
+    metadata["Binary_info_list"] = dwarf_list
 
     owner, project = clone_dir.rstrip("/").split("/")[-2:]
     prefix = build_prefix(ctx.strategy, owner, project, commit_hexsha, ctx.compiler_flag)
