@@ -1,0 +1,144 @@
+{
+  "Binary_info_list": [
+    {
+      "file": "hello",
+      "functions": [
+        {
+          "function_info": [
+            {
+              "rva_end": "<rva>",
+              "rva_start": "<rva>"
+            }
+          ],
+          "function_name": "add",
+          "intersect_ratio": "0%",
+          "lines": [
+            {
+              "length": "<len>",
+              "line_number": 6,
+              "rva": "<rva>",
+              "source_code": "",
+              "source_file": "src/mathlib.c"
+            },
+            {
+              "length": "<len>",
+              "line_number": 7,
+              "rva": "<rva>",
+              "source_code": "",
+              "source_file": "src/mathlib.c"
+            },
+            {
+              "length": "<len>",
+              "line_number": 8,
+              "rva": "<rva>",
+              "source_code": "",
+              "source_file": "src/mathlib.c"
+            }
+          ],
+          "source_file": "src/mathlib.c"
+        },
+        {
+          "function_info": [
+            {
+              "rva_end": "<rva>",
+              "rva_start": "<rva>"
+            }
+          ],
+          "function_name": "main",
+          "intersect_ratio": "0%",
+          "lines": [
+            {
+              "length": "<len>",
+              "line_number": 6,
+              "rva": "<rva>",
+              "source_code": "",
+              "source_file": "src/main.c"
+            },
+            {
+              "length": "<len>",
+              "line_number": 7,
+              "rva": "<rva>",
+              "source_code": "",
+              "source_file": "src/main.c"
+            },
+            {
+              "length": "<len>",
+              "line_number": 7,
+              "rva": "<rva>",
+              "source_code": "",
+              "source_file": "src/main.c"
+            },
+            {
+              "length": "<len>",
+              "line_number": 7,
+              "rva": "<rva>",
+              "source_code": "",
+              "source_file": "src/main.c"
+            },
+            {
+              "length": "<len>",
+              "line_number": 8,
+              "rva": "<rva>",
+              "source_code": "",
+              "source_file": "src/main.c"
+            },
+            {
+              "length": "<len>",
+              "line_number": 9,
+              "rva": "<rva>",
+              "source_code": "",
+              "source_file": "src/main.c"
+            }
+          ],
+          "source_file": "src/main.c"
+        },
+        {
+          "function_info": [
+            {
+              "rva_end": "<rva>",
+              "rva_start": "<rva>"
+            }
+          ],
+          "function_name": "mul3",
+          "intersect_ratio": "0%",
+          "lines": [
+            {
+              "length": "<len>",
+              "line_number": 11,
+              "rva": "<rva>",
+              "source_code": "",
+              "source_file": "src/mathlib.c"
+            },
+            {
+              "length": "<len>",
+              "line_number": 12,
+              "rva": "<rva>",
+              "source_code": "",
+              "source_file": "src/mathlib.c"
+            },
+            {
+              "length": "<len>",
+              "line_number": 13,
+              "rva": "<rva>",
+              "source_code": "",
+              "source_file": "src/mathlib.c"
+            }
+          ],
+          "source_file": "src/mathlib.c"
+        }
+      ]
+    }
+  ],
+  "Build_mode": "RelWithDebInfo",
+  "Build_time": null,
+  "Commit": "<sha>",
+  "Compiler": "gcc",
+  "Compiler_version": "<masked>",
+  "Optimization": "-O0",
+  "Platform": "linux",
+  "Pushed_at": "01/01/2026, 00:00:00",
+  "URL": "file:///e2e/hello-make",
+  "compiler_flag": "-O0",
+  "language": "c++",
+  "library": "x64"
+}

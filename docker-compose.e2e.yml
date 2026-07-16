@@ -1,0 +1,115 @@
+# Golden-repo E2E gate topology — hermetic: no secrets.env, no persistent
+# volumes, fixture repos served over file:// (zero network in the build path).
+# Run via `make e2e`. The injector's exit code is the gate.
+
+x-e2e-env: &e2e-env
+  PYTHONUNBUFFERED: "1"
+  RUNTIME_ENV: development
+  MQ_HOST: rabbitmq
+  DB_HOST: database
+  DB_PORT: "5432"
+  POSTGRES_DATABASE: assemblage
+  POSTGRES_USER: assemblage
+  POSTGRES_PASSWORD: e2e-only
+  S3_HOST: minio
+  S3_PORT: "9000"
+  S3_HTTPS: "false"
+  S3_ACCESS_KEY: minioadmin
+  S3_SECRET_ACCESS_KEY: e2e-only-secret
+
+services:
+  database:
+    image: postgres:18.0-alpine3.22
+    environment:
+      POSTGRES_USER: assemblage # do not change (alembic env assumes it)
+      POSTGRES_PASSWORD: e2e-only
+      POSTGRES_DB: assemblage
+    tmpfs:
+      - /var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U assemblage"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    environment:
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: -rabbit consumer_timeout 1800000
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 5s
+      timeout: 10s
+      retries: 25
+      start_period: 10s
+
+  minio:
+    image: minio/minio:latest
+    command: server /data
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: e2e-only-secret
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:9000/minio/health/live"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+
+  coordinator:
+    image: assemblage-gcc:default
+    build:
+      context: .
+      dockerfile: docker/gcc/Dockerfile
+    environment:
+      <<: *e2e-env
+      TYPE: coordinator
+      name: coordinator-e2e
+    volumes:
+      - ./backend:/app
+    depends_on:
+      database: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      minio: { condition: service_healthy }
+
+  builder:
+    image: assemblage-gcc:default
+    # Belt-and-braces: images built before the timeout-shadow fix carry a
+    # broken /usr/local/bin/timeout; removing it is a no-op on fixed images.
+    entrypoint:
+      [
+        "bash",
+        "-c",
+        "rm -f /usr/local/bin/timeout && exec python3 /app/scripts/start_worker.py",
+      ]
+    environment:
+      <<: *e2e-env
+      TYPE: builder
+      compiler: gcc
+      language: c++
+      COMPILER_FLAG: "-O0"
+      name: gcc-O0-e2e
+    volumes:
+      - ./backend:/app
+      - e2e-repos:/e2e
+      - /binaries
+    depends_on:
+      coordinator: { condition: service_started }
+    stop_grace_period: 10s
+
+  injector:
+    image: assemblage-gcc:default
+    entrypoint: ["python3", "/injector/injector.py"]
+    environment:
+      <<: *e2e-env
+      E2E_DEADLINE_S: "300"
+    volumes:
+      - ./tests/e2e:/injector:ro
+      - ./tests/fixtures/repos:/fixtures/repos:ro
+      - ./tests/fixtures/golden:/golden
+      - e2e-repos:/e2e
+    depends_on:
+      coordinator: { condition: service_started }
+      builder: { condition: service_started }
+
+volumes:
+  e2e-repos:

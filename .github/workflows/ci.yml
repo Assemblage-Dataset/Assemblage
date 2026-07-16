@@ -53,5 +53,32 @@ jobs:
           path: coverage.xml
 
   # Integration (live PG + RabbitMQ via services:) joins in the DB-alignment
-  # phase once TEST_DB_ADDR is env-configurable; the compose E2E smoke joins
-  # with the golden-repo gate. Both are tracked in the re-architecture plan.
+  # phase once TEST_DB_ADDR is env-configurable.
+
+  e2e:
+    runs-on: ubuntu-latest
+    # The worker image is heavy (union apt set); paths-filtering keeps this
+    # off docs-only changes. First uncached build is slow; gha layer cache
+    # amortizes it afterwards.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build worker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/gcc/Dockerfile
+          tags: assemblage-gcc:default
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Golden-repo gate
+        run: make e2e
+      - name: Upload compose logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.e2e.yml logs > e2e-failure.log 2>&1 || true
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-failure-logs
+          path: e2e-failure.log
