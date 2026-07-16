@@ -98,12 +98,56 @@ services:
       coordinator: { condition: service_started }
     stop_grace_period: 10s
 
+  # Two Rust builders (llvm codegen, RelWithDebInfo) at -O0 and -O2. Each
+  # registers a distinct rust buildopt (language=rust) so the injector can prove
+  # dispatch isolation: the c++ repo lands only on the gcc opt, the rust repo
+  # only on these two. CARGO_HOME is a container-local dir (hermetic — the
+  # fixture has no crates.io deps, so no registry traffic).
+  builder_rust_o0:
+    image: assemblage-rust:default
+    environment:
+      <<: *e2e-env
+      TYPE: builder
+      compiler: rustc
+      language: rust
+      CODEGEN_BACKEND: llvm
+      BUILD_MODE: RelWithDebInfo
+      COMPILER_FLAG: "-O0"
+      CARGO_HOME: /cargo
+      name: rust-llvm-O0-e2e
+    volumes:
+      - ./backend:/app
+      - e2e-repos:/e2e
+    depends_on:
+      coordinator: { condition: service_started }
+    stop_grace_period: 10s
+
+  builder_rust_o2:
+    image: assemblage-rust:default
+    environment:
+      <<: *e2e-env
+      TYPE: builder
+      compiler: rustc
+      language: rust
+      CODEGEN_BACKEND: llvm
+      BUILD_MODE: RelWithDebInfo
+      COMPILER_FLAG: "-O2"
+      CARGO_HOME: /cargo
+      name: rust-llvm-O2-e2e
+    volumes:
+      - ./backend:/app
+      - e2e-repos:/e2e
+    depends_on:
+      coordinator: { condition: service_started }
+    stop_grace_period: 10s
+
   injector:
     image: assemblage-gcc:default
     entrypoint: ["python3", "/injector/injector.py"]
     environment:
       <<: *e2e-env
       E2E_DEADLINE_S: "300"
+      RUST_DEADLINE_S: "600"
     volumes:
       - ./tests/e2e:/injector:ro
       - ./tests/fixtures/repos:/fixtures/repos:ro
@@ -112,6 +156,8 @@ services:
     depends_on:
       coordinator: { condition: service_started }
       builder: { condition: service_started }
+      builder_rust_o0: { condition: service_started }
+      builder_rust_o2: { condition: service_started }
 
 volumes:
   e2e-repos:
