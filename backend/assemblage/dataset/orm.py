@@ -137,8 +137,8 @@ def init_clean_database(db_str):
     print("Finished")
 
 
-# Indexes the dataset queries depend on (documented in CLAUDE.md's SQLite
-# schema section): (index name, table, column).
+# Indexes the dataset queries depend on (see the dataset README):
+# (index name, table, column).
 _DATASET_INDEXES = (
     ("ix_functions_binary_id", "functions", "binary_id"),
     ("ix_rvas_function_id", "rvas", "function_id"),

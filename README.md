@@ -43,11 +43,14 @@ repositories: a dedicated `scraper_rust` service scrapes `language:rust`, and 9
 and optimization levels, all from one pinned nightly (`docker/rust/Dockerfile`,
 image `assemblage-rust:default`). Rust binaries carry the same DWARF
 function/line metadata as the C corpus, plus demangled names and per-function
-origin tags (in-repo vs. dependency vs. stdlib). See the worker matrix in
-`CLAUDE.md`.
+origin tags (in-repo vs. dependency vs. stdlib). Tier notes: LLVM and Cranelift
+give full source/line mapping; the GCC (cg_gcc) tier is experimental —
+names/addresses are reliable but repo-level line info is largely absent; Release
+binaries keep symbol tables, not repo debug info. The full matrix lives in
+`docker-compose.yml`.
 
-The Python package lives under `backend/assemblage/`; see `CLAUDE.md` for the
-module map.
+The Python package lives under `backend/assemblage/`; see
+`backend/assemblage/README.md` for the module map.
 
 ## Quickstart
 

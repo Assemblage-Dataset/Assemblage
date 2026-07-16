@@ -315,8 +315,9 @@ services:
   # Each service registers a distinct rust buildopt (language=rust ×
   # codegen_backend × build_mode × flag) → its own build_opt_{id} queue, so
   # rust repos never land on the C++ opts and vice-versa (language-aware
-  # dispatch). Backends verified empirically 2026-07-16 (see CLAUDE.md worker
-  # matrix): llvm + cranelift + gcc all emit functions+lines on the golden repo.
+  # dispatch). Backends verified empirically 2026-07-16: llvm + cranelift give
+  # full function/line mapping; gcc (cg_gcc) is a name/address tier (repo-level
+  # line info largely absent) and ships enabled but experimental.
 
   # llvm — RelWithDebInfo across the -O spread (parity with the C flag matrix).
   builder_rust_llvm_o0:
