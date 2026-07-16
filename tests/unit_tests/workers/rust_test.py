@@ -217,12 +217,22 @@ class TestClassifyOrigin(unittest.TestCase):
             open(os.path.join(clone, "golden_lib", "src", "lib.rs"), "w").close()
             self.assertEqual(classify_origin("golden_lib/src/lib.rs", clone, "/cargo"), "in_repo")
 
-    def test_relative_non_repo_is_other(self):
-        # std's relative "library/..." path does not resolve under the clone dir.
+    def test_relative_std_library_is_stdlib(self):
+        # cg_gcc emits std paths RELATIVE (library/core/...) instead of llvm's
+        # /rustc/<hash>/ prefix; when the path does not resolve under the clone
+        # dir it is std, not "other" (found on the first real cg_gcc artifact).
         with tempfile.TemporaryDirectory() as clone:
             self.assertEqual(
-                classify_origin("library/core/src/slice/mod.rs", clone, "/cargo"), "other"
+                classify_origin("library/core/src/slice/mod.rs", clone, "/cargo"), "stdlib"
             )
+
+    def test_relative_library_in_repo_wins_over_stdlib(self):
+        # A repo that genuinely contains library/... keeps in_repo attribution —
+        # the clone-dir resolution runs before the relative-std heuristic.
+        with tempfile.TemporaryDirectory() as clone:
+            os.makedirs(os.path.join(clone, "library", "core", "src"))
+            open(os.path.join(clone, "library", "core", "src", "lib.rs"), "w").close()
+            self.assertEqual(classify_origin("library/core/src/lib.rs", clone, "/cargo"), "in_repo")
 
 
 class TestDemangle(unittest.TestCase):

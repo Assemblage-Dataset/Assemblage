@@ -274,6 +274,12 @@ def classify_origin(source_file: str, clone_dir: str, cargo_home: str) -> str:
         return "other"
     if os.path.isfile(os.path.join(clone_dir, source_file)):
         return "in_repo"
+    if source_file.startswith("library/"):
+        # cg_gcc emits the precompiled std's paths RELATIVE (library/core/...,
+        # library/alloc/...) instead of llvm's /rustc/<hash>/library/... form.
+        # Checked after the clone-dir resolution above, so a repo that really
+        # contains such a file still wins as in_repo.
+        return "stdlib"
     return "other"
 
 
