@@ -83,7 +83,13 @@ class BinaryRecordMsg(_WireModel):
 
 
 class BuilderRegistration(_WireModel):
-    """Sent by a builder on startup to register its (compiler, flag) identity."""
+    """Sent by a builder on startup to register its (compiler, flag) identity.
+
+    2026-07-16 sanctioned evolution (Rust rollout): ``codegen_backend`` and
+    ``build_mode`` were added with defaults, so pre-evolution JSON (the frozen
+    ``builder_reg_in`` golden) still parses; new serializations follow the
+    ``builder_reg_v2`` golden. Both goldens are pinned in the fixtures README.
+    """
 
     name: str
     uuid: str
@@ -94,6 +100,8 @@ class BuilderRegistration(_WireModel):
     compiler_flag: str
     build_command: str
     build_system: str
+    codegen_backend: str = ""
+    build_mode: str = "RelWithDebInfo"
 
 
 class BuilderRegistered(_WireModel):

@@ -34,7 +34,7 @@ class TestTypedMessages(unittest.TestCase):
         "clone_status_msg_in": typed.CloneStatusMsg,
         "build_status_msg_in": typed.BuildStatusMsg,
         "binary_task_msg_in": typed.BinaryRecordMsg,
-        "builder_reg_in": typed.BuilderRegistration,
+        "builder_reg_v2": typed.BuilderRegistration,
         "builder_reg_out": typed.BuilderRegistered,
         "scraper_control_task_in": typed.ScraperControlRequest,
         "scraper_control_task_out_setup": typed.ScraperControlReply,
@@ -92,6 +92,27 @@ class TestTypedMessages(unittest.TestCase):
     def test_registered_defaults_queue_from_id(self):
         reg = typed.BuilderRegistered(build_opt_id=7)
         self.assertEqual(reg.build_opt_queue, "build_opt_7")
+
+    def test_builder_reg_v1_still_parses_with_defaults(self):
+        """The 2026-07-16 sanctioned evolution added codegen_backend/build_mode
+        to BuilderRegistration. The frozen v1 golden is the backward-compat
+        contract: it must still parse, the new fields must take their defaults,
+        and re-serializing must be exactly v1 + the two default-valued keys
+        (mixed-era queues: old producers, new consumers)."""
+        wire = golden("builder_reg_in")
+        parsed = typed.BuilderRegistration.model_validate_json(wire)
+        self.assertEqual(parsed.codegen_backend, "")
+        self.assertEqual(parsed.build_mode, "RelWithDebInfo")
+        expected = json.loads(wire) | {"codegen_backend": "", "build_mode": "RelWithDebInfo"}
+        self.assertEqual(json.loads(parsed.model_dump_json()), expected)
+
+    def test_builder_reg_v2_rust_fields(self):
+        """The v2 golden carries a Rust registration end to end."""
+        parsed = typed.BuilderRegistration.model_validate_json(golden("builder_reg_v2"))
+        self.assertEqual(parsed.compiler, "rustc")
+        self.assertEqual(parsed.language, "rust")
+        self.assertEqual(parsed.codegen_backend, "llvm")
+        self.assertEqual(parsed.build_mode, "RelWithDebInfo")
 
     def test_unknown_keys_are_ignored(self):
         wire = json.loads(golden("builder_reg_in"))

@@ -20,6 +20,28 @@ consumer `json.loads`es).
 | `build_opt_{id}` | builder | `builder_task_out`, published to topic exchange `build_opt` with routing key `build_opt_{id}` |
 | `builder_ctrl_{uuid}` / `scraper_ctrl_{uuid}` | worker | `builder_reg_out` / `scraper_control_task_out_*`; non-durable, auto-delete |
 
+## Sanctioned evolutions
+
+**2026-07-16 — `BuilderRegistration` v2 (Rust rollout R1).** The registration
+message gained two additive fields with defaults:
+
+- `codegen_backend: str = ""` — rustc codegen backend (`llvm` / `cranelift` /
+  `gcc`); native C/C++ toolchains keep `""`.
+- `build_mode: str = "RelWithDebInfo"` — mirrors `buildopt.build_type`.
+
+Rationale: each Rust (backend × mode × flag) combination is its own buildopt
+row, so both fields join the registration identity (7 → 9 columns).
+Compatibility across mixed-era queues:
+
+- **Old JSON, new coordinator**: `builder_reg_in.json` stays byte-frozen and is
+  the backward-compat fixture — it must always parse, with the defaults filling
+  the new fields (so pre-evolution C builders keep matching their live rows).
+- **New JSON, old coordinator**: receivers ignore unknown keys, so the two new
+  keys are dropped harmlessly.
+- `builder_reg_v2.json` is the golden for the evolved serialization (a Rust
+  example: `compiler=rustc`, `language=rust`, `codegen_backend=llvm`,
+  `build_mode=RelWithDebInfo`); dict-equality round-trip tests point at it.
+
 **Enum wire values** are the lowercase member *values* (`enum_wire_values.json`).
 The database, by contrast, stores member *names* (`'SUCCESS'`) in varchar
 columns — see `backend/alembic/README.md`.

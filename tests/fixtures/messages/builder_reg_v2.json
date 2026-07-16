@@ -1,0 +1,1 @@
+{"name": "rustc-llvm-O2", "uuid": "2d8e2e8f-0000-1111-2222-333344445555", "compiler": "rustc", "library": "x64", "language": "rust", "platform": "linux", "compiler_flag": "-O2", "build_command": "", "build_system": "cargo", "codegen_backend": "llvm", "build_mode": "RelWithDebInfo"}
