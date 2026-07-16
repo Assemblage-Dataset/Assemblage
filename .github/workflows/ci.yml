@@ -38,12 +38,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: false # dataset CLI not needed for unit tests
       - uses: astral-sh/setup-uv@v5
         with:
           version: ${{ env.UV_VERSION }}
-      - run: uv sync --frozen --dev
+      # --extra dataset installs click/tqdm so tests/unit_tests/dataset (which
+      # imports the absorbed assemblage.dataset pipeline) runs instead of skips.
+      - run: uv sync --frozen --dev --extra dataset
       # Default selection excludes integration/e2e/live_github (pyproject addopts).
       - run: uv run pytest tests/ --cov --cov-report=term --cov-report=xml
       - uses: actions/upload-artifact@v4

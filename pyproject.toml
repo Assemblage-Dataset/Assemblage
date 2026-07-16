@@ -25,11 +25,15 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Host-side dataset pipeline extras (Assemblage_dataset_cli / daily runner).
+# Host-side dataset pipeline extras (assemblage.dataset / daily runner).
 dataset = [
     "click>=8.1",
     "tqdm==4.62.3",
 ]
+
+[project.scripts]
+assemblage-daily = "assemblage.dataset.daily:main"
+assemblage-dataset = "assemblage.dataset.cli:main"
 
 [dependency-groups]
 dev = [
@@ -54,7 +58,6 @@ packages = ["backend/assemblage"]
 target-version = "py312"
 line-length = 100
 extend-exclude = [
-    "Assemblage_dataset_cli",      # submodule: formatted after the P9 absorption
     "backend/assemblage/legacy",   # frozen legacy quarantine (incl. windows/)
     "backend/alembic/versions",    # migrations: historical record
     "deephistory",                 # standalone batch tool, frozen for now
@@ -81,19 +84,20 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "backend/scripts/*" = ["T20"]
-"run_daily_dataset.py" = ["T20"]
 "assemblage_tui.py" = ["T20", "SIM", "RUF005", "RUF059"]
 "data_refill/*" = ["T20"]
 "tests/**" = ["T20", "SIM"]
-"Assemblage_dataset_cli/*" = ["T20"]
 
 # --- Frozen fences -----------------------------------------------------------
 # Residual violations in code deliberately left frozen for now: the legacy
-# quarantine, the alembic env, the dataset CLI (formatted after the P9
-# absorption), the data-refill scratch scripts, and the TUI.
-"Assemblage_dataset_cli/db.py" = ["LOG015"]
-"Assemblage_dataset_cli/minio_pipeline.py" = ["SIM102", "SIM110"]
-"Assemblage_dataset_cli/otherutils/jtrans_address_convert.py" = ["E402", "F841", "SIM115"]
+# quarantine, the alembic env, the absorbed dataset pipeline (behavior frozen
+# in P9; cleaned up when it is typed in P10), the data-refill scratch scripts,
+# and the TUI.
+"backend/assemblage/dataset/construct.py" = ["T201", "SIM401", "E722", "SIM115", "LOG015"]
+"backend/assemblage/dataset/orm.py" = ["T201"]
+"backend/assemblage/dataset/store.py" = ["LOG015"]
+"backend/assemblage/dataset/pipeline.py" = ["SIM102", "SIM110"]
+"backend/assemblage/dataset/tools/jtrans_address_convert.py" = ["T201", "E402", "F841", "SIM115"]
 "backend/alembic/env.py" = ["E402", "F403"]
 "data_refill/migrate_linuxsource2024.py" = ["SIM113"]
 "data_refill/prep_validation_sample.py" = ["B905"]
@@ -107,7 +111,6 @@ exclude = [
     "backend/assemblage/legacy/",
     "backend/alembic/versions/",
     "deephistory/",
-    "Assemblage_dataset_cli/",
 ]
 # The whole package is now re-architected: every def (typed or not) is checked
 # globally, and the strict ratchet below applies the full per-module rule set.
@@ -137,6 +140,14 @@ ignore_missing_imports = true
 # make_strategy windows branch) are not followed into checked code.
 [[tool.mypy.overrides]]
 module = ["assemblage.legacy.*"]
+follow_imports = "skip"
+ignore_errors = true
+
+# Absorbed host-side dataset pipeline (P9): behavior frozen and untyped for
+# now; it joins the strict ratchet when it is typed in P10. No checked module
+# imports it (it is a host-only tool), so ignore_errors is sufficient.
+[[tool.mypy.overrides]]
+module = ["assemblage.dataset.*"]
 follow_imports = "skip"
 ignore_errors = true
 
