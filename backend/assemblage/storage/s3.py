@@ -1,44 +1,49 @@
-"""
-S3 client. AWS and Minio compatible
+"""S3 client, AWS- and MinIO-compatible (moved from ``s3/client.py``).
 
-Alex Duly Nov 25
-
+Near-verbatim from the pre-re-architecture ``S3Client`` / ``S3Bucket``, with two
+non-behavioural tidy-ups: the boto3 log-level quieting runs on first client
+construction instead of as an import side effect, and the internal error logs go
+through the module logger rather than the root logger.
 """
 
 import logging
 import os
+from typing import Any
 
 import boto3
 from botocore.exceptions import ClientError
 
-# from concurrent.futures import ThreadPoolExecutor
-# from boto3.s3.transfer import TransferConfig
-
-
-# needed for some weird config
-# config = TransferConfig(use_threads=False)
-# Quiet boto3 logs
-logging.getLogger("boto3").setLevel(logging.WARNING)
-logging.getLogger("botocore").setLevel(logging.WARNING)
-logging.getLogger("s3transfer").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
+
+_boto_logging_quieted = False
+
+
+def _quiet_boto_logging() -> None:
+    """Silence boto3's chatty INFO logs once, on first client construction."""
+    global _boto_logging_quieted
+    if _boto_logging_quieted:
+        return
+    for name in ("boto3", "botocore", "s3transfer"):
+        logging.getLogger(name).setLevel(logging.WARNING)
+    _boto_logging_quieted = True
 
 
 class S3Client:
     def __init__(
         self,
-        host,
+        host: str,
         access_key: str,
         port: int,
         secret_access_key: str,
         region_name: str = "us-east-1",
         https: bool = True,
-    ):
+    ) -> None:
+        _quiet_boto_logging()
         self.access_key = access_key
         self.secret_access_key = secret_access_key
         scheme = "https" if https else "http"
         self.url = f"{scheme}://{host}:{port}"
-        self._s3 = boto3.client(
+        self._s3: Any = boto3.client(
             "s3",
             endpoint_url=self.url,
             aws_access_key_id=access_key,
@@ -47,14 +52,14 @@ class S3Client:
             use_ssl=https,
         )
 
-    def ensure_bucket(self, bucket_name: str):
+    def ensure_bucket(self, bucket_name: str) -> None:
         try:
             self._s3.head_bucket(Bucket=bucket_name)
-            logger.info(f"Bucket '{bucket_name}' already exists.")
+            logger.info("Bucket '%s' already exists.", bucket_name)
         except ClientError as e:
             error_code = e.response["Error"]["Code"]
             if str(error_code) == "404":
-                logger.info(f"Creating bucket '{bucket_name}'...")
+                logger.info("Creating bucket '%s'...", bucket_name)
                 try:
                     self._s3.create_bucket(
                         Bucket=bucket_name,
@@ -62,56 +67,40 @@ class S3Client:
                     )
                 except ClientError as create_err:
                     if create_err.response["Error"]["Code"] == "BucketAlreadyOwnedByYou":
-                        logger.info(f"Bucket '{bucket_name}' was created by another process.")
+                        logger.info("Bucket '%s' was created by another process.", bucket_name)
                     else:
                         raise
             else:
-                raise e
+                raise
 
 
 class S3Bucket:
-    def __init__(self, client: S3Client, bucket_name: str):
+    def __init__(self, client: S3Client, bucket_name: str) -> None:
         self.client = client
         self.bucket_name = bucket_name
         self.client.ensure_bucket(bucket_name)
-        logger.debug(f"Configuring bucket {self}")
+        logger.debug("Configuring bucket %s", self)
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.client.url}/{self.bucket_name}"
 
-    def upload_file(self, file_name, object_name=None):
-        """Upload a file to an S3 bucket
-
-        :param file_name: File to upload
-        :param object_name: S3 object name. If not specified then file_name is used
-        :return: True if file was uploaded, else False
-        """
-
-        # If S3 object_name was not specified, use file_name
+    def upload_file(self, file_name: str, object_name: str | None = None) -> bool:
+        """Upload a file to an S3 bucket; return True on success."""
         if object_name is None:
             object_name = os.path.basename(file_name)
-
-        # Upload the file
         try:
-            self.client._s3.upload_file(
-                file_name, self.bucket_name, object_name
-            )  # , config=Config)
+            self.client._s3.upload_file(file_name, self.bucket_name, object_name)
         except ClientError as e:
-            logging.error(e)
+            logger.error("upload_file failed: %s", e)
             return False
         return True
 
     def download_file(self, object_name: str, file_path: str) -> bool:
-        """Download a file from S3 bucket.
-
-        :param object_name: S3 object name.
-        :param file_path: Local path to download to.
-        :return: True if file was downloaded, else False.
-        """
+        """Download a file from an S3 bucket; return True on success."""
         try:
             self.client._s3.download_file(self.bucket_name, object_name, file_path)
         except ClientError as e:
-            logging.error(e)
+            logger.error("download_file failed: %s", e)
             return False
         return True
 
@@ -124,10 +113,10 @@ class S3Bucket:
             return False
 
     def put_bytes(self, object_name: str, data: bytes) -> bool:
-        """Write raw bytes as an S3 object."""
+        """Write raw bytes as an S3 object; return True on success."""
         try:
             self.client._s3.put_object(Bucket=self.bucket_name, Key=object_name, Body=data)
             return True
         except ClientError as e:
-            logging.error(e)
+            logger.error("put_bytes failed: %s", e)
             return False
