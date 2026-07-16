@@ -101,12 +101,27 @@ class SupportedPlatform(StrEnum):
 
 class SupportedLanguage(StrEnum):
     CPP = "c++"
+    RUST = "rust"
 
 
 class SupportedCompiler(StrEnum):
     CLANG = "clang"
     GCC = "gcc"
     MSVC = "MSVC"
+    RUSTC = "rustc"
+
+
+class RustCodegenBackend(StrEnum):
+    """rustc ``-Zcodegen-backend`` selection (one buildopt column per backend).
+
+    Stored lowercase in ``buildopt.codegen_backend`` (native C/C++ toolchains
+    keep the column's ``''`` default). The Rust build strategy (R2) consumes
+    these; they land with the schema so the enum <-> column story is complete.
+    """
+
+    LLVM = "llvm"
+    CRANELIFT = "cranelift"
+    GCC = "gcc"
 
 
 class SupportedArchitecture(StrEnum):

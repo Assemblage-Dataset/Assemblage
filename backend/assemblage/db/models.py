@@ -73,6 +73,16 @@ class BuildOpt(SQLModel, table=True):
             server_default="RelWithDebInfo",
         ),
     )
+    # e9d4c1f2a3b5 added codegen_backend NOT NULL DEFAULT '' ('' = native
+    # C/C++ toolchains; Rust builders set llvm/cranelift/gcc).
+    codegen_backend: str = Field(
+        default="",
+        sa_column=Column(
+            sa.VARCHAR(length=32),
+            nullable=False,
+            server_default="",
+        ),
+    )
 
     def __repr__(self) -> str:
         return (
