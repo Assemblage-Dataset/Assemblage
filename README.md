@@ -11,6 +11,14 @@ Code is MIT-licensed. The published dataset (permissively-licensed subset only)
 is at [assemblage-dataset.net](https://assemblage-dataset.net); see the
 [data sheet](https://assemblage-dataset.net/assets/total-datasheet.pdf).
 
+> **Provenance.** In July 2026 this codebase was deep-refactored and extended
+> with the Rust worker by Claude (Fable 5, Anthropic) under the maintainer's
+> direction — behavior-preserving by construction (frozen wire formats, live-DB
+> schema parity, a golden-repo end-to-end gate) and verified against the
+> production corpus. If you prefer the code as it was before that work, use the
+> [`pre-refactor`](../../tree/pre-refactor) branch, whose HEAD is the last
+> commit predating the refactor.
+
 ## Architecture in one page
 
 ```
