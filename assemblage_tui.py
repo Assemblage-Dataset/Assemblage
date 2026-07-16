@@ -30,9 +30,25 @@ LOGO = r"""
 """
 
 PROJECT_ROOT = Path(__file__).parent.resolve()
-COMPOSE_FILE = "docker-compose-tui.yml"
+COMPOSE_FILE = "docker-compose.yml"  # canonical; the TUI no longer generates one
 SECRETS_FILE = "secrets.env"
 CONFIG_FILE = ".assemblage-tui.json"
+RESTART_LOG = PROJECT_ROOT / "var" / "restart_loop.log"  # gitignored
+
+# The canonical compose file's 10 builder services, mapped to (compiler, flag)
+# so the Configure form's compiler/opt toggles translate into `--scale`.
+BUILDER_MATRIX = {
+    "builder_0": ("clang", "-O0"),
+    "builder_1": ("clang", "-O1"),
+    "builder_2": ("clang", "-O2"),
+    "builder_3": ("clang", "-O3"),
+    "builder_4": ("gcc", "-O0"),
+    "builder_5": ("gcc", "-O1"),
+    "builder_6": ("gcc", "-O2"),
+    "builder_7": ("gcc", "-O3"),
+    "builder_8": ("clang", "-Os"),
+    "builder_9": ("gcc", "-Os"),
+}
 
 
 # ── Terminal input ───────────────────────────────────────────────────────────────
@@ -121,6 +137,7 @@ class TUIConfig:
 
 
 def write_secrets_env(cfg: TUIConfig) -> Path:
+    """Write secrets.env with the same key set as secrets.env.example."""
     path = PROJECT_ROOT / SECRETS_FILE
     path.write_text(
         "\n".join(
@@ -131,12 +148,14 @@ def write_secrets_env(cfg: TUIConfig) -> Path:
                 "POSTGRES_USER=assemblage",
                 f"POSTGRES_PASSWORD={cfg.db_password}",
                 f"GITHUB_TOKEN={cfg.github_token}",
+                "S3_HOST=minio",
+                "S3_HTTPS=false",
                 f"S3_ACCESS_KEY={cfg.s3_user}",
                 f"S3_SECRET_ACCESS_KEY={cfg.s3_pass}",
                 f"MINIO_ROOT_USER={cfg.s3_user}",
                 f"MINIO_ROOT_PASSWORD={cfg.s3_pass}",
-                "S3_HOST=minio",
-                "S3_HTTPS=false",
+                "RABBITMQ_USER=guest",
+                "RABBITMQ_PASS=guest",
             ]
         )
         + "\n"
@@ -144,172 +163,46 @@ def write_secrets_env(cfg: TUIConfig) -> Path:
     return path
 
 
-def write_compose_file(cfg: TUIConfig) -> Path:
-    path = PROJECT_ROOT / COMPOSE_FILE
-    builders = ""
-    idx = 0
-    compilers = []
-    if cfg.gcc_enabled:
-        compilers.append(("gcc", cfg.gcc_count, "docker/gcc/Dockerfile", "assemblage-gcc:default"))
-    if cfg.clang_enabled:
-        compilers.append(
-            ("clang", cfg.clang_count, "docker/clang/Dockerfile", "assemblage-clang:default")
-        )
-
-    for compiler, count, dockerfile, image in compilers:
-        for i in range(count):
-            builders += f"""
-  builder_{idx}:
-    image: {image}
-    build:
-      context: .
-      dockerfile: {dockerfile}
-    environment:
-      PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
-      PYTHONUNBUFFERED: 1
-      TYPE: builder
-      compiler: {compiler}
-      language: "c++"
-      name: {compiler}-builder-{i}
-    env_file:
-      - {SECRETS_FILE}
-    depends_on:
-      rabbitmq:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-    deploy:
-      restart_policy:
-        condition: on-failure
-    volumes:
-      - ./backend:/app
-"""
-            idx += 1
-
-    path.write_text(f"""\
-services:
-
-  database:
-    container_name: assemblage-db
-    image: postgres:18.0-alpine3.22
-    env_file:
-      - {SECRETS_FILE}
-    environment:
-      - POSTGRES_USER=assemblage
-    volumes:
-      - db-data:/var/lib/postgresql
-    healthcheck:
-      test: ["CMD", "pg_isready", "-U", "assemblage"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  rabbitmq:
-    image: rabbitmq:3-management
-    environment:
-      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: -rabbit consumer_timeout 900000
-    healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
-      interval: 5s
-      timeout: 10s
-      retries: 25
-      start_period: 10s
-    volumes:
-      - rabbitmq-data:/var/lib/rabbitmq
-    ports:
-      - 5672:5672
-
-  coordinator:
-    image: assemblage-gcc:default
-    build:
-      context: .
-      dockerfile: docker/gcc/Dockerfile
-    environment:
-      PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
-      PYTHONUNBUFFERED: 1
-      TYPE: coordinator
-      name: coordinator
-    env_file:
-      - {SECRETS_FILE}
-    depends_on:
-      database:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-    deploy:
-      restart_policy:
-        condition: on-failure
-    volumes:
-      - ./backend:/app
-
-  scraper_0:
-    image: assemblage-gcc:default
-    build:
-      context: .
-      dockerfile: docker/gcc/Dockerfile
-    depends_on:
-      rabbitmq:
-        condition: service_healthy
-    environment:
-      PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
-      PYTHONUNBUFFERED: 1
-      name: scraper_0
-      TYPE: scraper
-    env_file:
-      - {SECRETS_FILE}
-    deploy:
-      resources:
-        limits:
-          memory: 2048M
-      restart_policy:
-        condition: on-failure
-    volumes:
-      - ./backend:/app
-{builders}
-  minio:
-    image: minio/minio:latest
-    container_name: minio
-    healthcheck:
-      test: ["CMD-SHELL", "curl -l -f http://127.0.0.1:9001/minio/healthcheck/live || exit 1"]
-      interval: 10s
-      start_period: 5s
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    env_file:
-      - {SECRETS_FILE}
-    volumes:
-      - minio_data:/data
-    command: server /data --console-address ":9001"
-    restart: unless-stopped
-
-volumes:
-  db-data:
-    driver: local
-  rabbitmq-data:
-    driver: local
-  minio_data:
-    driver: local
-""")
-    return path
-
-
 # ── Compose helpers ──────────────────────────────────────────────────────────────
 
 
 def find_compose() -> Path:
-    for name in [COMPOSE_FILE, "docker-compose-s3.yml", "docker-compose.yml"]:
-        p = PROJECT_ROOT / name
-        if p.exists():
-            return p
-    return PROJECT_ROOT / "docker-compose.yml"
+    """Locate the canonical compose file (the TUI no longer generates one)."""
+    return PROJECT_ROOT / COMPOSE_FILE
 
 
 def compose_cmd(*args):
     cf = find_compose()
     return ["docker", "compose", "-f", str(cf)] + list(args)
+
+
+def _opt_enabled(cfg, flag):
+    """Whether the Configure form enables a given -O flag (-Os always on)."""
+    return {
+        "-O0": cfg.opt_none,
+        "-O1": cfg.opt_low,
+        "-O2": cfg.opt_medium,
+        "-O3": cfg.opt_high,
+    }.get(flag, True)
+
+
+def scale_args(cfg):
+    """Translate the compiler/opt/count form into `docker compose --scale` args.
+
+    A builder service is scaled to gcc_count/clang_count when its compiler and
+    optimization level are enabled, else to 0 (disabled). This drives the
+    canonical docker-compose.yml instead of generating a bespoke compose file.
+    """
+    args = []
+    for service, (compiler, flag) in BUILDER_MATRIX.items():
+        if compiler == "gcc":
+            count = cfg.gcc_count if cfg.gcc_enabled else 0
+        else:
+            count = cfg.clang_count if cfg.clang_enabled else 0
+        if not _opt_enabled(cfg, flag):
+            count = 0
+        args += ["--scale", f"{service}={count}"]
+    return args
 
 
 # ── Actions ──────────────────────────────────────────────────────────────────────
@@ -455,16 +348,7 @@ def do_configure():
                     continue
                 cfg.save()
                 write_secrets_env(cfg)
-                write_compose_file(cfg)
-                msg = (
-                    "[green]Saved "
-                    + CONFIG_FILE
-                    + ", "
-                    + SECRETS_FILE
-                    + ", "
-                    + COMPOSE_FILE
-                    + "[/green]"
-                )
+                msg = f"[green]Saved {CONFIG_FILE}, {SECRETS_FILE} (drives {COMPOSE_FILE})[/green]"
                 if not cfg.github_token:
                     msg += (
                         "\n  [yellow]Note: no GitHub token — scraper won't work without it[/yellow]"
@@ -475,18 +359,29 @@ def do_configure():
                 _edit_field(cfg, kind, attr)
 
 
-def _compose_up():
-    """Run docker compose up. Returns True on success."""
-    ret = subprocess.call(
-        compose_cmd("up", "--build", "-d", "--remove-orphans"), cwd=str(PROJECT_ROOT)
-    )
+def _compose_up(cfg=None):
+    """Run docker compose up, scaling builders per the saved config."""
+    cfg = cfg or TUIConfig.load()
+    args = ["up", "--build", "-d", "--remove-orphans", *scale_args(cfg)]
+    ret = subprocess.call(compose_cmd(*args), cwd=str(PROJECT_ROOT))
     return ret == 0
 
 
-def _compose_restart():
+def _log_restart(msg):
+    """Append a restart-loop event to the gitignored var/ log."""
+    try:
+        RESTART_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with open(RESTART_LOG, "a") as fh:
+            fh.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}\n")
+    except OSError:
+        pass
+
+
+def _compose_restart(cfg=None):
     """Restart all containers via down + up."""
+    _log_restart("restart: down + up")
     subprocess.call(compose_cmd("down", "--remove-orphans"), cwd=str(PROJECT_ROOT))
-    return _compose_up()
+    return _compose_up(cfg)
 
 
 def do_start():
@@ -495,7 +390,7 @@ def do_start():
     cf = find_compose()
     console.print(f"\n  [bold]Starting Assemblage[/bold]  ({cf.name})\n")
 
-    if not _compose_up():
+    if not _compose_up(cfg):
         console.print("\n  [red]Failed to start[/red]")
         pause()
         return
@@ -538,7 +433,7 @@ def do_start():
                 break
 
             console.print("\n  [yellow]Auto-restarting containers...[/yellow]\n")
-            if not _compose_restart():
+            if not _compose_restart(cfg):
                 console.print("\n  [red]Restart failed[/red]")
                 break
             console.print(
