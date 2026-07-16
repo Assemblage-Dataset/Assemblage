@@ -30,7 +30,7 @@ from datetime import datetime
 
 import requests
 
-from assemblage.analyze.analyze import get_build_system
+from assemblage.build.detect import get_build_system
 from assemblage.config import ScraperSettings
 from assemblage.consts import (
     GITHUB_REPO_URL,

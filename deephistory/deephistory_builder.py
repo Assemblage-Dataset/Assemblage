@@ -28,10 +28,10 @@ import time
 
 sys.path.insert(0, '/app')
 
-from assemblage.worker.build_method import LinuxBuildStrategy
-from assemblage.s3.client import S3Client, S3Bucket
+from assemblage.build.linux import LinuxBuildStrategy
+from assemblage.storage.s3 import S3Client, S3Bucket
 from assemblage.consts import BuildStatus, CloneStatus
-from assemblage.analyze.analyze import get_build_system
+from assemblage.build.detect import get_build_system
 
 logger = logging.getLogger('deephistory')
 

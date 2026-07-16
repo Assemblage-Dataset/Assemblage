@@ -9,9 +9,8 @@ import logging.config
 import os
 import sys
 
-from assemblage.config import BuilderSettings, ScraperSettings
+from assemblage.config import ScraperSettings
 from assemblage.consts import WorkerType
-from assemblage.worker.builder import Builder
 from assemblage.worker.scraper import Scraper
 
 if __name__ == "__main__":
@@ -40,15 +39,11 @@ if __name__ == "__main__":
 
             sys.exit(coordinator_main())
         case WorkerType.Builder:
-            settings = BuilderSettings()
-            logging.basicConfig(
-                format="%(asctime)s %(levelname)s:%(message)s",
-                datefmt="%Y-%m-%d %H:%M:%S",
-                level=settings.logLevel,
-            )
-            builder = Builder(settings=settings)
-            builder.run()
-            # call start builder
+            # Re-architected builder: composition root owns its own settings,
+            # logging, supervisor and graceful-shutdown exit code.
+            from assemblage.builder.app import main as builder_main
+
+            sys.exit(builder_main())
         case WorkerType.Scraper:
             settings = ScraperSettings()
             # print(settings.dict())

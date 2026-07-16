@@ -55,8 +55,7 @@ target-version = "py312"
 line-length = 100
 extend-exclude = [
     "Assemblage_dataset_cli",      # submodule: formatted after the P9 absorption
-    "backend/assemblage/windows",  # frozen legacy quarantine
-    "backend/assemblage/legacy",
+    "backend/assemblage/legacy",   # frozen legacy quarantine (incl. windows/)
     "backend/alembic/versions",    # migrations: historical record
     "deephistory",                 # standalone batch tool, frozen for now
 ]
@@ -96,13 +95,9 @@ ignore = [
 "Assemblage_dataset_cli/minio_pipeline.py" = ["SIM102", "SIM110"]
 "Assemblage_dataset_cli/otherutils/jtrans_address_convert.py" = ["E402", "F841", "SIM115"]
 "backend/alembic/env.py" = ["E402", "F403"]
-"backend/assemblage/analyze/analyze.py" = ["LOG015", "RUF015", "T201"]
 "backend/assemblage/mq/client.py" = ["RUF003"]
 "backend/assemblage/mq/messages.py" = ["B006", "UP028"]
-"backend/assemblage/s3/client.py" = ["LOG015"]
 "backend/assemblage/worker/base_worker.py" = ["B027", "LOG015"]
-"backend/assemblage/worker/build_method.py" = ["E722", "F841", "LOG015", "RUF059", "SIM102", "SIM112"]
-"backend/assemblage/worker/builder.py" = ["E402", "F841", "RUF003", "SIM102", "W291"]
 "backend/assemblage/worker/scraper.py" = ["E711", "E722", "RUF013", "SIM102", "SIM118"]
 "backend/scripts/build_deephistory.py" = ["B007", "RUF059"]
 "backend/scripts/start_worker.py" = ["RUF005"]
@@ -117,7 +112,6 @@ ignore = [
 python_version = "3.12"
 plugins = ["pydantic.mypy"]
 exclude = [
-    "backend/assemblage/windows/",
     "backend/assemblage/legacy/",
     "backend/alembic/versions/",
     "deephistory/",
@@ -135,11 +129,26 @@ no_implicit_optional = true
 module = [
     "pika.*",
     "sqlalchemy_utils.*",
-    "elftools.*",
-    "pefile.*",
     "alembic_postgresql_enum.*",
+    "boto3.*",
+    "botocore.*",
 ]
 ignore_missing_imports = true
+
+# pyelftools / pefile ship types but leave functions untyped; skip following
+# them so their symbols are Any (strict disallow_untyped_calls otherwise trips
+# on ELFFile()/PE() in dwarf.extract and build.discovery).
+[[tool.mypy.overrides]]
+module = ["elftools.*", "pefile.*"]
+follow_imports = "skip"
+ignore_missing_imports = true
+
+# Frozen legacy quarantine: never type-checked, and its imports (via the
+# make_strategy windows branch) are not followed into checked code.
+[[tool.mypy.overrides]]
+module = ["assemblage.legacy.*"]
+follow_imports = "skip"
+ignore_errors = true
 
 # Pre-rewrite fences: modules scheduled for re-architecture are excluded
 # from type checking entirely. DELETE each from this list in the PR that
@@ -148,10 +157,7 @@ ignore_missing_imports = true
 module = [
     "assemblage.config",
     "assemblage.mq.client",
-    "assemblage.s3.client",
     "assemblage.worker.base_worker",
-    "assemblage.worker.build_method",
-    "assemblage.worker.builder",
     "assemblage.worker.scraper",
 ]
 ignore_errors = true
@@ -165,6 +171,15 @@ ignore_errors = true
 [[tool.mypy.overrides]]
 module = [
     "assemblage.build.commands",
+    "assemblage.build.detect",
+    "assemblage.build.discovery",
+    "assemblage.build.linux",
+    "assemblage.build.strategy",
+    "assemblage.builder.app",
+    "assemblage.builder.artifacts",
+    "assemblage.builder.pipeline",
+    "assemblage.builder.report",
+    "assemblage.builder.source",
     "assemblage.constants",
     "assemblage.consts",
     "assemblage.coordinator.app",
@@ -176,6 +191,7 @@ module = [
     "assemblage.db.engine",
     "assemblage.db.models",
     "assemblage.db.store",
+    "assemblage.dwarf.extract",
     "assemblage.enums",
     "assemblage.messages",
     "assemblage.mq.connection",
@@ -185,6 +201,8 @@ module = [
     "assemblage.runtime.service",
     "assemblage.runtime.supervisor",
     "assemblage.settings",
+    "assemblage.storage.layout",
+    "assemblage.storage.s3",
 ]
 disallow_any_generics = true
 disallow_subclassing_any = true
@@ -213,6 +231,5 @@ markers = [
 [tool.coverage.run]
 source = ["backend/assemblage"]
 omit = [
-    "backend/assemblage/windows/*",
     "backend/assemblage/legacy/*",
 ]
