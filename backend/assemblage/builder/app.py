@@ -19,6 +19,7 @@ from collections.abc import Callable
 from assemblage.build.strategy import make_strategy
 from assemblage.builder.pipeline import BuildContext, run_task
 from assemblage.builder.report import BuildReporter
+from assemblage.enums import SupportedLanguage
 from assemblage.messages import BuilderRegistered, BuilderRegistration, BuildTask
 from assemblage.mq.connection import ConnectionFactory
 from assemblage.mq.consumer import AckDecision, ConsumerLoop, IncomingMessage
@@ -116,6 +117,7 @@ class BuilderApp:
     def _publish_registration(self, reply_to: str) -> None:
         publisher = Publisher(f"builder-reg-{self._uuid}", self._factory)
         try:
+            is_rust = self._settings.language == SupportedLanguage.RUST
             registration = BuilderRegistration(
                 name=self._settings.name,
                 uuid=self._uuid,
@@ -126,6 +128,8 @@ class BuilderApp:
                 compiler_flag=self._settings.compiler_flag,
                 build_command="",
                 build_system="all",
+                codegen_backend=str(self._settings.codegen_backend) if is_rust else "",
+                build_mode=self._strategy.build_mode,
             )
             publisher.publish(
                 BUILDER_REG,

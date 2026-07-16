@@ -20,6 +20,7 @@ from dataclasses import dataclass
 
 from assemblage.build.strategy import BuildStrategy
 from assemblage.builder.artifacts import (
+    build_prefix,
     generate_metadata,
     save_binaries,
     save_metadata_locally,
@@ -29,7 +30,6 @@ from assemblage.builder.report import BuildReporter
 from assemblage.builder.source import SourceResult, acquire_source
 from assemblage.enums import BuildStatus, CloneStatus
 from assemblage.messages import BuildTask
-from assemblage.storage.layout import artifact_prefix
 from assemblage.storage.s3 import S3Bucket
 
 logger = logging.getLogger(__name__)
@@ -135,9 +135,7 @@ def _persist_success(
         metadata["Binary_info_list"] = dwarf_list
 
     owner, project = clone_dir.rstrip("/").split("/")[-2:]
-    prefix = artifact_prefix(
-        owner, project, commit_hexsha, ctx.strategy.compiler, ctx.compiler_flag
-    )
+    prefix = build_prefix(ctx.strategy, owner, project, commit_hexsha, ctx.compiler_flag)
 
     if ctx.artifact_bucket is not None:
         save_metadata_to_s3(

@@ -12,15 +12,38 @@ import os
 import shutil
 import stat
 
+from assemblage.build.rust import RustBuildStrategy
 from assemblage.build.strategy import BuildStrategy
 from assemblage.messages import BuildTask
-from assemblage.storage.layout import METADATA_FILENAME, artifact_key, artifact_prefix, metadata_key
+from assemblage.storage.layout import (
+    METADATA_FILENAME,
+    artifact_key,
+    artifact_prefix,
+    metadata_key,
+    rust_artifact_prefix,
+)
 from assemblage.storage.s3 import S3Bucket
 
 logger = logging.getLogger(__name__)
 
 # Read/write owner, read group/other — built binaries are archived, not run.
 NON_EXE_MODE = stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH
+
+
+def build_prefix(
+    strategy: BuildStrategy, owner: str, project: str, commit_hexsha: str, compiler_flag: str
+) -> str:
+    """The S3 artifact prefix for this build — Rust carries backend+mode, C stays flat."""
+    if isinstance(strategy, RustBuildStrategy):
+        return rust_artifact_prefix(
+            owner,
+            project,
+            commit_hexsha,
+            strategy.codegen_backend,
+            strategy.build_mode,
+            compiler_flag,
+        )
+    return artifact_prefix(owner, project, commit_hexsha, strategy.compiler, compiler_flag)
 
 
 def generate_metadata(
@@ -31,8 +54,14 @@ def generate_metadata(
     commit_hexsha: str,
     compiler_flag: str,
 ) -> dict[str, object]:
-    """Build the metadata JSON (the caller merges in ``Binary_info_list``)."""
-    return {
+    """Build the metadata JSON (the caller merges in ``Binary_info_list``).
+
+    C/C++ builds emit exactly the frozen key set. Rust builds emit the same keys PLUS
+    the additive Rust keys (``Codegen_backend``/``Toolchain``/``Mangling``/
+    ``Backend_caps``/``Cargo_locked``); the lowercase ``language`` key already carries
+    ``"rust"`` so no duplicate ``Language`` key is added.
+    """
+    metadata: dict[str, object] = {
         "Platform": strategy.platform,
         "Build_mode": strategy.build_mode,
         "Compiler": strategy.compiler,
@@ -45,6 +74,13 @@ def generate_metadata(
         "language": strategy.language,
         "library": library,
     }
+    if isinstance(strategy, RustBuildStrategy):
+        metadata["Codegen_backend"] = strategy.codegen_backend
+        metadata["Toolchain"] = strategy.toolchain_vv
+        metadata["Mangling"] = "v0"
+        metadata["Backend_caps"] = strategy.backend_caps
+        metadata["Cargo_locked"] = strategy.cargo_locked
+    return metadata
 
 
 def save_metadata_locally(clone_dir: str, metadata: dict[str, object]) -> str | None:
@@ -118,7 +154,7 @@ def save_binaries(
 
     logger.info("%d binaries found", len(bin_found))
     owner, project = target_dir.rstrip("/").split("/")[-2:]
-    prefix = artifact_prefix(owner, project, commit_hexsha, strategy.compiler, compiler_flag)
+    prefix = build_prefix(strategy, owner, project, commit_hexsha, compiler_flag)
 
     if artifact_bucket is not None:
         dest = f"{artifact_bucket}/{prefix}"

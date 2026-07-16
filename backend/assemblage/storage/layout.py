@@ -26,6 +26,19 @@ def artifact_prefix(owner: str, project: str, sha12: str, compiler: str, flag: s
     return f"{owner}_{project}_{sha12}_{compiler}_{flag}"
 
 
+def rust_artifact_prefix(
+    owner: str, project: str, sha12: str, backend: str, mode: str, flag: str
+) -> str:
+    """The flat per-build prefix for a Rust build (frozen from day one).
+
+    Unlike the C prefix, this carries the codegen backend AND the build mode, so
+    llvm/cranelift/gcc and Debug/RelWithDebInfo/Release variants of the same commit
+    never collide in the ``artifacts`` bucket (the latent C-side mode-collision bug
+    is designed out for Rust).
+    """
+    return f"{owner}_{project}_{sha12}_rustc-{backend}_{mode}_{flag}"
+
+
 def artifact_key(prefix: str, filename: str) -> str:
     """An object key inside an :func:`artifact_prefix` directory."""
     return f"{prefix}/{filename}"
