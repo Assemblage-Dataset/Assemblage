@@ -247,14 +247,27 @@ def fallback_binaries(target_dir: str, profile_dir: str) -> set[str]:
 
 
 def classify_origin(source_file: str, clone_dir: str, cargo_home: str) -> str:
-    """Tag a function's source path: in_repo / dependency / stdlib / other."""
+    """Tag a function's source path: in_repo / dependency / stdlib / other.
+
+    rustc records paths relative to ``DW_AT_comp_dir`` (the clone dir for repo
+    crates, ``/rustc/<hash>`` for the precompiled std), and the shared extractor
+    preserves the DWARF path verbatim (it stays byte-identical to the C path,
+    whose golden is frozen). So absolute prefixes are matched first, then a
+    workspace-relative path that actually resolves to a file **under the clone
+    dir** is ``in_repo`` (std's ``library/...`` and registry-relative paths do
+    not resolve there and fall through to ``other``).
+    """
     if not source_file:
         return "other"
     if source_file.startswith("/rustc/"):
         return "stdlib"
     if source_file.startswith(os.path.join(cargo_home, "registry", "src")):
         return "dependency"
-    if source_file.startswith((clone_dir, os.path.realpath(clone_dir))):
+    if os.path.isabs(source_file):
+        if source_file.startswith((clone_dir, os.path.realpath(clone_dir))):
+            return "in_repo"
+        return "other"
+    if os.path.isfile(os.path.join(clone_dir, source_file)):
         return "in_repo"
     return "other"
 
@@ -441,7 +454,10 @@ class RustBuildStrategy(BuildStrategy):
         items: list[dict[str, object]] = []
         for binfile in bin_files:
             try:
-                item = extract_dwarf_info(binfile)
+                # source_root=clone_dir lets the extractor read the embedded
+                # source_code text for rustc's comp_dir-relative repo paths
+                # (the C path passes no source_root, keeping its golden frozen).
+                item = extract_dwarf_info(binfile, source_root=clone_dir)
             except Exception as e:
                 logger.warning(
                     "DWARF extraction failed for %s: %s: %s", binfile, type(e).__name__, e

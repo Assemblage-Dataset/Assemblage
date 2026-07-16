@@ -1,0 +1,11 @@
+[package]
+name = "golden_bin"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "golden_bin"
+path = "src/main.rs"
+
+[dependencies]
+golden_lib = { path = "../golden_lib" }

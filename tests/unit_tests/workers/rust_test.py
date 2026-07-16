@@ -205,6 +205,23 @@ class TestClassifyOrigin(unittest.TestCase):
         self.assertEqual(classify_origin("/usr/lib/foo.rs", "/clone", "/cargo"), "other")
         self.assertEqual(classify_origin("", "/clone", "/cargo"), "other")
 
+    def test_relative_in_repo(self):
+        # rustc records repo paths relative to DW_AT_comp_dir (the clone dir); a
+        # relative path that resolves to a file under the clone dir is in_repo.
+        with tempfile.TemporaryDirectory() as clone:
+            os.makedirs(os.path.join(clone, "golden_lib", "src"))
+            open(os.path.join(clone, "golden_lib", "src", "lib.rs"), "w").close()
+            self.assertEqual(
+                classify_origin("golden_lib/src/lib.rs", clone, "/cargo"), "in_repo"
+            )
+
+    def test_relative_non_repo_is_other(self):
+        # std's relative "library/..." path does not resolve under the clone dir.
+        with tempfile.TemporaryDirectory() as clone:
+            self.assertEqual(
+                classify_origin("library/core/src/slice/mod.rs", clone, "/cargo"), "other"
+            )
+
 
 class TestDemangle(unittest.TestCase):
     def test_batch_demangle_mocked(self):
