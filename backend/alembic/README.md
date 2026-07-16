@@ -42,4 +42,4 @@ Facts about the live schema this establishes:
 2. Migrations are handwritten, reviewed, and applied with
    `docker exec -it assemblage-coordinator-1 alembic upgrade head`.
 3. The schema is frozen to the live database for the duration of the
-   re-architecture (see RE-ARCHITECTURE.md).
+   re-architecture.

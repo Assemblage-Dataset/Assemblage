@@ -82,3 +82,4 @@ deephistory/*.sqlite*
 # --- Design docs stay out of the repo (owner decision 2026-07-16) -------------
 /RUST_WORKER_DESIGN.md
 *_DESIGN.md
+/RE-ARCHITECTURE.md

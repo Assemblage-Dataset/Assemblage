@@ -1,8 +1,8 @@
 # `assemblage` package map
 
 The re-architected core. Behavior is frozen (queue names, wire JSON, DB
-conventions, S3 layout, metadata keys); see `RE-ARCHITECTURE.md` and
-`../alembic/README.md`. Everything here passes ruff + mypy strict except the
+conventions, S3 layout, metadata keys); see `../alembic/README.md`.
+Everything here passes ruff + mypy strict except the
 frozen `legacy/` subpackage, which is excluded from all gates.
 
 ## Foundation

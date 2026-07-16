@@ -37,7 +37,7 @@ is at [assemblage-dataset.net](https://assemblage-dataset.net); see the
   appends them (with DWARF function/RVA/line info) to a cumulative SQLite corpus.
 
 The Python package lives under `backend/assemblage/`; see `CLAUDE.md` for the
-module map and `RE-ARCHITECTURE.md` for the design rationale.
+module map.
 
 ## Quickstart
 
