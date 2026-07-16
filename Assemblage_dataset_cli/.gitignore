@@ -1,0 +1,12 @@
+*windows*
+*.ipynb
+*zip*
+*data*
+*linux*
+vcpkg
+*.txt
+*.sqlite
+*.json
+_*
+win*
+sample*
