@@ -100,8 +100,23 @@ jobs:
             TOOLCHAIN=gcc
           tags: assemblage-gcc:default
           load: true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=worker-gcc
+          cache-to: type=gha,mode=max,scope=worker-gcc
+      # The Rust image pins a nightly toolchain plus three -Zcodegen-backend
+      # components and cargo-installs rustfilt; the FIRST uncached CI build is
+      # slow (~30 min), amortized afterwards by its own gha cache scope. The two
+      # rust builders in docker-compose.e2e.yml need this image tag present.
+      - name: Build rust image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/rust/Dockerfile
+          build-args: |
+            RUST_TOOLCHAIN=nightly-2026-06-15
+          tags: assemblage-rust:default
+          load: true
+          cache-from: type=gha,scope=worker-rust
+          cache-to: type=gha,mode=max,scope=worker-rust
       - name: Golden-repo gate
         run: make e2e
       - name: Upload compose logs on failure
