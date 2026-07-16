@@ -105,7 +105,7 @@ jobs:
       # The Rust image pins a nightly toolchain plus three -Zcodegen-backend
       # components and cargo-installs rustfilt; the FIRST uncached CI build is
       # slow (~30 min), amortized afterwards by its own gha cache scope. The two
-      # rust builders in docker-compose.e2e.yml need this image tag present.
+      # rust builders in compose/e2e.yml need this image tag present.
       - name: Build rust image
         uses: docker/build-push-action@v6
         with:
@@ -121,7 +121,7 @@ jobs:
         run: make e2e
       - name: Upload compose logs on failure
         if: failure()
-        run: docker compose -f docker-compose.e2e.yml logs > e2e-failure.log 2>&1 || true
+        run: docker compose -f compose/e2e.yml logs > e2e-failure.log 2>&1 || true
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

@@ -64,7 +64,7 @@ services:
   coordinator:
     image: assemblage-gcc:default
     build:
-      context: .
+      context: ..
       dockerfile: docker/worker/Dockerfile
       args:
         TOOLCHAIN: gcc
@@ -73,7 +73,7 @@ services:
       TYPE: coordinator
       name: coordinator-e2e
     volumes:
-      - ./backend:/app
+      - ../backend:/app
     depends_on:
       database: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
@@ -97,7 +97,7 @@ services:
       COMPILER_FLAG: "-O0"
       name: gcc-O0-e2e
     volumes:
-      - ./backend:/app
+      - ../backend:/app
       - e2e-repos:/e2e
       - /binaries
     depends_on:
@@ -122,7 +122,7 @@ services:
       CARGO_HOME: /cargo
       name: rust-llvm-O0-e2e
     volumes:
-      - ./backend:/app
+      - ../backend:/app
       - e2e-repos:/e2e
     depends_on:
       coordinator: { condition: service_started }
@@ -141,7 +141,7 @@ services:
       CARGO_HOME: /cargo
       name: rust-llvm-O2-e2e
     volumes:
-      - ./backend:/app
+      - ../backend:/app
       - e2e-repos:/e2e
     depends_on:
       coordinator: { condition: service_started }
@@ -155,9 +155,9 @@ services:
       E2E_DEADLINE_S: "300"
       RUST_DEADLINE_S: "600"
     volumes:
-      - ./tests/e2e:/injector:ro
-      - ./tests/fixtures/repos:/fixtures/repos:ro
-      - ./tests/fixtures/golden:/golden
+      - ../tests/e2e:/injector:ro
+      - ../tests/fixtures/repos:/fixtures/repos:ro
+      - ../tests/fixtures/golden:/golden
       - e2e-repos:/e2e
     depends_on:
       coordinator: { condition: service_started }

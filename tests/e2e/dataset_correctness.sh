@@ -31,10 +31,10 @@ cd "$REPO_ROOT"
 PG_PORT="${DGATE_PG_PORT:-55432}"
 MINIO_PORT="${DGATE_MINIO_PORT:-59000}"
 
-COMPOSE=(docker compose -f docker-compose.e2e.yml -f tests/e2e/docker-compose.parity-ports.yml)
+COMPOSE=(docker compose -f compose/e2e.yml -f tests/e2e/docker-compose.parity-ports.yml)
 PY="$REPO_ROOT/.venv/bin/python"
 
-# E2E stack coordinates (mirror docker-compose.e2e.yml).
+# E2E stack coordinates (mirror compose/e2e.yml).
 PGHOST=localhost PGPORT="$PG_PORT" PGDATABASE=assemblage PGUSER=assemblage PGPASSWORD=e2e-only
 S3_ENDPOINT="localhost:${MINIO_PORT}"
 S3_KEY=minioadmin

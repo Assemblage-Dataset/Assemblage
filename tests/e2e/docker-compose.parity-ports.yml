@@ -1,11 +1,11 @@
-# Parity-gate overlay for docker-compose.e2e.yml.
+# Parity-gate overlay for compose/e2e.yml.
 #
 # The E2E gate keeps the stack hermetic (no published ports); the dataset
 # parity gate instead runs the dataset pipeline from the HOST against the same
 # live stack, so it needs Postgres and MinIO reachable on localhost. This
 # overlay publishes just those two, on uncommon host ports to avoid clashing
 # with a developer's production stack. Applied only by dataset_parity.sh:
-#   docker compose -f docker-compose.e2e.yml -f tests/e2e/docker-compose.parity-ports.yml ...
+#   docker compose -f compose/e2e.yml -f tests/e2e/docker-compose.parity-ports.yml ...
 services:
   database:
     ports:

@@ -1,6 +1,6 @@
 """Golden-repo E2E gate for the Assemblage pipeline (C/C++ and Rust).
 
-Runs as a one-shot container inside docker-compose.e2e.yml. Its exit code IS
+Runs as a one-shot container inside compose/e2e.yml. Its exit code IS
 the gate:
 
 1. materialize the fixture repos into the shared /e2e volume as real git

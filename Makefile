@@ -13,14 +13,14 @@ test:
 # is the verdict. Always tears down (volumes included) afterwards.
 e2e:
 	mkdir -p tests/fixtures/golden
-	docker compose -f docker-compose.e2e.yml up \
+	docker compose -f compose/e2e.yml up \
 		--abort-on-container-exit --exit-code-from injector; \
 	status=$$?; \
-	docker compose -f docker-compose.e2e.yml down -v --remove-orphans; \
+	docker compose -f compose/e2e.yml down -v --remove-orphans; \
 	exit $$status
 
 e2e-down:
-	docker compose -f docker-compose.e2e.yml down -v --remove-orphans
+	docker compose -f compose/e2e.yml down -v --remove-orphans
 
 # Dataset parity gate (P10) — HISTORICAL, retired at R5. Kept for provenance of
 # the P10 "output unchanged" claim; not an acceptance gate (R5 changes output

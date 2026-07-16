@@ -70,11 +70,11 @@ PARITY_PRE_COMMIT="${PARITY_PRE_COMMIT:-0e5e7d5d36dcd1af128a64ba3655581dc7350039
 PG_PORT="${PARITY_PG_PORT:-55432}"
 MINIO_PORT="${PARITY_MINIO_PORT:-59000}"
 
-COMPOSE=(docker compose -f docker-compose.e2e.yml -f tests/e2e/docker-compose.parity-ports.yml)
+COMPOSE=(docker compose -f compose/e2e.yml -f tests/e2e/docker-compose.parity-ports.yml)
 PY="$REPO_ROOT/.venv/bin/python"     # the uv venv interpreter (deps only; the
                                      # assemblage package is chosen via PYTHONPATH)
 
-# E2E stack credentials / coordinates (mirror docker-compose.e2e.yml).
+# E2E stack credentials / coordinates (mirror compose/e2e.yml).
 export PGHOST=localhost PGPORT="$PG_PORT" PGDATABASE=assemblage \
        PGUSER=assemblage PGPASSWORD=e2e-only
 S3_ENDPOINT="localhost:${MINIO_PORT}"

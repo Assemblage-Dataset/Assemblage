@@ -130,7 +130,7 @@ See `tests/README.md` for the marker policy.
 Windows/MSVC builds require a Windows host and are quarantined under
 `backend/assemblage/legacy/` + `docker/legacy/`. Point a remote builder's
 `MQ_HOST`/`S3_HOST` at the coordinator (expose RabbitMQ 5672 and MinIO 9010) and
-run `docker-compose-windows.yml` there.
+run `compose/windows.yml` there.
 
 > RabbitMQ defaults to `guest`/`guest` (override with `RABBITMQ_USER`/
 > `RABBITMQ_PASS`). If you expose it, firewall it to your worker hosts and see
@@ -143,7 +143,7 @@ coordinator:
 
 ```bash
 python backend/scripts/build_deephistory.py --packages sqlite3 fmt --output ./out
-docker compose -f docker-compose-deephistory.yml up --build     # Linux images
+docker compose -f compose/deephistory.yml up --build     # Linux images
 ```
 
 ## Troubleshooting

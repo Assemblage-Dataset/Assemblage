@@ -51,7 +51,7 @@ if __name__ == "__main__":
         case WorkerType.LegacyConan:
             # DeepHistory legacy builder - standalone Conan-based pipeline
             # Does NOT use RabbitMQ/coordinator. Reads manifest, builds via Conan, writes to SQLite.
-            # Pass CLI args via DEEPHISTORY_ARGS env or use docker-compose-deephistory.yml
+            # Pass CLI args via DEEPHISTORY_ARGS env or use compose/deephistory.yml
             import shlex
 
             logging.basicConfig(

@@ -6,10 +6,10 @@
 #
 # Usage:
 #   # Build images + start all workers (8 configs x 8 replicas = 64 workers)
-#   docker compose -f docker-compose-deephistory.yml up --build -d
+#   docker compose -f compose/deephistory.yml up --build -d
 #
 #   # Scale a specific config:
-#   docker compose -f docker-compose-deephistory.yml up -d --scale gcc-O2=8
+#   docker compose -f compose/deephistory.yml up -d --scale gcc-O2=8
 
 x-common-env: &common-env
   PYTHONUNBUFFERED: "1"
@@ -22,11 +22,11 @@ x-common-env: &common-env
 x-gcc-builder: &gcc-builder
   image: deephistory-gcc:latest
   build:
-    context: .
+    context: ..
     dockerfile: docker/deephistory/Dockerfile.gcc
   volumes:
-    - ./deephistory:/data
-    - ./backend:/app
+    - ../deephistory:/data
+    - ../backend:/app
   networks:
     - assemblage
   restart: on-failure
@@ -39,11 +39,11 @@ x-gcc-builder: &gcc-builder
 x-clang-builder: &clang-builder
   image: deephistory-clang:latest
   build:
-    context: .
+    context: ..
     dockerfile: docker/deephistory/Dockerfile.clang
   volumes:
-    - ./deephistory:/data
-    - ./backend:/app
+    - ../deephistory:/data
+    - ../backend:/app
   networks:
     - assemblage
   restart: on-failure
