@@ -96,7 +96,6 @@ ignore = [
 "backend/assemblage/dataset/construct.py" = ["T201", "SIM401", "E722", "SIM115", "LOG015"]
 "backend/assemblage/dataset/orm.py" = ["T201"]
 "backend/assemblage/dataset/store.py" = ["LOG015"]
-"backend/assemblage/dataset/pipeline.py" = ["SIM102", "SIM110"]
 "backend/assemblage/dataset/tools/jtrans_address_convert.py" = ["T201", "E402", "F841", "SIM115"]
 "backend/alembic/env.py" = ["E402", "F403"]
 "data_refill/migrate_linuxsource2024.py" = ["SIM113"]
