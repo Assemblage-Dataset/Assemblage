@@ -9,6 +9,13 @@ contract.
 
 import logging
 
+import pytest
+
+# The dataset package needs the `dataset` extra (click/tqdm/pefile); CI jobs
+# without the extra still COLLECT this module, so skip before importing it.
+pytest.importorskip("tqdm")
+pytest.importorskip("pefile")
+
 from assemblage.dataset import pipeline
 
 
