@@ -466,7 +466,7 @@ def assert_rust(s3, sha12: str) -> bool:
     # (h) goldens -------------------------------------------------------------
     for flag in RUST_FLAGS:
         if not golden_check(
-            f"{RUST_REPO}{flag}.metadata.norm.json", normalize_rust_metadata(metas[flag])
+            f"{RUST_REPO}.{flag}.metadata.norm.json", normalize_rust_metadata(metas[flag])
         ):
             ok = False
     return ok
@@ -504,10 +504,18 @@ def assert_rust_functions_o0(s3, sha12: str, meta: dict) -> bool:
     else:
         log(f"-O0 pair_sum instantiations: {sorted(p['demangled_name'] for p in pair)}")
 
-    # closure: v0 demangles to '{closure#N}' (NOT the pre-v0 '{{closure}}')
-    closures = [f for f in funcs if "{closure#" in f.get("demangled_name", "")]
+    # closure: the fixture's own closure, which v0 demangles to
+    # 'golden_bin::main::{closure#N}' (NOT the pre-v0 '{{closure}}' shape).
+    # Filter to the fixture's closure so a stdlib closure (e.g.
+    # std::rt::lang_start::{closure#0}) is never mistaken for it.
+    closures = [
+        f
+        for f in funcs
+        if "{closure#" in f.get("demangled_name", "")
+        and "golden_bin::main" in f.get("demangled_name", "")
+    ]
     if not closures:
-        fail("-O0 no '{closure#' entry")
+        fail("-O0 no 'golden_bin::main::{closure#' entry")
         ok = False
 
     # (d) origin/source/mangling for each fixture anchor

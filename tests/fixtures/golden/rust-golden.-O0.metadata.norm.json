@@ -1,0 +1,457 @@
+{
+  "Backend_caps": {
+    "functions": true,
+    "lines": true,
+    "maturity": "stable",
+    "variables": true
+  },
+  "Binary_info_list": [
+    {
+      "file": "golden_bin",
+      "functions": [
+        {
+          "demangled_name": "golden_lib::pair_sum::<f64>",
+          "function_info": [
+            {
+              "rva_end": "<rva>",
+              "rva_start": "<rva>"
+            }
+          ],
+          "function_name": "_RINvCsaHhVrFPRqKL_10golden_lib8pair_sumdECscHX4QfetHwG_10golden_bin",
+          "intersect_ratio": "0%",
+          "lines": [
+            {
+              "length": "<len>",
+              "line_number": 8,
+              "rva": "<rva>",
+              "source_code": "pub fn pair_sum<T: std::ops::Add<Output = T>>(x: T, y: T) -> T {",
+              "source_file": "golden_lib/src/lib.rs"
+            },
+            {
+              "length": "<len>",
+              "line_number": 9,
+              "rva": "<rva>",
+              "source_code": "    x + y",
+              "source_file": "golden_lib/src/lib.rs"
+            },
+            {
+              "length": "<len>",
+              "line_number": 10,
+              "rva": "<rva>",
+              "source_code": "}",
+              "source_file": "golden_lib/src/lib.rs"
+            }
+          ],
+          "origin": "in_repo",
+          "source_file": "golden_lib/src/lib.rs"
+        },
+        {
+          "demangled_name": "golden_lib::pair_sum::<i64>",
+          "function_info": [
+            {
+              "rva_end": "<rva>",
+              "rva_start": "<rva>"
+            }
+          ],
+          "function_name": "_RINvCsaHhVrFPRqKL_10golden_lib8pair_sumxECscHX4QfetHwG_10golden_bin",
+          "intersect_ratio": "0%",
+          "lines": [
+            {
+              "length": "<len>",
+              "line_number": 8,
+              "rva": "<rva>",
+              "source_code": "pub fn pair_sum<T: std::ops::Add<Output = T>>(x: T, y: T) -> T {",
+              "source_file": "golden_lib/src/lib.rs"
+            },
+            {
+              "length": "<len>",
+              "line_number": 9,
+              "rva": "<rva>",
+              "source_code": "    x + y",
+              "source_file": "golden_lib/src/lib.rs"
+            },
+            {
+              "length": "<len>",
+              "line_number": 10,
+              "rva": "<rva>",
+              "source_code": "}",
+              "source_file": "golden_lib/src/lib.rs"
+            }
+          ],
+          "origin": "in_repo",
+          "source_file": "golden_lib/src/lib.rs"
+        },
+        {
+          "demangled_name": "golden_bin::main::{closure#0}",
+          "function_info": [
+            {
+              "rva_end": "<rva>",
+              "rva_start": "<rva>"
+            }
+          ],
+          "function_name": "_RNCNvCscHX4QfetHwG_10golden_bin4main0B3_",
+          "intersect_ratio": "0%",
+          "lines": [
+            {
+              "length": "<len>",
+              "line_number": 11,
+              "rva": "<rva>",
+              "source_code": "    let twice = |v: i64| v * 2;",
+              "source_file": "golden_bin/src/main.rs"
+            },
+            {
+              "length": "<len>",
+              "line_number": 11,
+              "rva": "<rva>",
+              "source_code": "    let twice = |v: i64| v * 2;",
+              "source_file": "golden_bin/src/main.rs"
+            },
+            {
+              "length": "<len>",
+              "line_number": 11,
+              "rva": "<rva>",
+              "source_code": "    let twice = |v: i64| v * 2;",
+              "source_file": "golden_bin/src/main.rs"
+            }
+          ],
+          "origin": "in_repo",
+          "source_file": "golden_bin/src/main.rs"
+        },
+        {
+          "demangled_name": "golden_lib::add",
+          "function_info": [
+            {
+              "rva_end": "<rva>",
+              "rva_start": "<rva>"
+            }
+          ],
+          "function_name": "_RNvCsaHhVrFPRqKL_10golden_lib3add",
+          "intersect_ratio": "0%",
+          "lines": [
+            {
+              "length": "<len>",
+              "line_number": 4,
+              "rva": "<rva>",
+              "source_code": "pub fn add(a: i64, b: i64) -> i64 {",
+              "source_file": "golden_lib/src/lib.rs"
+            },
+            {
+              "length": "<len>",
+              "line_number": 5,
+              "rva": "<rva>",
+              "source_code": "    a + b",
+              "source_file": "golden_lib/src/lib.rs"
+            },
+            {
+              "length": "<len>",
+              "line_number": 6,
+              "rva": "<rva>",
+              "source_code": "}",
+              "source_file": "golden_lib/src/lib.rs"
+            }
+          ],
+          "origin": "in_repo",
+          "source_file": "golden_lib/src/lib.rs"
+        },
+        {
+          "demangled_name": "golden_lib::mix",
+          "function_info": [
+            {
+              "rva_end": "<rva>",
+              "rva_start": "<rva>"
+            }
+          ],
+          "function_name": "_RNvCsaHhVrFPRqKL_10golden_lib3mix",
+          "intersect_ratio": "0%",
+          "lines": [
+            {
+              "length": "<len>",
+              "line_number": 12,
+              "rva": "<rva>",
+              "source_code": "pub fn mix(s: &str) -> usize {",
+              "source_file": "golden_lib/src/lib.rs"
+            },
+            {
+              "length": "<len>",
+              "line_number": 13,
+              "rva": "<rva>",
+              "source_code": "    s.len() + 1",
+              "source_file": "golden_lib/src/lib.rs"
+            },
+            {
+              "length": "<len>",
+              "line_number": 13,
+              "rva": "<rva>",
+              "source_code": "    s.len() + 1",
+              "source_file": "golden_lib/src/lib.rs"
+            },
+            {
+              "length": "<len>",
+              "line_number": 14,
+              "rva": "<rva>",
+              "source_code": "}",
+              "source_file": "golden_lib/src/lib.rs"
+            }
+          ],
+          "origin": "in_repo",
+          "source_file": "golden_lib/src/lib.rs"
+        },
+        {
+          "demangled_name": "golden_bin::main",
+          "function_info": [
+            {
+              "rva_end": "<rva>",
+              "rva_start": "<rva>"
+            }
+          ],
+          "function_name": "_RNvCscHX4QfetHwG_10golden_bin4main",
+          "intersect_ratio": "0%",
+          "lines": [
+            {
+              "length": "<len>",
+              "line_number": 10,
+              "rva": "<rva>",
+              "source_code": "fn main() {",
+              "source_file": "golden_bin/src/main.rs"
+            },
+            {
+              "length": "<len>",
+              "line_number": 12,
+              "rva": "<rva>",
+              "source_code": "    let a = black_box(add(black_box(2), black_box(3)));",
+              "source_file": "golden_bin/src/main.rs"
+            },
+            {
+              "length": "<len>",
+              "line_number": 12,
+              "rva": "<rva>",
+              "source_code": "    let a = black_box(add(black_box(2), black_box(3)));",
+              "source_file": "golden_bin/src/main.rs"
+            },
+            {
+              "length": "<len>",
+              "line_number": 12,
+              "rva": "<rva>",
+              "source_code": "    let a = black_box(add(black_box(2), black_box(3)));",
+              "source_file": "golden_bin/src/main.rs"
+            },
+            {
+              "length": "<len>",
+              "line_number": 12,
+              "rva": "<rva>",
+              "source_code": "    let a = black_box(add(black_box(2), black_box(3)));",
+              "source_file": "golden_bin/src/main.rs"
+            },
+            {
+              "length": "<len>",
+              "line_number": 13,
+              "rva": "<rva>",
+              "source_code": "    let m = black_box(mul3(black_box(a)));",
+              "source_file": "golden_bin/src/main.rs"
+            },
+            {
+              "length": "<len>",
+              "line_number": 13,
+              "rva": "<rva>",
+              "source_code": "    let m = black_box(mul3(black_box(a)));",
+              "source_file": "golden_bin/src/main.rs"
+            },
+            {
+              "length": "<len>",
+              "line_number": 13,
+              "rva": "<rva>",
+              "source_code": "    let m = black_box(mul3(black_box(a)));",
+              "source_file": "golden_bin/src/main.rs"
+            },
+            {
+              "length": "<len>",
+              "line_number": 14,
+              "rva": "<rva>",
+              "source_code": "    let t = black_box(twice(black_box(m)));",
+              "source_file": "golden_bin/src/main.rs"
+            },
+            {
+              "length": "<len>",
+              "line_number": 14,
+              "rva": "<rva>",
+              "source_code": "    let t = black_box(twice(black_box(m)));",
+              "source_file": "golden_bin/src/main.rs"
+            },
+            {
+              "length": "<len>",
+              "line_number": 14,
+              "rva": "<rva>",
+              "source_code": "    let t = black_box(twice(black_box(m)));",
+              "source_file": "golden_bin/src/main.rs"
+            },
+            {
+              "length": "<len>",
+              "line_number": 15,
+              "rva": "<rva>",
+              "source_code": "    let pi = black_box(pair_sum::<i64>(black_box(a), black_box(m)));",
+              "source_file": "golden_bin/src/main.rs"
+            },
+            {
+              "length": "<len>",
+              "line_number": 15,
+              "rva": "<rva>",
+              "source_code": "    let pi = black_box(pair_sum::<i64>(black_box(a), black_box(m)));",
+              "source_file": "golden_bin/src/main.rs"
+            },
+            {
+              "length": "<len>",
+              "line_number": 15,
+              "rva": "<rva>",
+              "source_code": "    let pi = black_box(pair_sum::<i64>(black_box(a), black_box(m)));",
+              "source_file": "golden_bin/src/main.rs"
+            },
+            {
+              "length": "<len>",
+              "line_number": 15,
+              "rva": "<rva>",
+              "source_code": "    let pi = black_box(pair_sum::<i64>(black_box(a), black_box(m)));",
+              "source_file": "golden_bin/src/main.rs"
+            },
+            {
+              "length": "<len>",
+              "line_number": 16,
+              "rva": "<rva>",
+              "source_code": "    let pf = black_box(pair_sum::<f64>(black_box(1.5_f64), black_box(2.5_f64)));",
+              "source_file": "golden_bin/src/main.rs"
+            },
+            {
+              "length": "<len>",
+              "line_number": 16,
+              "rva": "<rva>",
+              "source_code": "    let pf = black_box(pair_sum::<f64>(black_box(1.5_f64), black_box(2.5_f64)));",
+              "source_file": "golden_bin/src/main.rs"
+            },
+            {
+              "length": "<len>",
+              "line_number": 16,
+              "rva": "<rva>",
+              "source_code": "    let pf = black_box(pair_sum::<f64>(black_box(1.5_f64), black_box(2.5_f64)));",
+              "source_file": "golden_bin/src/main.rs"
+            },
+            {
+              "length": "<len>",
+              "line_number": 16,
+              "rva": "<rva>",
+              "source_code": "    let pf = black_box(pair_sum::<f64>(black_box(1.5_f64), black_box(2.5_f64)));",
+              "source_file": "golden_bin/src/main.rs"
+            },
+            {
+              "length": "<len>",
+              "line_number": 17,
+              "rva": "<rva>",
+              "source_code": "    let n = black_box(mix(black_box(\"hello\")));",
+              "source_file": "golden_bin/src/main.rs"
+            },
+            {
+              "length": "<len>",
+              "line_number": 17,
+              "rva": "<rva>",
+              "source_code": "    let n = black_box(mix(black_box(\"hello\")));",
+              "source_file": "golden_bin/src/main.rs"
+            },
+            {
+              "length": "<len>",
+              "line_number": 17,
+              "rva": "<rva>",
+              "source_code": "    let n = black_box(mix(black_box(\"hello\")));",
+              "source_file": "golden_bin/src/main.rs"
+            },
+            {
+              "length": "<len>",
+              "line_number": 18,
+              "rva": "<rva>",
+              "source_code": "    println!(\"{a} {m} {t} {pi} {pf} {n}\");",
+              "source_file": "golden_bin/src/main.rs"
+            },
+            {
+              "length": "<len>",
+              "line_number": 18,
+              "rva": "<rva>",
+              "source_code": "    println!(\"{a} {m} {t} {pi} {pf} {n}\");",
+              "source_file": "golden_bin/src/main.rs"
+            },
+            {
+              "length": "<len>",
+              "line_number": 18,
+              "rva": "<rva>",
+              "source_code": "    println!(\"{a} {m} {t} {pi} {pf} {n}\");",
+              "source_file": "golden_bin/src/main.rs"
+            },
+            {
+              "length": "<len>",
+              "line_number": 18,
+              "rva": "<rva>",
+              "source_code": "    println!(\"{a} {m} {t} {pi} {pf} {n}\");",
+              "source_file": "golden_bin/src/main.rs"
+            },
+            {
+              "length": "<len>",
+              "line_number": 19,
+              "rva": "<rva>",
+              "source_code": "}",
+              "source_file": "golden_bin/src/main.rs"
+            }
+          ],
+          "origin": "in_repo",
+          "source_file": "golden_bin/src/main.rs"
+        },
+        {
+          "demangled_name": "golden_bin::mul3",
+          "function_info": [
+            {
+              "rva_end": "<rva>",
+              "rva_start": "<rva>"
+            }
+          ],
+          "function_name": "_RNvCscHX4QfetHwG_10golden_bin4mul3",
+          "intersect_ratio": "0%",
+          "lines": [
+            {
+              "length": "<len>",
+              "line_number": 6,
+              "rva": "<rva>",
+              "source_code": "fn mul3(x: i64) -> i64 {",
+              "source_file": "golden_bin/src/main.rs"
+            },
+            {
+              "length": "<len>",
+              "line_number": 7,
+              "rva": "<rva>",
+              "source_code": "    x * 3",
+              "source_file": "golden_bin/src/main.rs"
+            },
+            {
+              "length": "<len>",
+              "line_number": 8,
+              "rva": "<rva>",
+              "source_code": "}",
+              "source_file": "golden_bin/src/main.rs"
+            }
+          ],
+          "origin": "in_repo",
+          "source_file": "golden_bin/src/main.rs"
+        }
+      ]
+    }
+  ],
+  "Build_mode": "RelWithDebInfo",
+  "Cargo_locked": true,
+  "Codegen_backend": "llvm",
+  "Commit": "<sha>",
+  "Compiler": "rustc",
+  "Compiler_version": "<masked>",
+  "Mangling": "v0",
+  "Optimization": "-O0",
+  "Platform": "linux",
+  "Pushed_at": "01/01/2026, 00:00:00",
+  "Toolchain": "<masked>",
+  "URL": "file:///e2e/rust-golden",
+  "compiler_flag": "-O0",
+  "language": "rust",
+  "library": "x64"
+}

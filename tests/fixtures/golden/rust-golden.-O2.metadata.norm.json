@@ -1,0 +1,196 @@
+{
+  "Backend_caps": {
+    "functions": true,
+    "lines": true,
+    "maturity": "stable",
+    "variables": true
+  },
+  "Binary_info_list": [
+    {
+      "file": "golden_bin",
+      "functions": [
+        {
+          "demangled_name": "golden_lib::pair_sum::<f64>",
+          "function_info": [
+            {
+              "rva_end": "<rva>",
+              "rva_start": "<rva>"
+            }
+          ],
+          "function_name": "_RINvCscr4yQOtj4ij_10golden_lib8pair_sumdECsgl8G0OwCagR_10golden_bin",
+          "intersect_ratio": "0%",
+          "lines": [],
+          "origin": "in_repo",
+          "source_file": "golden_lib/src/lib.rs"
+        },
+        {
+          "demangled_name": "golden_lib::pair_sum::<i64>",
+          "function_info": [
+            {
+              "rva_end": "<rva>",
+              "rva_start": "<rva>"
+            }
+          ],
+          "function_name": "_RINvCscr4yQOtj4ij_10golden_lib8pair_sumxECsgl8G0OwCagR_10golden_bin",
+          "intersect_ratio": "0%",
+          "lines": [],
+          "origin": "in_repo",
+          "source_file": "golden_lib/src/lib.rs"
+        },
+        {
+          "demangled_name": "golden_bin::main::{closure#0}",
+          "function_info": [
+            {
+              "rva_end": "<rva>",
+              "rva_start": "<rva>"
+            }
+          ],
+          "function_name": "_RNCNvCsgl8G0OwCagR_10golden_bin4main0B3_",
+          "intersect_ratio": "0%",
+          "lines": [
+            {
+              "length": "<len>",
+              "line_number": 11,
+              "rva": "<rva>",
+              "source_code": "    let twice = |v: i64| v * 2;",
+              "source_file": "golden_bin/src/main.rs"
+            }
+          ],
+          "origin": "in_repo",
+          "source_file": "golden_bin/src/main.rs"
+        },
+        {
+          "demangled_name": "golden_lib::add",
+          "function_info": [
+            {
+              "rva_end": "<rva>",
+              "rva_start": "<rva>"
+            }
+          ],
+          "function_name": "_RNvCscr4yQOtj4ij_10golden_lib3add",
+          "intersect_ratio": "0%",
+          "lines": [
+            {
+              "length": "<len>",
+              "line_number": 5,
+              "rva": "<rva>",
+              "source_code": "    a + b",
+              "source_file": "golden_lib/src/lib.rs"
+            }
+          ],
+          "origin": "in_repo",
+          "source_file": "golden_lib/src/lib.rs"
+        },
+        {
+          "demangled_name": "golden_lib::mix",
+          "function_info": [
+            {
+              "rva_end": "<rva>",
+              "rva_start": "<rva>"
+            }
+          ],
+          "function_name": "_RNvCscr4yQOtj4ij_10golden_lib3mix",
+          "intersect_ratio": "0%",
+          "lines": [
+            {
+              "length": "<len>",
+              "line_number": 515,
+              "rva": "<rva>",
+              "source_code": "",
+              "source_file": "/rustc/3daae5e42ec9ba435212987331af1b7b8634fa90/library/core/src/str/mod.rs"
+            },
+            {
+              "length": "<len>",
+              "line_number": 13,
+              "rva": "<rva>",
+              "source_code": "    s.len() + 1",
+              "source_file": "golden_lib/src/lib.rs"
+            }
+          ],
+          "origin": "in_repo",
+          "source_file": "golden_lib/src/lib.rs"
+        },
+        {
+          "demangled_name": "golden_bin::main",
+          "function_info": [
+            {
+              "rva_end": "<rva>",
+              "rva_start": "<rva>"
+            }
+          ],
+          "function_name": "_RNvCsgl8G0OwCagR_10golden_bin4main",
+          "intersect_ratio": "0%",
+          "lines": [
+            {
+              "length": "<len>",
+              "line_number": 10,
+              "rva": "<rva>",
+              "source_code": "fn main() {",
+              "source_file": "golden_bin/src/main.rs"
+            },
+            {
+              "length": "<len>",
+              "line_number": 18,
+              "rva": "<rva>",
+              "source_code": "    println!(\"{a} {m} {t} {pi} {pf} {n}\");",
+              "source_file": "golden_bin/src/main.rs"
+            },
+            {
+              "length": "<len>",
+              "line_number": 18,
+              "rva": "<rva>",
+              "source_code": "    println!(\"{a} {m} {t} {pi} {pf} {n}\");",
+              "source_file": "golden_bin/src/main.rs"
+            },
+            {
+              "length": "<len>",
+              "line_number": 19,
+              "rva": "<rva>",
+              "source_code": "}",
+              "source_file": "golden_bin/src/main.rs"
+            }
+          ],
+          "origin": "in_repo",
+          "source_file": "golden_bin/src/main.rs"
+        },
+        {
+          "demangled_name": "golden_bin::mul3",
+          "function_info": [
+            {
+              "rva_end": "<rva>",
+              "rva_start": "<rva>"
+            }
+          ],
+          "function_name": "_RNvCsgl8G0OwCagR_10golden_bin4mul3",
+          "intersect_ratio": "0%",
+          "lines": [
+            {
+              "length": "<len>",
+              "line_number": 7,
+              "rva": "<rva>",
+              "source_code": "    x * 3",
+              "source_file": "golden_bin/src/main.rs"
+            }
+          ],
+          "origin": "in_repo",
+          "source_file": "golden_bin/src/main.rs"
+        }
+      ]
+    }
+  ],
+  "Build_mode": "RelWithDebInfo",
+  "Cargo_locked": true,
+  "Codegen_backend": "llvm",
+  "Commit": "<sha>",
+  "Compiler": "rustc",
+  "Compiler_version": "<masked>",
+  "Mangling": "v0",
+  "Optimization": "-O2",
+  "Platform": "linux",
+  "Pushed_at": "01/01/2026, 00:00:00",
+  "Toolchain": "<masked>",
+  "URL": "file:///e2e/rust-golden",
+  "compiler_flag": "-O2",
+  "language": "rust",
+  "library": "x64"
+}
