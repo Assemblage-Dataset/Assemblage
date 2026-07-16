@@ -60,17 +60,37 @@ tree (shared extractor, flat-key download) against one identical stack state,
 then diffs (A) the two `linux_licensed.sqlite` files column-by-column and (B) the
 DWARF extractor output directly. Both diffs must be empty.
 
-### Known defect (pre-existing, out of P10 scope)
+### Fixed: daily pipeline now stores functions/rvas/lines (2026-07-16, R5)
 
-`db_construct` only stores a `Binary_info_list` entry when its `file` field
-equals the cleaned staged binary name, but `build_staging_entry` writes the raw
-download name (`{binary_id}_{filename}`) into `file`. The names never match, so
-**the daily pipeline currently stores zero DWARF functions/rvas/lines** — the
-`functions`/`rvas`/`lines` tables are populated only by bulk backfills, not the
-daily run. This is why the parity gate's comparison (B) exists: the SQLite path
-(A) cannot exercise the extractor. The defect predates P10 (it lives in both
-trees the parity gate compares) and fixing it would change frozen pipeline
-output, so it is left for a later phase.
+**What was wrong.** `db_construct` only stored a `Binary_info_list` entry when
+its `file` field *equalled* the cleaned staged binary name, but the re-extracted
+entry's `file` is the on-disk download name (`{binary_id}_{filename}`, e.g.
+`1005_hello`) while db_construct compared it against the cleaned name (`hello`).
+The two never matched, so **the daily pipeline stored zero DWARF
+functions/rvas/lines** — those tables were populated only by bulk backfills.
+
+**What matches now.** `staged_name_matches` (in `construct.py`) compares the
+entry's basename both raw and with a leading `{digits}_` prefix stripped, and
+normalises Windows/POSIX paths. So the re-extracted `1005_hello` and the
+builder's already-clean Rust names (`golden_bin`) both resolve to the staged
+binary, and the daily run now populates `functions`, `rvas` and `lines`. This
+deliberately changes the daily corpus output, so the P10 parity gate
+(`dataset_parity.sh`, which asserted output was *unchanged*) is retired as
+historical; the new acceptance instrument is `tests/e2e/dataset_correctness.sh`
+(`make dataset-gate`), which asserts the corpus is *correctly populated* for
+both a C and a Rust binary.
+
+### New columns (R5, Rust support)
+
+`binaries` gains `compiler`, `language`, `codegen_backend` (and `build_mode`,
+which already existed on the model) — all nullable, threaded from the PostgreSQL
+`buildopt` join through the staging metadata. Old C/C++ rows leave them NULL/`''`.
+`functions` gains `demangled_name` (rustfilt v0 form) and `origin`
+(`in_repo`/`dependency`/`stdlib`), both nullable and populated only for Rust —
+the C/C++ DWARF extractor emits neither. For Rust the pipeline reuses the
+builder's already-extracted per-binary entries (they carry demangled_name,
+origin and build-time-resolved source) rather than re-extracting host-side.
+`migrate_existing_db` adds all of these idempotently; no new indexes.
 
 ## CLI commands
 

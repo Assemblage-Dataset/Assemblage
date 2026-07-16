@@ -89,10 +89,10 @@ ignore = [
 "tests/**" = ["T20", "SIM"]
 
 # --- Frozen fences -----------------------------------------------------------
-# Residual violations in code deliberately left frozen for now: the legacy
-# quarantine, the alembic env, the absorbed dataset pipeline (behavior frozen
-# in P9; cleaned up when it is typed in P10), the data-refill scratch scripts,
-# and the TUI.
+# Residual violations in code deliberately left frozen: the legacy quarantine,
+# the alembic env, the absorbed host-side dataset pipeline (a host-only CLI kept
+# lint-lenient — print()s, bare excepts and unclosed handles are load-bearing to
+# its long-running batch style), the data-refill scratch scripts, and the TUI.
 "backend/assemblage/dataset/construct.py" = ["T201", "SIM401", "E722", "SIM115", "LOG015"]
 "backend/assemblage/dataset/orm.py" = ["T201"]
 "backend/assemblage/dataset/store.py" = ["LOG015"]
@@ -142,9 +142,12 @@ module = ["assemblage.legacy.*"]
 follow_imports = "skip"
 ignore_errors = true
 
-# Absorbed host-side dataset pipeline (P9): behavior frozen and untyped for
-# now; it joins the strict ratchet when it is typed in P10. No checked module
-# imports it (it is a host-only tool), so ignore_errors is sufficient.
+# Absorbed host-side dataset pipeline: an untyped host-only CLI, kept behind
+# ignore_errors rather than being annotated. No mypy-checked module imports it,
+# so leaving it untyped cannot weaken the checked graph; typing it is a
+# standalone cleanup, not a promised phase. R5 extends it (Rust columns + the
+# db_construct matching fix) within the fence — the added code is plain dict/str
+# plumbing that a future typing pass would annotate wholesale.
 [[tool.mypy.overrides]]
 module = ["assemblage.dataset.*"]
 follow_imports = "skip"
