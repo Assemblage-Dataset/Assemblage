@@ -120,7 +120,10 @@ NEW_BINARIES_QUERY = text("""
         r.created_at                AS repo_created_at,
         r.size                      AS repo_size_kb,
         s.build_time,
-        opt.compiler_flag
+        opt.compiler_flag,
+        opt.language                AS opt_language,
+        opt.codegen_backend,
+        opt.build_type
     FROM binaries b
     JOIN b_status s   ON b.status_id    = s.id
     JOIN projects r   ON s.repo_id      = r.id
@@ -183,15 +186,46 @@ def parse_github_owner_project(url):
 _FLAG_TO_OLD_ENUM = {"-O0": "NONE", "-O1": "LOW", "-O2": "MEDIUM", "-O3": "HIGH"}
 
 
-def download_binary(s3, bucket, repo_url, commit_hexsha, compiler, opt_enum, filename, dest_path):
+def is_rust_row(row):
+    """A build row is Rust when its buildopt language is rust (equivalently, its
+    compiler is rustc). Both are set together at registration, so either alone
+    is authoritative; we check both so a partially-populated row still routes."""
+    return (row.get("opt_language") or "").lower() == "rust" or (
+        row.get("compiler") or ""
+    ).lower() == "rustc"
+
+
+def download_binary(
+    s3,
+    bucket,
+    repo_url,
+    commit_hexsha,
+    compiler,
+    opt_enum,
+    filename,
+    dest_path,
+    *,
+    codegen_backend=None,
+    build_mode=None,
+    language=None,
+):
     owner, project = parse_github_owner_project(repo_url)
     basename = os.path.basename(filename)
     # The builder's real key layout (storage.layout, the one source of truth)
     # comes first; the slash-separated candidates below match historical objects
     # written before the builder switched to the flat prefix.
+    candidates = []
+    # Rust artifacts live under a backend/mode-qualified prefix (frozen in
+    # storage.layout), so the Rust key is tried first for rust builds. The C
+    # candidates below stay as a fallback and keep C/C++ behaviour unchanged.
+    if (language or "").lower() == "rust":
+        rust_prefix = layout.rust_artifact_prefix(
+            owner, project, commit_hexsha, codegen_backend or "", build_mode or "", opt_enum
+        )
+        candidates.append(layout.artifact_key(rust_prefix, basename))
     prefix = layout.artifact_prefix(owner, project, commit_hexsha, compiler, opt_enum)
     old_name = _FLAG_TO_OLD_ENUM.get(opt_enum, "")
-    candidates = [
+    candidates += [
         layout.artifact_key(prefix, basename),
         f"{owner}/{project}/{commit_hexsha}/{compiler}/{opt_enum}/{basename}",
     ]
@@ -208,6 +242,37 @@ def download_binary(s3, bucket, repo_url, commit_hexsha, compiler, opt_enum, fil
         "Failed to download s3://%s/%s (tried %d paths)", bucket, candidates[0], len(candidates)
     )
     return False
+
+
+def download_rust_binary_info_list(s3, bucket, row):
+    """Fetch a Rust build's ``Binary_info_list`` from the builder-written
+    ``assemblage_meta.json``.
+
+    Rust functions carry a ``demangled_name`` (rustfilt, v0) and an ``origin``
+    (in_repo / dependency / stdlib) that only the builder can produce — it has
+    the Rust toolchain and the live clone. Re-running the host-side DWARF
+    extractor would recover mangled names, ranges and lines but neither of those
+    two, so for Rust we reuse the builder's already-extracted per-binary entries
+    verbatim (a passthrough, not new extraction). Returns the list of entries,
+    or ``None`` if the metadata object is missing/unreadable.
+    """
+    owner, project = parse_github_owner_project(row["repo_url"])
+    prefix = layout.rust_artifact_prefix(
+        owner,
+        project,
+        row["commit_hexsha"] or "",
+        row.get("codegen_backend") or "",
+        row.get("build_type") or "",
+        row.get("compiler_flag", "") or "",
+    )
+    key = layout.metadata_key(prefix)
+    try:
+        body = s3.get_object(Bucket=bucket, Key=key)["Body"].read()
+        meta = json.loads(body)
+    except (botocore.exceptions.ClientError, ValueError) as exc:
+        logger.warning("Rust metadata unavailable s3://%s/%s : %s", bucket, key, exc)
+        return None
+    return meta.get("Binary_info_list") or []
 
 
 def download_source_archive(s3, owner, project, commit_hexsha, dest_path):
@@ -236,7 +301,7 @@ def get_md5(s):
     return hashlib.md5(s.encode()).hexdigest()
 
 
-def build_staging_entry(row, binary_path, staging_dir, source_root=None):
+def build_staging_entry(row, binary_path, staging_dir, source_root=None, binary_info_list=None):
     """
     Place the binary and a generated assemblage_meta.json into a staging
     sub-directory in the format db_construct() expects:
@@ -247,12 +312,20 @@ def build_staging_entry(row, binary_path, staging_dir, source_root=None):
     `source_root`, if provided, is the path to the extracted source tree for
     this binary's repo (used so DWARF source_file paths can be resolved and
     `lines.source_code` populated).
+
+    `binary_info_list`, if provided, supplies the per-binary DWARF entries
+    directly (the builder-written ones, used for Rust — they already carry
+    demangled_name/origin/resolved source). When None the daily pipeline
+    re-extracts DWARF from `binary_path` itself (the C/C++ path, unchanged).
     """
     repo_url = row["repo_url"]
     compiler = row["compiler"]
     compiler_flag = row.get("compiler_flag", "") or ""
     arch = row["arch"] or "x64"
     commit_hexsha = row["commit_hexsha"] or ""
+    language = row.get("opt_language") or row.get("repo_language") or ""
+    codegen_backend = row.get("codegen_backend") or ""
+    build_mode = row.get("build_type") or ""
     filename = os.path.basename(row["file_name"])
 
     updated_at = row["updated_at"]
@@ -265,8 +338,14 @@ def build_staging_entry(row, binary_path, staging_dir, source_root=None):
     ident_dir = os.path.join(staging_dir, identifier)
     os.makedirs(ident_dir, exist_ok=True)
 
-    # Extract DWARF info from the downloaded binary (only meaningful for ELF files).
-    dwarf_item = extract_dwarf_info(binary_path, source_root=source_root)
+    # DWARF entries: for Rust use the builder's already-extracted entries
+    # (demangled_name/origin/source resolved in the builder); for C/C++
+    # re-extract from the downloaded binary (only meaningful for ELF files).
+    if binary_info_list is not None:
+        dwarf_items = list(binary_info_list)
+    else:
+        one = extract_dwarf_info(binary_path, source_root=source_root)
+        dwarf_items = [one] if one is not None else []
 
     meta_path = os.path.join(ident_dir, METAFILE)
 
@@ -302,6 +381,9 @@ def build_staging_entry(row, binary_path, staging_dir, source_root=None):
             "Compiler": compiler,
             "URL": repo_url,
             "Compiler_flag": compiler_flag,
+            "Build_mode": build_mode,
+            "Language": language,
+            "Codegen_backend": codegen_backend,
             "Pushed_at": pushed_at_str,
             "commit_sha": commit_hexsha,
             "Repo_name": row.get("repo_name", "") or "",
@@ -314,13 +396,14 @@ def build_staging_entry(row, binary_path, staging_dir, source_root=None):
             "Artifact_type": artifact_type,
         }
 
-    # Append this binary's DWARF entry into Binary_info_list.
-    if dwarf_item is not None:
-        existing = meta.setdefault("Binary_info_list", [])
+    # Append this binary's DWARF entries into Binary_info_list.
+    existing = meta.setdefault("Binary_info_list", [])
+    seen_files = {entry.get("file") for entry in existing}
+    for item in dwarf_items:
         # de-dup by file name in case the same binary is staged twice
-        seen_files = {entry.get("file") for entry in existing}
-        if dwarf_item.get("file") not in seen_files:
-            existing.append(dwarf_item)
+        if item.get("file") not in seen_files:
+            existing.append(item)
+            seen_files.add(item.get("file"))
 
     with open(meta_path, "w") as f:
         json.dump(meta, f, indent=2)
@@ -514,6 +597,9 @@ def _download_one(args):
         opt_enum=row.get("compiler_flag", ""),
         filename=filename,
         dest_path=raw_path,
+        codegen_backend=row.get("codegen_backend"),
+        build_mode=row.get("build_type"),
+        language="rust" if is_rust_row(row) else row.get("opt_language"),
     )
     if not ok:
         return ("fail", row, None)
@@ -619,7 +705,12 @@ def run_pipeline(
             )
 
         try:
-            build_staging_entry(row, raw_path, staging_dir)
+            # Rust: reuse the builder's per-binary DWARF entries (with
+            # demangled_name/origin) instead of re-extracting host-side.
+            binary_info_list = None
+            if is_rust_row(row):
+                binary_info_list = download_rust_binary_info_list(s3_arc, bucket, row)
+            build_staging_entry(row, raw_path, staging_dir, binary_info_list=binary_info_list)
             staged += 1
         except Exception as e:
             if staged == 0:
