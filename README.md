@@ -1,322 +1,133 @@
 # Assemblage
 
-Assemblage is a distributed binary corpus discovery, generation, and archival tool built to provide high-quality labeled metadata for the purposes of building training data for machine learning applications of binary analysis and other applications (static / dynamic analysis, reverse engineering, etc...). You can find our paper on [arxiv](https://arxiv.org/abs/2405.03991). A brief introduction to the APIs and deployment can be found [here](https://assemblagedocs.readthedocs.io/). Quickstart instructions can be found further down on  this README. 
+Assemblage is a distributed binary-corpus generator. It discovers licensed C/C++
+repositories on GitHub, builds them with multiple compilers and optimization
+levels, and archives the resulting binaries with rich, function-level metadata —
+producing labeled training data for machine-learning approaches to binary
+analysis (and for static/dynamic analysis and reverse engineering).
 
-<i>The code in this repository is published under the MIT license.</i>
+Paper: [arxiv.org/abs/2405.03991](https://arxiv.org/abs/2405.03991).
+Code is MIT-licensed. The published dataset (permissively-licensed subset only)
+is at [assemblage-dataset.net](https://assemblage-dataset.net); see the
+[data sheet](https://assemblage-dataset.net/assets/total-datasheet.pdf).
 
-## Dataset Availability
-
-For up to date info and to download the dataset, please visit the [dataset page](https://assemblagedocs.readthedocs.io/en/latest/dataset.html).
-
-We include __**only**__ the subset of binaries for which permissive licenses can be ascertained. For more information, please view our [data sheet](https://assemblage-dataset.net/assets/total-datasheet.pdf). 
-
-# Quickstart
-
-## Initial Setup (Linux Build)
-
-1. Clone the repo and install Docker. Optionally, create and configure a GitHub token. 
-
-2. Within the project directory, create a secrets.env file with the following environment variables:
-
-    ```
-    DB_HOST=assemblage-db
-    DB_PORT=5432
-    POSTGRES_DATABASE=assemblage
-    POSTGRES_USER=assemblage
-    POSTGRES_PASSWORD=<password>
-    GITHUB_TOKEN=<token>
-    ```
-
-        
-    If you plan on using MinIO (recommended), you will need to select a username and password for the MinIO console. Define them in the secrets.env file with the following environment variables:
-
-    ```
-    S3_ACCESS_KEY=<chosen S3 username>
-    S3_SECRET_ACCESS_KEY=<chosen S3 password>
-    MINIO_ROOT_USER=<chosen S3 username>
-    MINIO_ROOT_PASSWORD=<chosen S3 password>
-    ```
-
-    Finally, add the following environment variables, which are required for MinIO:
-    ```
-    S3_HOST=minio
-    S3_HTTPS=false
-    ```
-
-3. Run Docker, then run the following command in the Assemblage root directory to build and run the Docker images. This will take some time. 
-
-    `docker compose -f docker-compose-s3.yml up --build -d`
-
-    This uses the example S3 bucket configuration: you can use this dockerfile as a base from which you can customize or add builders. 
-
-    Files will not be stored in the local binaries folder, and instead can be accessed via the MinIO interface. To access this interface, start Assemblage, view the logs of the `minio` container, and look for the link labelled "WebUI". Log in with the credentials defined in secrets.env. Further resources can be found in the MinIO documentation. 
-
-    If desired, you can shut down the Docker system with the command:
-
-    `docker compose up -f docker-compose-s3.yml down`
-
-## Initializing Database (Legacy)
-
-<i>As of the current version, Assemblage will attempt to initialize its own database if it doesn't exist. So this section shouldn't be necessary. But this process is not perfect, especially if the database structure has been altered, so the following instructions are also useful for developers.</i>
-
-The images should build and start running, but will not produce any artifacts. Checking the logs will reveal that the database needs to be initialized with Alembic.
-
-<i>If the RabbitMQ container is unable to start, restart (see step 5): sometimes, this container has trouble initializing in time. </i>
-
-4. To initialize the database with Alembic, run the following command (with Assemblage still running) to build the database from the latest version of the database configuration:
-
-`docker exec -it assemblage-coordinator-1 alembic upgrade head`
-
-To check that the database exists, run
+## Architecture in one page
 
 ```
-docker exec -it assemblage-db psql -U assemblage
-\dt
+ GitHub ─▶ scraper ─▶ [scrape] ─▶ coordinator ─▶ [build_opt_{id}] ─▶ builders
+                                      │                                  │
+                                      ▼                                  ▼
+                                 PostgreSQL  ◀── [clone|build|binary] ── MinIO
+                                                                          │
+                                        host-side daily pipeline ◀────────┘
+                                                     │
+                                                     ▼
+                                         linux_licensed.sqlite (corpus)
 ```
 
-and check that tables are displayed. Use `exit` to get out of the database inspector. 
+- **scraper** — date-windowed GitHub search, license-filtered, language
+  lowercased; emits bundles of 25 repos.
+- **coordinator** — inserts repos, creates one `b_status` row per buildopt, and
+  runs one dispatch thread per buildopt (per-opt pacing; builders ack before
+  building — at-most-once).
+- **builders** — 10 services (gcc/clang × `-O0 -O1 -O2 -O3 -Os`), each a distinct
+  buildopt with its own dispatch queue; clone or restore-from-S3, build, extract
+  DWARF, upload artifacts + `assemblage_meta.json`.
+- **dataset pipeline** — pulls new licensed Linux artifacts from MinIO and
+  appends them (with DWARF function/RVA/line info) to a cumulative SQLite corpus.
 
-5. Restart Assemblage. 
+The Python package lives under `backend/assemblage/`; see `CLAUDE.md` for the
+module map and `RE-ARCHITECTURE.md` for the design rationale.
 
-```
-docker compose down
-docker compose up -d
-```
+## Quickstart
 
-## S3 Bucket
-The reccomended way to run Assemblage is with an S3 bucket. The provided docker-compose-s3.yml created a minio server, but Assemblage should still be compatible with an AWS S3 bucket, though this is not tested. 
+Requirements: Docker + docker compose. [uv](https://docs.astral.sh/uv/) for the
+Python tooling and host-side scripts (`export PATH="$HOME/.local/bin:$PATH"`).
 
-Two buckets are created, project-archive, and artifcats. The project-archive contains compressed archives of each cloned project: 
-e.g. assemblage would be saved at: `project-archive/Assemblage-Dataset/Assemblage/<COMMIT_HASH>.tar.gz`.  The filename is the commit hash of the clone to allow for multiple versions of the same project to be saved 
-
-Successfully built project binaries ( and the pdbinfo.json) are saved in the artifacts bucket: `artifacts/Assemblage-Dataset/Assemblage/<COMMIT_HASH>/<COMPILER_NAME>/<opt_LEVEL>/<file_name>`. Where the compiler name would be gcc, clang or MSVC, the opt level will be opt_NONE, opt_LOW, opt_MEDIUM, opt_HIGH. 
-
-
-## Running w/out S3 Bucket (Not Recommended)
-
-The default `docker-compose` file can be used to run without MinIO. This will deposit the files directly into the filesystem of the host machine, in the `Assemblage/binaries` folder. This configuration is not tested with the latest work on Assemblage. You must make sure that the below file structure is implemented in your local file system where the builder volume is specified: 
-```
-- binaries/
-    - Pdbs/
-    - projects/
-    - successes/
-```
-The projects are cloned to binaries/projects/ , and are placed in folders that detail the GitHub username and project: e.g. assemblage would be cloned to:  binaries/projects/Assemblage-Dataset/Assemblage. Succesfully built binaires are placed in binaries/successes/, they are placed in folders separated by commit hash and optimization used like in the s3 bucket mode
-
-
-## Distributed Builders / Windows Builders (Optional)
-
-
-When building Windows executables, unlike the other workers, the builder must run a Windows image: in order to do this, a Windows kernel must be available to the builder. Due to the restrictions Docker places on running containers with mixed or non-Linux kernels, this typically requires a builder on a separate Windows machine to be connected to the rest of the system. 
-
-
-To configure a remote builder:
-1. First, ensure that on the local host (the server running the coordinator), the RabbitMQ ports are exposed and open to other connections. If using MinIO, likewise ensure that relevant ports are exposed. The default ports of these services can be looked up in their respective documentation: alternately, the provided `docker-compose-s3` can be used for the local host, and lists the ports of both services. 
-
-    <i>NOTE. Running distributed builders requires the RabbitMQ server to be exposed. Currently, the default username/passwords are used, so we recommend that you set up firewall rules to ensure only your worker host(s) can access the RabbitMQ server.</i>
-
-3. Modify the remote host's environment variables: set the `S3_HOST` and the `MQ_HOST` address to be the IP  or DNS name (if set) of your main host. If you have enabled https on the S3 host, then make sure to set `S3_HTTPS = true` on the remote host as well. 
-4. If you are using a non-standard port for RabbitMQ and/or S3, then you must additionally set `S3_PORT` and `MQ_PORT`.
-5. Start the main Assemblage system on the local host, then the remote host. Follow the instructions above under "Running the Linux builder" to run the local host. On the remote host, use a new docker compose file that only contains a builder. See `docker-compose-windows.yml` for a usable example.
-
-
-
-## Troubleshooting and Development
-
-Often small errors can be fixed by restarting or rebuilding the Docker containers: this is particularly true for fresh installs or configuration changes. Otherwise, setting the `RUNTIME_ENV` environment variable to `development` will expose more logs, which may be handy for troubleshooting. 
-
-The repository contains a suite of unit and integration tests, which may be useful for those looking to expand on Assemblage. Further information can be found in the [README file](backend/test/readme.md) located within the test folder.
-
-To create a new Windows-based builder, consult `docker-compose-windows.yml`. For all other workers, consult `docker-compose-s3.yml`. 
-
-A slightly more technical explanation of Assemblage's features can be found in `backend/assemblage/readme-developer.md`. 
-
-## Utilizing S3 Bucket (Recommended)
-
-If you plan on using MinIO, for local S3 bucket integration, you will need to select a username and password for the MinIO console. Define them in the secrets.env file with the following environment variables:
-
-```
-S3_ACCESS_KEY=<chosen S3 username>
-S3_SECRET_ACCESS_KEY=<chosen S3 password>
-MINIO_ROOT_USER=<chosen S3 username>
-MINIO_ROOT_PASSWORD=<chosen S3 password>
+```bash
+git clone <this repo> && cd Assemblage
+cp secrets.env.example secrets.env      # fill in POSTGRES_PASSWORD, GITHUB_TOKEN,
+                                        # S3/MinIO creds, RABBITMQ_* (default guest)
+docker compose up -d                    # postgres + rabbitmq + minio + coordinator
+                                        # + scraper + the 10-builder matrix
+docker exec -it assemblage-coordinator-1 alembic upgrade head   # first run only
 ```
 
-Then, add the following required environment variables:
+Artifacts go to MinIO (API on host port **9010**, console on **9011**). The
+`./backend` tree is bind-mounted into every worker, so code edits are live
+without a rebuild.
+
+Scale the builder matrix without editing the compose file:
+
+```bash
+BUILDER_REPLICAS=4 BUILDER_MEM=8g docker compose up -d
+docker compose up -d --scale builder_6=20        # more gcc -O2 workers
+docker compose down                              # stop (keeps volumes)
 ```
-S3_HOST=minio
-S3_HTTPS=false
+
+A minimal terminal UI wraps the above: `python assemblage_tui.py`.
+
+## Worker images
+
+Both toolchain variants build from one Dockerfile:
+
+```bash
+docker build --build-arg TOOLCHAIN=gcc   -t assemblage-gcc:default   -f docker/worker/Dockerfile .
+docker build --build-arg TOOLCHAIN=clang -t assemblage-clang:default -f docker/worker/Dockerfile .
 ```
 
-Failing to include these environment variables will cause the program to fail quietly. 
-Assemblage must then be launched with a MinIO bucket running. An example deployment configuration can be found in `docker-compose-s3.yml`.
+Both install the same union apt set so gcc- and clang-built binaries stay
+comparable; the clang variant exposes `gcc`/`cc` via a PATH shim over clang.
 
-Files will no longer be stored in the local binaries folder, and instead can be accessed via the MinIO interface. To access this interface, start Assemblage, view the logs of the `minio` container, and look for the links labelled "API" and "WebUI". Log in with the credentials defined in secrets.env. Further resources can be found in the MinIO documentation. 
+## Daily dataset pipeline
 
-## Distributed Builders / Windows Builders (Optional)
+Fetches newly-built licensed Linux binaries from MinIO, re-extracts DWARF, and
+appends them to `assemblage_dataset/linux_licensed.sqlite`:
 
+```bash
+DB_HOST=localhost MINIO_ENDPOINT=localhost:9010 uv run assemblage-daily
+# or: python backend/scripts/run_daily_dataset.py [--since YYYY-MM-DD]
+```
 
-When building Windows executables, unlike the other workers, the builder must run a Windows image: in order to do this, a Windows kernel must be available to the builder. Due to the restrictions Docker places on running containers with mixed or non-Linux kernels, this typically requires a builder on a separate Windows machine to be connected to the rest of the system. 
+Host-side runs override the Docker-internal hostnames via env vars (above).
+`assemblage_loop.sh` automates the restart + daily-run cycle. To re-stage raw
+files already on disk, use `backend/scripts/restage_from_raw.py`.
 
+## Tests
 
-To configure a remote builder:
-1. First, ensure that on the local host (the server running the coordinator), the RabbitMQ ports are exposed and open to other connections. If using MinIO, likewise ensure that relevant ports are exposed. The default ports of these services can be looked up in their respective documentation: alternately, the provided `docker-compose-s3` can be used for the local host, and lists the ports of both services. 
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+uv run pytest tests/                     # unit — green by default
+uv run pytest tests/ -m integration      # needs: docker compose up -d database
+make e2e                                 # golden-repo end-to-end gate
+```
 
-<i>NOTE. Running distributed builders requires the RabbitMQ server to be exposed. Currently, the default username/passwords are used, so we recommend that you set up firewall rules to ensure only your worker host(s) can access the RabbitMQ server.</i>
+See `tests/README.md` for the marker policy.
 
-2. On your remote host, use a new docker compose file that only contains a builder. See `docker-compose-windows.yml` for reference.
-3. Modify the remote host's environment variables: set the `S3_HOST` and the `MQ_HOST` address to be the IP  or DNS name (if set) of your main host. If you have enabled https on the S3 host, then make sure to set `S3_HTTPS = true` on the remote host as well. 
-4. If you are using a non-standard port for RabbitMQ and/or S3, then you must additionally set `S3_PORT` and `MQ_PORT`.
-5. Start the main Assemblage system on the local host, then the remote host. Follow the instructions above under "Running the Linux builder" to run the local host, and execute the Powershell script located at `backend/scripts/start_windows_worker.ps1` to run the remote host.
+## Distributed / Windows builders (optional)
+
+Windows/MSVC builds require a Windows host and are quarantined under
+`backend/assemblage/legacy/` + `docker/legacy/`. Point a remote builder's
+`MQ_HOST`/`S3_HOST` at the coordinator (expose RabbitMQ 5672 and MinIO 9010) and
+run `docker-compose-windows.yml` there.
+
+> RabbitMQ defaults to `guest`/`guest` (override with `RABBITMQ_USER`/
+> `RABBITMQ_PASS`). If you expose it, firewall it to your worker hosts and see
+> the [RabbitMQ access-control guide](https://www.rabbitmq.com/docs/access-control).
+
+## DeepHistory (legacy Conan corpus)
+
+Standalone multi-version library corpus via Conan; does not use RabbitMQ or the
+coordinator:
+
+```bash
+python backend/scripts/build_deephistory.py --packages sqlite3 fmt --output ./out
+docker compose -f docker-compose-deephistory.yml up --build     # Linux images
+```
 
 ## Troubleshooting
 
-Often small errors can be fixed by restarting or rebuilding the Docker containers: this is particularly true for fresh installs or configuration changes. Otherwise, setting the `RUNTIME_ENV` environment variable to `development` will expose more logs, which may be handy for troubleshooting. 
-
-The repository contains a suite of unit and integration tests, which may be useful for those looking to expand on Assemblage. Further information can be found in the [README file](backend/test/readme.md) located within the test folder.
-
-## ENVIRONMENT VARIABLES
-
-You can use one secrets.env, or multiple separate env files, but the following shows what env variables need to be in which container. Also check backend/assemblage/config.py for general configurations.
-Also, in the compose file, specify the type - Coordinator,Scraper,Builder
-
-## ENVIRONMENT VARIABLES FOR coordinator
-```
-DB_HOST=assemblage-db (database container name)
-POSTGRES_DATABASE=assemblage
-POSTGRES_USER=assemblage
-POSTGRES_PASSWORD=<password>
-DB_PORT=5432
-MINIO_ROOT_USER=<chosen user>
-MINIO_ROOT_PASSWORD=<chosen password>
-```
-## ENVIRONMENT VARIABLES FOR scraper
-```
-GITHUB_TOKEN=<github_pat_token>
-```
-## ENVIRONMENT VARIABLES FOR builder
-```
-SAVE_ASSEMBLY=true
-MINIO_ROOT_USER=<chosen user>
-MINIO_ROOT_PASSWORD=<chosen password>
-```
-
-## Environment Variables For MINIO
-```
-MINIO_ROOT_USER=<chosen user>
-MINIO_ROOT_PASSWORD=<chosen password>
-```
-
-## If using a builder or scraper on a distributed host also add
-```
-MQ_HOST=<mq_host>
-MQ_PORT=<mq_port>
-```
-You will also need to expose the rabbitmq port. TODO: add proper authentication
-
-
-## Daily Dataset Pipeline
-
-Assemblage includes a CI pipeline that fetches newly built binaries from MinIO each day, extracts DWARF debug info, and appends them to a cumulative SQLite dataset.
-
-### Storage layout
-
-```
-assemblage_dataset/
-  linux_licensed.sqlite     ← cumulative dataset, updated daily
-  2026-03-09/
-    raw/                    ← raw binaries downloaded from MinIO
-    binaries/               ← processed, hash-organized binaries for this day
-    pipeline.log            ← run log for this day
-```
-
-### License filtering
-
-The scraper now only forwards GitHub repositories that carry an open-source license (detected via the GitHub API `license` field). The license name is stored in the `projects.license` database column and propagated into every build artifact's metadata JSON.
-
-### Running the pipeline
-
-```bash
-# Run once (fetches binaries built since yesterday by default)
-python run_daily_dataset.py
-
-# Specify a custom start date
-python run_daily_dataset.py --since 2026-03-01
-
-# Specify a custom dataset directory
-python run_daily_dataset.py --dataset-dir /data/assemblage_dataset
-```
-
-The script reads all connection details from `secrets.env`. Add the following variables if not already present:
-
-```
-MINIO_ENDPOINT=localhost:9000        # or minio:9000 inside Docker
-MINIO_ACCESS_KEY=<chosen S3 username>
-MINIO_SECRET_KEY=<chosen S3 password>
-S3_ARTIFACTS_BUCKET=artifacts        # default
-```
-
-**Running from the host machine (outside Docker):** The Docker internal hostnames (`assemblage-db`, `minio`) are not resolvable from the host. Override them via environment variables, which take priority over `secrets.env`:
-
-```bash
-DB_HOST=localhost MINIO_ENDPOINT=localhost:9000 python run_daily_dataset.py
-```
-
-This requires `docker-compose-s3.yml` to expose port 5432 for PostgreSQL (already done) and MinIO port 9000.
-
-**Migrating an existing SQLite database:** If `linux_licensed.sqlite` was created before the `repo_commit_hash` column was added to the schema, run:
-
-```bash
-sqlite3 assemblage_dataset/linux_licensed.sqlite \
-  "ALTER TABLE binaries ADD COLUMN repo_commit_hash VARCHAR(16);"
-```
-
-### Pipeline internals (`Assemblage_dataset_cli/minio_pipeline.py`)
-
-1. Queries PostgreSQL for binaries built since the given date (`BuildDO.build_date`) where `projects.license IS NOT NULL` and `platform = linux`
-2. Downloads each ELF binary from the MinIO `artifacts` bucket
-3. Re-extracts DWARF function/RVA/line info using `pyelftools`
-4. Constructs an `assemblage_meta.json` (format compatible with `db_construct()`)
-5. Calls `db_construct()` to append binaries, functions, RVAs, and lines to `linux_licensed.sqlite`
-6. Stores the day's processed binaries under `assemblage_dataset/{date}/binaries/`
-
-### Scheduling via cron
-
-```cron
-0 2 * * * cd /path/to/Assemblage && python run_daily_dataset.py >> /var/log/assemblage_pipeline.log 2>&1
-```
-
----
-
-## DeepHistory Legacy Builder (Conan)
-
-Standalone pipeline for building the [DeepHistory](https://arxiv.org/abs/2405.03991) multi-version Windows binary corpus using Conan. Does not require RabbitMQ or the coordinator.
-
-```bash
-# Build specific packages
-python backend/scripts/build_deephistory.py --packages sqlite3 fmt --output C:/binaries/deephistory
-
-# Build all 258 packages from manifest (resumable)
-python backend/scripts/build_deephistory.py \
-  --manifest backend/assemblage/legacy/deephistory_manifest.json \
-  --output C:/binaries/deephistory --resume
-
-# Construct SQLite DB from output
-python Assemblage_dataset_cli/cli.py -g --data C:/binaries/deephistory \
-  --dbfile deephistory.sqlite --functions --lines --rvas --pdbs
-```
-
-Each build produces a folder `<md5(url)>_x64_<mode>_<toolset>_<opt>/` containing `assemblage_meta.json` and prefixed binaries (`.dll`, `.exe`, `.lib`, `.pdb`). Build matrix: Debug/RelWithDebInfo/Release, /Od /O1 /O2, MSVC vc143.
-
-Via Docker: `docker compose -f docker-compose-deephistory.yml up --build`
-
-Via worker dispatch: `TYPE=legacy_conan python backend/scripts/start_worker.py`
-
----
-
-## Note to future developers -
-On windows, there is an issue where Windows places a lock on all the built executables, this lock will not get lifted until the python program ( ie the worker script) stops and the container is downed. This means that it cannot be moved only copied to the volume ( or s3 bucket if implemented). Therefore it will progressively take more space so may have to be periodically stopped, cleaned, and recreated. To do this, every now and then, you should stop and remove the container. The repositories are cloned to C:/temp folder first if in s3 move, and so removing the container should automatically remove them. If it doesn't, or you are running in nons3 mode then leave the container running, exec into it, and manually remove them. Once the container has been stopped, the lock should be removed, so any extant binaries should be removable at this point. 
-
-
-
-Also suggested improvements: The commit hash is now sent with the scraper, so we would recommend sending that to the builder instead of using more subprocess commands to extract it. Rabbitmq is currently unsecured and uses the default credentials. Either setup firewall rules to ensure only the distributed builder can access the server, or implement security using the RabbitMQ access control guide [here](https://www.rabbitmq.com/docs/access-control). Adding a reverse proxy should also be on the list, to allow https connections to minio. There are also no security policies included with the minio buckets, that should be in a production environment
+Set `RUNTIME_ENV=development` for debug logging. Most transient failures clear on
+`docker compose restart <service>`. Migrations are handwritten and frozen to the
+live DB — never commit `alembic revision --autogenerate` output
+(`backend/alembic/README.md`).

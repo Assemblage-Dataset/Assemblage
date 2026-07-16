@@ -1,8 +1,12 @@
-## Assemblage Backend
+# backend/
 
-Python - consists of the workers + the eventual fastapi backend
+`backend/` is the Python source root (bind-mounted into every worker container
+at `/app`, and the target of the alembic runbooks). It holds:
 
-Note - the uvloop dep is for the fastapi server, but is incompatible for windows, hence the conditional install only if not Windows.
+- `assemblage/` — the core package. See `assemblage/README.md` for the module map.
+- `scripts/` — entry points: `start_worker.py` (`TYPE` dispatch), the host-side
+  `run_daily_dataset.py` / `restage_from_raw.py`, and `build_deephistory.py`.
+- `alembic/` + `alembic.ini` — migrations. The schema is frozen to the live DB;
+  read `alembic/README.md` before touching models.
 
-
-You cannot run both windows and Unix containers on same host, so have to pick one. 
+Project config (pyproject, ruff, mypy, pytest) lives at the repository root.
