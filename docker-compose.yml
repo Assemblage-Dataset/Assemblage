@@ -89,6 +89,10 @@ x-builder-rust: &builder-rust
 # crates.io package cache persists across tasks (cargo file-locks it — concurrent
 # replicas on one volume are safe). BUILD_TIMEOUT_S widens the C flow's tight
 # per-task budget because Rust link+monomorphization is slower.
+# DWARF_SIZE_LIMIT: statically linked Rust binaries with full debug info blow
+# past the extractor's 150 MB C-era default; measured cost is ~42x file size in
+# RAM (a 220 MB binary peaked at 9.3 GB), so 250 MB is the most a 16 g container
+# can digest with headroom. Skipped binaries are logged with size + limit.
 x-rust-worker-env: &rust-worker-env
   <<: *worker-env
   TYPE: builder
@@ -96,6 +100,7 @@ x-rust-worker-env: &rust-worker-env
   language: rust
   CARGO_HOME: /cargo
   BUILD_TIMEOUT_S: "1800"
+  DWARF_SIZE_LIMIT: "262144000"
 
 services:
 
