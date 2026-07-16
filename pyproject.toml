@@ -109,7 +109,6 @@ ignore = [
 "data_refill/migrate_linuxsource2024.py" = ["SIM113"]
 "data_refill/prep_validation_sample.py" = ["B905"]
 "tests/integration_tests/*" = ["F841"]
-"tests/unit_tests/workers/coordinator_test.py" = ["B017", "F841", "RUF059"]
 "tests/unit_tests/workers/scraper_test.py" = ["E711", "RUF059", "W291"]
 
 # --- Types -------------------------------------------------------------------
