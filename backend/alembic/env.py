@@ -1,8 +1,15 @@
 import os
 from logging.config import fileConfig
 
+import alembic_postgresql_enum
 from alembic import context
 from sqlalchemy import engine_from_config, pool
+
+# The live schema keeps seven orphaned PG enum *types* in pg_type (leftover
+# from the enum era; every column is now VARCHAR). The alembic-postgresql-enum
+# plugin would otherwise autogenerate DROP TYPE ops for them and break the
+# drift gate. Keep them: the schema is frozen to the live database.
+alembic_postgresql_enum.set_configuration(alembic_postgresql_enum.Config(drop_unused_enums=False))
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

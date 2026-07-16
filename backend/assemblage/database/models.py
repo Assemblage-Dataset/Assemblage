@@ -1,11 +1,26 @@
-"""
-Rework models for database with SQLModels
+"""SQLModel ORM aligned to the audited live database schema.
+
+The live PostgreSQL database (docker volume ``assemblage_db-data``) uses
+**no PG enum types** for its columns: migration ``d3e4f5a6b7c8`` converted
+every enum-typed column back to VARCHAR (see backend/alembic/README.md).
+Status/priority columns store the enum member **NAMES** (uppercase
+``'SUCCESS'``, ``'NOT_STARTED'``, ``'LOW'``) — SQLAlchemy's ``Enum`` type
+serializes a Python enum by name into the varchar column. The wire format
+(RabbitMQ) carries enum values (lowercase); both conventions are frozen.
+
+The status columns therefore keep their Python enum field types (so call
+sites can compare against and assign ``CloneStatus``/``BuildStatus``/
+``PriorityStatus`` members) but are backed by a non-native ``sa.Enum``
+(``native_enum=False``) whose DDL is a plain ``VARCHAR(N)`` matching the
+migrated schema exactly. This keeps ``alembic check`` diff-free against a
+freshly-migrated database and against the live one.
 """
 
 import datetime
 
-from sqlalchemy.orm import declarative_base
+import sqlalchemy as sa
 from sqlmodel import (
+    Column,
     Field,
     Relationship,
     SQLModel,
@@ -13,7 +28,21 @@ from sqlmodel import (
 
 from assemblage.consts import BuildStatus, CloneStatus, PriorityStatus
 
-Base = declarative_base()
+
+def _name_enum(enum_cls: type, length: int) -> sa.Enum:
+    """A varchar-backed ``sa.Enum`` that stores enum member NAMES.
+
+    ``native_enum=False`` emits ``VARCHAR(length)`` (no PG enum type);
+    ``create_constraint=False`` suppresses the CHECK constraint the live
+    schema never had. Storage stays the member name, identical to the
+    previous native-enum behaviour.
+    """
+    return sa.Enum(
+        enum_cls,
+        native_enum=False,
+        create_constraint=False,
+        length=length,
+    )
 
 
 class BuildOpt(SQLModel, table=True):
@@ -24,11 +53,26 @@ class BuildOpt(SQLModel, table=True):
     platform: str = Field(max_length=255, default="")
     language: str = Field(max_length=255, default="")
     compiler_name: str = Field(max_length=10, default="")
-    compiler_flag: str = Field(max_length=255, default="")
-    build_system: str = Field(max_length=255, default="")
-    build_command: str = Field(max_length=255, default="")
+    # fa6e74da04d4 made these three nullable; they never reverted.
+    compiler_flag: str | None = Field(max_length=255, default="")
+    build_system: str | None = Field(max_length=255, default="")
+    build_command: str | None = Field(max_length=255, default="")
     library: str = Field(max_length=255, default="")
     enable: bool = False
+    # d22baf7c9f47 added compiler_version/save_assembly NOT NULL; d3e4f5a6b7c8
+    # relaxed both to nullable. 2f796fb07698 added toolset_version nullable.
+    compiler_version: str | None = Field(default=None, max_length=25)
+    save_assembly: bool | None = Field(default=None)
+    toolset_version: str | None = Field(default=None, max_length=255)
+    # d3e4f5a6b7c8 added build_type NOT NULL DEFAULT 'RelWithDebInfo'.
+    build_type: str = Field(
+        default="RelWithDebInfo",
+        sa_column=Column(
+            sa.VARCHAR(length=32),
+            nullable=False,
+            server_default="RelWithDebInfo",
+        ),
+    )
 
     def __repr__(self) -> str:
         return (
@@ -45,11 +89,20 @@ class Status(SQLModel, table=True):
 
     id: int = Field(primary_key=True)
     # priority high: 2, mid: 1, low 0
-    priority: PriorityStatus = Field(default=PriorityStatus.LOW, index=True, nullable=False)
+    priority: PriorityStatus = Field(
+        default=PriorityStatus.LOW,
+        sa_column=Column(_name_enum(PriorityStatus, 16), index=True, nullable=False),
+    )
     # 0 : not started 1 : processing 2 : failed 3 : success 10 : command failed
-    clone_status: CloneStatus = Field(default=CloneStatus.NOT_STARTED, index=True)
+    clone_status: CloneStatus = Field(
+        default=CloneStatus.NOT_STARTED,
+        sa_column=Column(_name_enum(CloneStatus, 32), index=True, nullable=False),
+    )
     clone_msg: str = Field(max_length=255, default="")
-    build_status: BuildStatus = Field(default=BuildStatus.INIT, index=True)
+    build_status: BuildStatus = Field(
+        default=BuildStatus.INIT,
+        sa_column=Column(_name_enum(BuildStatus, 32), index=True, nullable=False),
+    )
     build_msg: str = ""
     build_opt_id: int | None = Field(default=None, foreign_key="buildopt.id")  # cascade
     repo_id: int = Field(foreign_key="projects.id")  # cascade
@@ -79,7 +132,7 @@ class BuildDO(SQLModel, table=True):
     status_id: int = Field(foreign_key="b_status.id")  # cascade
     status: Status | None = Relationship(back_populates="binaries")
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"Repo(File name={self.file_name})"
 
 
@@ -102,17 +155,23 @@ class RepoDO(SQLModel, table=True):
     deleted: bool = False
     updated_at: datetime.datetime = Field(default=datetime.datetime(1970, 1, 1, 0, 0, 1))
     forked_commit_id: int = 0
-    branch: str = Field(max_length=16, default="master")
+    # d33a95ecc21a extended branch to varchar(255).
+    branch: str = Field(max_length=255, default="master")
     # priority high: 2, mid: 1, low 0
-    priority: PriorityStatus = Field(default=PriorityStatus.LOW, index=True)
+    priority: PriorityStatus = Field(
+        default=PriorityStatus.LOW,
+        sa_column=Column(_name_enum(PriorityStatus, 16), index=True, nullable=False),
+    )
     size: int = 0
     build_system: str = Field(max_length=255, default="", index=True)
-    license: str = Field(max_length=255, default="")
+    # da9af5c6d2e0 added commit_hexsha nullable; b1c2d3e4f5a6 added license nullable.
+    commit_hexsha: str | None = Field(default=None, max_length=255)
+    license: str | None = Field(default="", max_length=255)
     statuses: list[Status] = Relationship(
         back_populates="project", sa_relationship_kwargs={"cascade": "all, delete"}
     )
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"Repo(id={self.id}, name={self.name}, url={self.url})"
 
 

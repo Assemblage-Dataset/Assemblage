@@ -165,10 +165,26 @@ module = [
 ignore_errors = true
 
 # Strict ratchet: every module the re-architecture rewrites joins this list
-# in the same PR that rewrites it.
+# in the same PR that rewrites it. The flags below are the per-module subset
+# of `mypy --strict`; the `strict = true` shortcut is NOT used here because it
+# also sets global-only options (warn_unused_configs, warn_redundant_casts)
+# that leak project-wide and would surface latent errors in still-fenced
+# modules. Adding a module to `module` below is all a rewrite PR needs to do.
 [[tool.mypy.overrides]]
-module = []
-strict = true
+module = [
+    "assemblage.database.models",
+]
+disallow_any_generics = true
+disallow_subclassing_any = true
+disallow_untyped_calls = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+warn_return_any = true
+no_implicit_reexport = true
+strict_equality = true
+extra_checks = true
 
 # --- Tests -------------------------------------------------------------------
 
