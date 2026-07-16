@@ -291,4 +291,12 @@ class OptLevel(Enum):
 
 
 TEST_MESSAGE_LEVEL = "DEBUG"
-TEST_DB_ADDR = "postgresql+psycopg2://assemblage:assemblage@assemblage-test-db:5432/assemblage"
+# Env-overridable so the same integration suite can target the old
+# docker-compose test-database service (default) or a scratch database on
+# localhost (e.g. TEST_DB_ADDR=postgresql+psycopg2://assemblage:assemblage@localhost:5432/assemblage_test).
+# The integration conftest refuses to run against a database literally named
+# 'assemblage' so the 30k-project live corpus can never be truncated by a test.
+TEST_DB_ADDR = os.getenv(
+    "TEST_DB_ADDR",
+    "postgresql+psycopg2://assemblage:assemblage@assemblage-test-db:5432/assemblage",
+)

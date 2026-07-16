@@ -17,6 +17,22 @@ helper_dbm = db.DBManager(TEST_DB_ADDR)
 logger = logging.getLogger(__name__)
 
 
+def apply_test_db_settings(settings):
+    """Point a Settings object at TEST_DB_ADDR.
+
+    Coordinator (and any code that builds its engine from ``settings``) then
+    talks to the same database the helpers seed, regardless of whether that is
+    the old compose ``assemblage-test-db`` host or a scratch db on localhost.
+    """
+    url = sqla.engine.make_url(TEST_DB_ADDR)
+    settings.db_host = url.host
+    settings.db_port = url.port or 5432
+    settings.db_name = url.database
+    settings.db_user = url.username
+    settings.db_pass = url.password
+    return settings
+
+
 def seed_database_projects():
     """
     Seeds the database with:

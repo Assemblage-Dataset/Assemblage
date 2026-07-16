@@ -37,15 +37,22 @@ class TestDBManager(unittest.TestCase):
 
         # Must patch the coordinator to use the test database. Currently also mocks rabbitMQ.
         patched_settings = settings.CoordinatorSettings()
-        patched_settings.db_host = "assemblage-test-db"
+        helper.apply_test_db_settings(patched_settings)
 
         c = Coordinator(patched_settings)
 
         c._dispatch_queue_map = (
             MagicMock()
         )  # just to run w/out errors. This func doesn't test dispatch queue functionality at all
+        # The per-buildopt "empty" events are normally created by the dispatch
+        # thread manager; this test drives _dispatch_to_builder directly, so mock
+        # the map to let the idle/request branch run without a KeyError.
+        c.t_empty_built_opt = MagicMock()
 
         mock_connection = MagicMock()
+        # Queue depth is consulted before dispatch (passive-declare threshold);
+        # keep it below COORDINATOR_REPO_REQUEST_THRESHOLD so tasks are sent.
+        mock_connection.get_queue.return_value.method.message_count = 0
 
         helper.truncate_all()
         helper.seed_database_projects()

@@ -70,6 +70,8 @@ class TestDBManager(unittest.TestCase):
             "updated_at": datetime.datetime(2025, 11, 15, 12, 41, 59),
             "branch": "BRANCH",
             "size": 5,
+            "commit_hexsha": None,
+            "license": "",
         }
         # expected_row = model.RepoDO(**expected_data)   # comparing dicts directly gives more useful error message
 
@@ -154,6 +156,8 @@ class TestDBManager(unittest.TestCase):
             "compiler_version": "10.0.0",
             "build_command": ANY,
             "enable": True,
+            "toolset_version": None,
+            "build_type": "RelWithDebInfo",
         }
 
         dbm = db.DBManager(const.TEST_DB_ADDR)
@@ -299,11 +303,13 @@ class TestDBManager(unittest.TestCase):
 
         helper.truncate_all()
 
+        # BuilderRegIn(name, uuid, compiler, library, language, platform,
+        #              compiler_flag, build_command, build_system)
         msg1 = msg.BuilderRegIn(
-            "NAME1", "0001", "Clang", "0.0.1", "lib", "c++", True, "x65", "comp_flag", "", "x65"
+            "NAME1", "0001", "Clang", "x64", "c++", "linux", "comp_flag", "", "all"
         )
         msg2 = msg.BuilderRegIn(
-            "NAME2", "0004", "GCC", "0.0.1", "lib", "c++", True, "x65", "comp_flag", "", "x65"
+            "NAME2", "0004", "GCC", "x64", "c++", "linux", "comp_flag", "", "all"
         )
 
         dbm = db.DBManager(const.TEST_DB_ADDR)
