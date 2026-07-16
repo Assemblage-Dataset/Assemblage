@@ -1,0 +1,156 @@
+"""Typed application settings (pydantic-settings v2).
+
+Each worker builds its settings from environment variables at construction
+time. Every legacy env-var name is preserved via ``validation_alias``;
+``RABBITMQ_USER`` / ``RABBITMQ_PASS`` are the new (guest-default) MQ credential
+names. Secrets are wrapped in ``SecretStr`` so they never leak into logs/repr.
+
+There is deliberately **no import-time ``os.getenv``**: nothing is read until a
+settings object is instantiated. The old ``config.py`` stays in place for the
+un-ported workers and is removed in P8.
+"""
+
+import socket
+from datetime import UTC, datetime
+from platform import machine, system
+
+from pydantic import AliasChoices, Field, SecretStr, computed_field, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from assemblage.enums import (
+    RuntimeEnv,
+    ScraperOutputPolicy,
+    ScrapeSource,
+    SupportedArchitecture,
+    SupportedCompiler,
+    SupportedLanguage,
+    SupportedPlatform,
+)
+
+_ONE_YEAR_SECONDS = 60 * 60 * 24 * 31 * 12
+
+
+class MQSettings(BaseSettings):
+    """RabbitMQ connection settings."""
+
+    model_config = SettingsConfigDict(extra="ignore")
+
+    host: str = Field(default="rabbitmq", validation_alias="MQ_HOST")
+    port: int = Field(default=5672, validation_alias="MQ_PORT")
+    user: str = Field(default="guest", validation_alias="RABBITMQ_USER")
+    password: SecretStr = Field(default=SecretStr("guest"), validation_alias="RABBITMQ_PASS")
+
+
+class DatabaseSettings(BaseSettings):
+    """PostgreSQL connection settings (all required from the environment)."""
+
+    model_config = SettingsConfigDict(extra="ignore")
+
+    host: str = Field(validation_alias="DB_HOST")
+    port: int = Field(validation_alias="DB_PORT")
+    database: str = Field(validation_alias="POSTGRES_DATABASE")
+    user: str = Field(validation_alias="POSTGRES_USER")
+    password: SecretStr = Field(validation_alias="POSTGRES_PASSWORD")
+
+    @property
+    def url(self) -> str:
+        return (
+            f"postgresql+psycopg2://{self.user}:{self.password.get_secret_value()}"
+            f"@{self.host}:{self.port}/{self.database}"
+        )
+
+
+class S3Settings(BaseSettings):
+    """S3 / MinIO settings. S3 is 'enabled' iff a host is configured."""
+
+    model_config = SettingsConfigDict(extra="ignore")
+
+    host: str | None = Field(default=None, validation_alias="S3_HOST")
+    access_key: str | None = Field(default=None, validation_alias="S3_ACCESS_KEY")
+    secret_access_key: str | None = Field(default=None, validation_alias="S3_SECRET_ACCESS_KEY")
+    port: int = Field(default=9000, validation_alias="S3_PORT")
+    https: bool = Field(default=True, validation_alias="S3_HTTPS")
+    region: str = Field(default="us-east-1", validation_alias="S3_REGION")
+
+    @property
+    def enabled(self) -> bool:
+        return self.host is not None
+
+    @model_validator(mode="after")
+    def _require_credentials_when_enabled(self) -> "S3Settings":
+        if self.enabled:
+            missing = [
+                name
+                for name, value in (
+                    ("S3_ACCESS_KEY", self.access_key),
+                    ("S3_SECRET_ACCESS_KEY", self.secret_access_key),
+                )
+                if not value
+            ]
+            if missing:
+                raise ValueError(f"S3_HOST is set ({self.host}) but missing: {missing}")
+        return self
+
+
+class WorkerSettings(BaseSettings):
+    """Fields common to every worker process."""
+
+    model_config = SettingsConfigDict(extra="ignore")
+
+    runtime_env: RuntimeEnv = Field(default=RuntimeEnv.prod, validation_alias="RUNTIME_ENV")
+    name: str = Field(default_factory=socket.gethostname, validation_alias="NAME")
+    mq: MQSettings = Field(default_factory=MQSettings)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def log_level(self) -> str:
+        return "DEBUG" if self.runtime_env == RuntimeEnv.dev else "INFO"
+
+
+class CoordinatorSettings(WorkerSettings):
+    """Coordinator process settings."""
+
+    db: DatabaseSettings = Field(default_factory=DatabaseSettings)
+    s3: S3Settings = Field(default_factory=S3Settings)
+
+
+class BuilderSettings(WorkerSettings):
+    """Builder process settings."""
+
+    compiler: SupportedCompiler = Field(validation_alias=AliasChoices("compiler", "COMPILER"))
+    language: SupportedLanguage = Field(validation_alias=AliasChoices("language", "LANGUAGE"))
+    compiler_flag: str = Field(default="", validation_alias="COMPILER_FLAG")
+    save_assembly: bool = Field(default=True, validation_alias="SAVE_ASSEMBLY")
+    library: SupportedArchitecture = Field(
+        default_factory=lambda: (
+            SupportedArchitecture.X64 if "64" in machine() else SupportedArchitecture.X86
+        )
+    )
+    build_os: SupportedPlatform = Field(default_factory=lambda: SupportedPlatform(system().lower()))
+    s3: S3Settings = Field(default_factory=S3Settings)
+    wait_for_build_opt_minutes: int = 5
+    config_check_interval_s: int = 5
+    binaries_root: str = "/binaries"
+
+
+class ScraperSettings(WorkerSettings):
+    """Scraper process settings."""
+
+    git_token: SecretStr = Field(default=SecretStr(""), validation_alias="GITHUB_TOKEN")
+    alternative_git_tokens: list[str] | None = None
+    interval: int = Field(default=14400, validation_alias="SCRAPE_INTERVAL")
+    default_start_time: int = Field(
+        default_factory=lambda: int(datetime.now(UTC).timestamp()),
+        validation_alias="SCRAPE_START_TIME",
+    )
+    default_end_time: int = Field(
+        default_factory=lambda: int(datetime.now(UTC).timestamp()) - _ONE_YEAR_SECONDS,
+        validation_alias="SCRAPE_END_TIME",
+    )
+    default_policy: ScraperOutputPolicy = Field(
+        default=ScraperOutputPolicy.ON_REQUEST, validation_alias="SCRAPER_POLICY"
+    )
+    wait_for_config: bool = True
+    qualifiers: set[str] = Field(default_factory=lambda: {"language:c++"})
+    proxies: list[str] = Field(default_factory=list)
+    source: ScrapeSource = Field(default=ScrapeSource.GITHUB, validation_alias="SCRAPE_DATASOURCE")
