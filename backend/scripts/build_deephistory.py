@@ -41,7 +41,7 @@ import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from assemblage.consts import BINPATH
+from assemblage.constants import BINPATH
 from assemblage.legacy.conan_strategy import (
     DEEPHISTORY_BUILD_MODES,
     DEEPHISTORY_OPTIMIZATIONS,
@@ -153,7 +153,7 @@ def main():
 
     if args.dry_run:
         print(f"\nDry run: {len(work_items)} configurations\n")
-        for pkg, ver, bm, opt, gh in work_items[:50]:
+        for pkg, ver, bm, opt, _gh in work_items[:50]:
             print(f"  {pkg}/{ver}  [{bm}] [/{opt}]")
         if len(work_items) > 50:
             print(f"  ... and {len(work_items) - 50} more")
@@ -178,7 +178,7 @@ def main():
         logger.info(f"[{i}/{total}] {pkg}/{ver} [{bm}] [/{opt}]")
 
         try:
-            final_dir, status, meta = strategy.build_package(pkg, ver, bm, opt, gh)
+            _final_dir, status, _meta = strategy.build_package(pkg, ver, bm, opt, gh)
             if status == "success":
                 success_count += 1
             else:

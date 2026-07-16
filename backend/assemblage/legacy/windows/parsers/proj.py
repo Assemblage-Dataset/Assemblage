@@ -4,7 +4,7 @@ import xml.etree.ElementTree as ET
 import re
 import string
 
-from assemblage.consts import OptLevel
+from assemblage.enums import OptLevel
 
 __all__ = ['Project', 'parse']
 

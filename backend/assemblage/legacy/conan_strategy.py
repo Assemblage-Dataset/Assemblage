@@ -25,7 +25,8 @@ import subprocess
 from pathlib import Path
 from typing import Tuple
 
-from assemblage.consts import BuildStatus, BINPATH
+from assemblage.constants import BINPATH
+from assemblage.enums import BuildStatus
 
 logger = logging.getLogger(__name__)
 

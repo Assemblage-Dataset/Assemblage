@@ -24,28 +24,6 @@ def get_slept_time_from_args(call_args_list) -> float:
     return float(sum)
 
 
-def mock_functioning_rabbitmq(MockConnection, MockChannel):
-    """
-    Creates a mock for RabbitMQ connections and channels, covering just enough
-    functionality to run tests (instantiation + core health checks)
-    Returns mock_connection, mock_channel
-    """
-
-    mock_connection = MagicMock()
-    mock_channel = MagicMock()
-
-    mock_connection.is_open = True
-    mock_connection.is_closed = False
-    mock_connection.channel = MagicMock(return_value=mock_channel)
-    mock_channel.is_open = True
-    mock_channel.is_closed = False
-
-    MockConnection.return_value = mock_connection
-    MockChannel.return_value = mock_channel
-
-    return mock_connection, mock_channel
-
-
 def mock_functioning_dbmanager(MockManager):
     """
     Creates a mock DBManager that can only insert repos successfully.

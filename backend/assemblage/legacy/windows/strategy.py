@@ -31,7 +31,8 @@ import pefile
 from elftools.common.exceptions import ELFError
 from elftools.elf.elffile import ELFFile
 
-from assemblage.consts import BINPATH, BuildStatus, CloneStatus
+from assemblage.constants import BINPATH
+from assemblage.enums import BuildStatus, CloneStatus
 from assemblage.legacy.windows.parsers.proj import Project
 from assemblage.legacy.windows.parsers.sln import Solution
 

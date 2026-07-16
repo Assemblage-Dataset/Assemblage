@@ -87,24 +87,16 @@ ignore = [
 "tests/**" = ["T20", "SIM"]
 "Assemblage_dataset_cli/*" = ["T20"]
 
-# --- Pre-rewrite fences ------------------------------------------------------
-# Exact residual violations of modules scheduled for re-architecture.
-# DELETE each fence in the PR that rewrites its module; new files get the
-# full rule set automatically.
+# --- Frozen fences -----------------------------------------------------------
+# Residual violations in code deliberately left frozen for now: the legacy
+# quarantine, the alembic env, the dataset CLI (formatted after the P9
+# absorption), the data-refill scratch scripts, and the TUI.
 "Assemblage_dataset_cli/db.py" = ["LOG015"]
 "Assemblage_dataset_cli/minio_pipeline.py" = ["SIM102", "SIM110"]
 "Assemblage_dataset_cli/otherutils/jtrans_address_convert.py" = ["E402", "F841", "SIM115"]
 "backend/alembic/env.py" = ["E402", "F403"]
-"backend/assemblage/mq/client.py" = ["RUF003"]
-"backend/assemblage/mq/messages.py" = ["B006", "UP028"]
-"backend/assemblage/worker/base_worker.py" = ["B027", "LOG015"]
-"backend/assemblage/worker/scraper.py" = ["E711", "E722", "RUF013", "SIM102", "SIM118"]
-"backend/scripts/build_deephistory.py" = ["B007", "RUF059"]
-"backend/scripts/start_worker.py" = ["RUF005"]
 "data_refill/migrate_linuxsource2024.py" = ["SIM113"]
 "data_refill/prep_validation_sample.py" = ["B905"]
-"tests/integration_tests/*" = ["F841"]
-"tests/unit_tests/workers/scraper_test.py" = ["E711", "RUF059", "W291"]
 
 # --- Types -------------------------------------------------------------------
 
@@ -117,11 +109,9 @@ exclude = [
     "deephistory/",
     "Assemblage_dataset_cli/",
 ]
-# Lenient during the re-architecture: only annotated defs are checked.
-# The strict ratchet below turns full checking on module-by-module as each
-# is rewritten; mypy already flags the latent coordinator run() bug
-# ('int' has no attribute 'start') once check_untyped_defs is on.
-check_untyped_defs = false
+# The whole package is now re-architected: every def (typed or not) is checked
+# globally, and the strict ratchet below applies the full per-module rule set.
+check_untyped_defs = true
 warn_unused_ignores = true
 no_implicit_optional = true
 
@@ -150,18 +140,6 @@ module = ["assemblage.legacy.*"]
 follow_imports = "skip"
 ignore_errors = true
 
-# Pre-rewrite fences: modules scheduled for re-architecture are excluded
-# from type checking entirely. DELETE each from this list in the PR that
-# rewrites it (and add it to the strict list below).
-[[tool.mypy.overrides]]
-module = [
-    "assemblage.config",
-    "assemblage.mq.client",
-    "assemblage.worker.base_worker",
-    "assemblage.worker.scraper",
-]
-ignore_errors = true
-
 # Strict ratchet: every module the re-architecture rewrites joins this list
 # in the same PR that rewrites it. The flags below are the per-module subset
 # of `mypy --strict`; the `strict = true` shortcut is NOT used here because it
@@ -181,7 +159,6 @@ module = [
     "assemblage.builder.report",
     "assemblage.builder.source",
     "assemblage.constants",
-    "assemblage.consts",
     "assemblage.coordinator.app",
     "assemblage.coordinator.dispatch",
     "assemblage.coordinator.ingest",
@@ -200,6 +177,8 @@ module = [
     "assemblage.mq.topology",
     "assemblage.runtime.service",
     "assemblage.runtime.supervisor",
+    "assemblage.scraper.app",
+    "assemblage.scraper.github",
     "assemblage.settings",
     "assemblage.storage.layout",
     "assemblage.storage.s3",

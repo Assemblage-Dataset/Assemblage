@@ -9,9 +9,7 @@ Every string enum preserves the two frozen conventions:
 
 ``StrEnum`` gives the ``(str, Enum)`` semantics (members compare/serialize as
 their lowercase value); the status enums additionally keep ``__str__ -> .name``
-to match the pre-re-architecture string form used in logs. ``consts.py``
-re-exports everything here so un-ported modules keep importing
-``assemblage.consts`` unchanged.
+to match the pre-re-architecture string form used in logs.
 """
 
 from enum import Enum, StrEnum
