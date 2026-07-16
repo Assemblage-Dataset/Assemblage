@@ -23,9 +23,13 @@ last_pipeline_day=""
 
 while true; do
     log "restarting worker containers"
-    $COMPOSE restart coordinator scraper_0 \
+    $COMPOSE restart coordinator scraper_0 scraper_rust \
         builder_0 builder_1 builder_2 builder_3 builder_4 \
-        builder_5 builder_6 builder_7 builder_8 builder_9 rabbitmq >>"$LOG" 2>&1 || \
+        builder_5 builder_6 builder_7 builder_8 builder_9 \
+        builder_rust_llvm_o0 builder_rust_llvm_o1 builder_rust_llvm_o2 \
+        builder_rust_llvm_o3 builder_rust_llvm_os builder_rust_llvm_dbg_o0 \
+        builder_rust_llvm_rel_o2 builder_rust_clift_o0 builder_rust_gcc_o2 \
+        rabbitmq >>"$LOG" 2>&1 || \
         log "restart failed (continuing)"
 
     today="$(date '+%Y-%m-%d')"
