@@ -129,10 +129,14 @@ class TestAdapters(unittest.TestCase):
         self.assertFalse(a.caps.variables)
         self.assertEqual(a.caps.maturity, "experimental")
 
-    def test_gcc_all_claimed_experimental(self):
+    def test_gcc_functions_lines_no_variables_experimental(self):
+        # R4 backend smoke confirmed cg_gcc functions + lines on the golden repo but
+        # did not verify variables (design §3.1: no full lexical scopes), so caps
+        # mark functions+lines True, variables False, maturity experimental.
         a = GccAdapter()
         self.assertEqual(a.rustflags(), ["-Zcodegen-backend=gcc"])
-        self.assertTrue(a.caps.functions and a.caps.lines and a.caps.variables)
+        self.assertTrue(a.caps.functions and a.caps.lines)
+        self.assertFalse(a.caps.variables)
         self.assertEqual(a.caps.maturity, "experimental")
 
 

@@ -120,8 +120,13 @@ class CraneliftAdapter(RustCodegenAdapter):
 
 class GccAdapter(RustCodegenAdapter):
     name = RustCodegenBackend.GCC
-    # All-True claimed; empirics in R4 decide its fate. Maturity stays experimental.
-    caps = DebugInfoCaps(functions=True, lines=True, variables=True, maturity="experimental")
+    # R4 empirics (2026-07-16 backend smoke on rust-golden, nightly-2026-06-15):
+    # cg_gcc builds exit 0 with non-empty DWARF (functions + line entries confirmed
+    # at -O0 and -O2 — the service ships ENABLED). variables=False: variable info was
+    # NOT verified and cg_gcc emits no full lexical scopes (design §3.1); its source-
+    # file/origin attribution is also weaker than llvm/cranelift (the smoke resolved
+    # zero in_repo origins). Maturity stays experimental.
+    caps = DebugInfoCaps(functions=True, lines=True, variables=False, maturity="experimental")
 
     def rustflags(self) -> list[str]:
         return ["-Zcodegen-backend=gcc"]
