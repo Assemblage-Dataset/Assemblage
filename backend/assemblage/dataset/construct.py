@@ -1,77 +1,82 @@
-import os
-import glob
-import random
-from tqdm.auto import tqdm
-import json
-from subprocess import Popen, PIPE, STDOUT, TimeoutExpired
-import hashlib
-import threading
-import math
-import zipfile
-import shutil
-import time
-import re
-import requests
-import pefile
-import logging
-import sqlite3
-import json
-
 import datetime
+import glob
+import hashlib
+import json
+import logging
+import os
+import random
+import re
+import shutil
+import sqlite3
+import time
+import zipfile
+from multiprocessing import Pool
+from subprocess import PIPE, STDOUT, Popen, TimeoutExpired
+
+import pefile
+import requests
+from elftools.common.exceptions import ELFError
+from elftools.elf.elffile import ELFFile
+from tqdm.auto import tqdm
 
 from assemblage.dataset.orm import init_clean_database
 from assemblage.dataset.store import Dataset_DB
-from multiprocessing import Pool
-from elftools.elf.elffile import ELFFile
-from elftools.common.exceptions import ELFError
 
 METAFILE = "assemblage_meta.json"
 
-logging.basicConfig(format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
-                    datefmt='%H:%M:%S',
-                    level=logging.INFO)
+logging.basicConfig(
+    format="%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s",
+    datefmt="%H:%M:%S",
+    level=logging.INFO,
+)
+
 
 def is_elf_bin(location):
     if not os.path.isfile(location):
         return False
-    with open(location, 'rb') as f:
+    with open(location, "rb") as f:
         try:
             ef = ELFFile(f)
-            if ef.header['e_type'] == 'ET_EXEC' or ef.header['e_type'] == 'ET_DYN':
+            if ef.header["e_type"] == "ET_EXEC" or ef.header["e_type"] == "ET_DYN":
                 return True
         except ELFError:
             return False
 
+
 def sha256sum(filename):
-    h  = hashlib.sha256()
-    b  = bytearray(128*1024)
+    h = hashlib.sha256()
+    b = bytearray(128 * 1024)
     mv = memoryview(b)
-    with open(filename, 'rb', buffering=0) as f:
+    with open(filename, "rb", buffering=0) as f:
         while n := f.readinto(mv):
             h.update(mv[:n])
     return h.hexdigest()
 
+
 TIMEOUT = 15
 checksum_format = r"\s\((MD5|0x3).*\)"
+
 
 def get_md5(s):
     return hashlib.md5(s.encode()).hexdigest()
 
+
 def assign_path(s):
     s = str(s)[::-1]
-    path_layers = re.findall('.{2}', str(s))
+    path_layers = re.findall(".{2}", str(s))
     return os.path.join(*path_layers)
+
 
 def runcmd(cmd):
     stdout, stderr = None, None
-    if os.name != 'nt':
+    if os.name != "nt":
         cmd = "exec " + cmd
     with Popen(cmd, shell=True, stdin=PIPE, stdout=PIPE, stderr=STDOUT, close_fds=True) as process:
         try:
             stdout, stderr = process.communicate(timeout=TIMEOUT)
         except TimeoutExpired:
-            if os.name == 'nt':
-                Popen("TASKKILL /F /PID {pid} /T".format(pid=process.pid))
+            if os.name == "nt":
+                Popen(f"TASKKILL /F /PID {process.pid} /T")
             else:
                 process.kill()
                 exit()
@@ -81,18 +86,27 @@ def runcmd(cmd):
 def process(zip_path, dest, inplace, nopdb=False):
     print("Checking all files")
     zipped_files = glob.glob(f"{zip_path}/**/*.zip", recursive=1)
-    print(len(zipped_files), 'found')
+    print(len(zipped_files), "found")
     pool = Pool(128)
     for f in zipped_files:
-        pool.apply_async(unzip_process, args=(f, dest, inplace, nopdb,))
+        pool.apply_async(
+            unzip_process,
+            args=(
+                f,
+                dest,
+                inplace,
+                nopdb,
+            ),
+        )
     pool.close()
     pool.join()
+
 
 def unzip_process(zipfile_path, dest, inplace, nopdb):
     """Unzip the file and check if it is a valid zip file"""
     tmp = f"{dest}/{os.urandom(32).hex()}"
     try:
-        with zipfile.ZipFile(zipfile_path, 'r') as zip_ref:
+        with zipfile.ZipFile(zipfile_path, "r") as zip_ref:
             zip_ref.extractall(tmp)
     except Exception as e:
         print(e)
@@ -102,19 +116,23 @@ def unzip_process(zipfile_path, dest, inplace, nopdb):
     if os.path.isfile(os.path.join(tmp, METAFILE)):
         with open(os.path.join(tmp, METAFILE)) as pdbf:
             pdb_info_dict = json.load(pdbf)
-        binfiles = glob.glob(tmp+"/**/*.exe", recursive=True)\
-            +glob.glob(tmp+"/**/*.dll", recursive=True)\
-            +glob.glob(tmp+"/**/*.EXE", recursive=True)\
-            +glob.glob(tmp+"/**/*.DLL", recursive=True)\
-            +glob.glob(tmp+"/**/*.lib", recursive=True)\
-            +glob.glob(tmp+"/**/*.LIB", recursive=True)
+        binfiles = (
+            glob.glob(tmp + "/**/*.exe", recursive=True)
+            + glob.glob(tmp + "/**/*.dll", recursive=True)
+            + glob.glob(tmp + "/**/*.EXE", recursive=True)
+            + glob.glob(tmp + "/**/*.DLL", recursive=True)
+            + glob.glob(tmp + "/**/*.lib", recursive=True)
+            + glob.glob(tmp + "/**/*.LIB", recursive=True)
+        )
 
-        for f in glob.glob(tmp+"/**/*", recursive=True):
+        for f in glob.glob(tmp + "/**/*", recursive=True):
             if is_elf_bin(f):
                 binfiles.append(f)
 
-        pdbfiles = glob.glob(tmp+"/**/*.pdb", recursive=True) + glob.glob(tmp+"/**/*.PDB", recursive=True)
-        if len(binfiles)==0:
+        pdbfiles = glob.glob(tmp + "/**/*.pdb", recursive=True) + glob.glob(
+            tmp + "/**/*.PDB", recursive=True
+        )
+        if len(binfiles) == 0:
             shutil.rmtree(tmp)
             return
         plat = pdb_info_dict["Platform"] if "Platform" in pdb_info_dict else ""
@@ -123,7 +141,7 @@ def unzip_process(zipfile_path, dest, inplace, nopdb):
         pdb_info_dict["Toolset_version"] = toolv
         opti = pdb_info_dict["Optimization"]
         github_url = pdb_info_dict["URL"]
-        for binf in binfiles+pdbfiles:
+        for binf in binfiles + pdbfiles:
             identifier = f"{get_md5(github_url)}_{plat}_{mode}_{toolv}_{opti}"
             if not os.path.isdir(f"{dest}/{identifier}"):
                 os.makedirs(f"{dest}/{identifier}")
@@ -148,8 +166,8 @@ def db_construct(dbfile, target_dir, include_lines, include_functions, include_r
     if os.path.isfile(dbfile):
         connection = sqlite3.connect(dbfile)
         cursor = connection.cursor()
-        binary_id = cursor.execute('SELECT max(id) FROM binaries').fetchone()[0]+1
-        function_id = cursor.execute('SELECT max(id) FROM functions').fetchone()[0]+1
+        binary_id = cursor.execute("SELECT max(id) FROM binaries").fetchone()[0] + 1
+        function_id = cursor.execute("SELECT max(id) FROM functions").fetchone()[0] + 1
         connection.close()
     else:
         init_clean_database(f"sqlite:///{dbfile}")
@@ -170,10 +188,20 @@ def db_construct(dbfile, target_dir, include_lines, include_functions, include_r
         if not os.path.isfile(os.path.join(target_dir, identifier, METAFILE)):
             runcmd(f"rm -rf {target_dir}/{identifier}")
             continue
-        bins = [x for x in os.listdir(os.path.join(target_dir, identifier)) if (x.lower().endswith(".exe")\
-                                                                         or x.lower().endswith(".dll")\
-                                                                         or is_elf_bin(os.path.join(target_dir, identifier, x)))]
-        pdbs = [x for x in os.listdir(os.path.join(target_dir, identifier)) if x.lower().endswith(".pdb")]
+        bins = [
+            x
+            for x in os.listdir(os.path.join(target_dir, identifier))
+            if (
+                x.lower().endswith(".exe")
+                or x.lower().endswith(".dll")
+                or is_elf_bin(os.path.join(target_dir, identifier, x))
+            )
+        ]
+        pdbs = [
+            x
+            for x in os.listdir(os.path.join(target_dir, identifier))
+            if x.lower().endswith(".pdb")
+        ]
         try:
             pdbinfo = json.load(open(os.path.join(target_dir, identifier, METAFILE)))
         except:
@@ -185,16 +213,18 @@ def db_construct(dbfile, target_dir, include_lines, include_functions, include_r
         license = pdbinfo["License"] if "License" in pdbinfo else ""
         if include_pdbs:
             for pdbfile in pdbs:
-                uid4pdb = os.urandom(4).hex()+"_"
+                uid4pdb = os.urandom(4).hex() + "_"
                 pdb_folder = assign_path(str(binary_id))
                 if not os.path.isdir(os.path.join(target_dir, pdb_folder)):
                     os.makedirs(os.path.join(target_dir, pdb_folder))
-                shutil.move(os.path.join(target_dir, identifier, pdbfile),
-                    os.path.join(target_dir, pdb_folder, uid4pdb+pdbfile))
-                pdb_paths_moved.append(os.path.join(pdb_folder, uid4pdb+pdbfile))
+                shutil.move(
+                    os.path.join(target_dir, identifier, pdbfile),
+                    os.path.join(target_dir, pdb_folder, uid4pdb + pdbfile),
+                )
+                pdb_paths_moved.append(os.path.join(pdb_folder, uid4pdb + pdbfile))
         for binfile in bins:
             binary_id += 1
-            filename = binfile.replace(identifier+"_", "")
+            filename = binfile.replace(identifier + "_", "")
             path = assign_path(str(binary_id))
             if not os.path.isdir(os.path.join(target_dir, path)):
                 if os.path.isfile(os.path.join(target_dir, path)):
@@ -202,25 +232,41 @@ def db_construct(dbfile, target_dir, include_lines, include_functions, include_r
                     # db.delete_binary("?", path)
                 os.makedirs(os.path.join(target_dir, path))
             old_id = binary_id
-            for binary_id in range(old_id, old_id+10000):
+            for binary_id in range(old_id, old_id + 10000):
                 path = assign_path(str(binary_id))
                 if not os.path.isfile(os.path.join(target_dir, path, filename)):
                     break
             try:
-                shutil.move(os.path.join(target_dir, identifier, binfile),
-                    os.path.join(target_dir, path, filename))
+                shutil.move(
+                    os.path.join(target_dir, identifier, binfile),
+                    os.path.join(target_dir, path, filename),
+                )
             except:
-                print(f"Error moving {os.path.join(target_dir, identifier, binfile)} to {os.path.join(target_dir, path, filename)}")
+                print(
+                    f"Error moving {os.path.join(target_dir, identifier, binfile)} to {os.path.join(target_dir, path, filename)}"
+                )
                 continue
             assert os.path.isfile(os.path.join(target_dir, path, filename))
             if "Pushed_at" in pdbinfo:
                 try:
-                    pushed_at = int(time.mktime(datetime.datetime.strptime(pdbinfo["Pushed_at"], '%m/%d/%Y, %H:%M:%S').timetuple()))
+                    pushed_at = int(
+                        time.mktime(
+                            datetime.datetime.strptime(
+                                pdbinfo["Pushed_at"], "%m/%d/%Y, %H:%M:%S"
+                            ).timetuple()
+                        )
+                    )
                 except:
                     pushed_at = 0
             else:
                 try:
-                    pushed_at = int(time.mktime(datetime.datetime.strptime(pdbinfo["updated_at"], '%m/%d/%Y, %H:%M:%S').timetuple()))
+                    pushed_at = int(
+                        time.mktime(
+                            datetime.datetime.strptime(
+                                pdbinfo["updated_at"], "%m/%d/%Y, %H:%M:%S"
+                            ).timetuple()
+                        )
+                    )
                 except:
                     pushed_at = 0
             assert binary_id not in binary_ds
@@ -230,7 +276,9 @@ def db_construct(dbfile, target_dir, include_lines, include_functions, include_r
                 "file_name": filename,
                 "platform": pdbinfo["Platform"] if "Platform" in pdbinfo else "",
                 "build_mode": pdbinfo["Build_mode"] if "Build_mode" in pdbinfo else "",
-                "toolset_version": pdbinfo["Toolset_version"] if "Toolset_version" in pdbinfo else "",
+                "toolset_version": pdbinfo["Toolset_version"]
+                if "Toolset_version" in pdbinfo
+                else "",
                 "repo_last_update": pushed_at,
                 "repo_commit": pdbinfo.get("Commit", ""),
                 # Order matters: minio_pipeline writes "Compiler_flag" (capital
@@ -239,19 +287,15 @@ def db_construct(dbfile, target_dir, include_lines, include_functions, include_r
                 "optimization": pdbinfo.get(
                     "Compiler_flag",
                     pdbinfo.get(
-                        "Optimization",
-                        pdbinfo.get(
-                            "compiler_flag",
-                            pdbinfo.get("flags", "")))),
+                        "Optimization", pdbinfo.get("compiler_flag", pdbinfo.get("flags", ""))
+                    ),
+                ),
                 "path": os.path.join(path, filename),
-                "size": os.path.getsize(os.path.join(target_dir, path, filename))//1024,
+                "size": os.path.getsize(os.path.join(target_dir, path, filename)) // 1024,
                 "hash": sha256sum(os.path.join(target_dir, path, filename)),
                 "license": license,
             }
-            pdb_ds.extend([{
-                "binary_id": binary_id,
-                "pdb_path": x} 
-                    for x in pdb_paths_moved])
+            pdb_ds.extend([{"binary_id": binary_id, "pdb_path": x} for x in pdb_paths_moved])
             seen = set()
             deduped_pdb_ds = []
             for item in pdb_ds:
@@ -289,19 +333,32 @@ def db_construct(dbfile, target_dir, include_lines, include_functions, include_r
                     # `.` -prefixed name because legit OpenMP/IPA helpers like
                     # `.omp_outlined.` and `.constprop.` are real functions.
                     SECTION_PSEUDO = {
-                        ".text", ".bss", ".data", ".rodata", ".plt",
-                        ".init", ".fini", ".init_array", ".fini_array",
-                        ".dynsym", ".dynstr", ".symtab", ".strtab",
+                        ".text",
+                        ".bss",
+                        ".data",
+                        ".rodata",
+                        ".plt",
+                        ".init",
+                        ".fini",
+                        ".init_array",
+                        ".fini_array",
+                        ".dynsym",
+                        ".dynstr",
+                        ".symtab",
+                        ".strtab",
                     }
                     for function_info in binary_file["functions"]:
                         function_name = function_info["function_name"]
                         if not function_name or function_name in SECTION_PSEUDO:
                             continue
-                        rvablocks = [{
-                                        "start": int(x['rva_start'], 16),
-                                        "end": int(x['rva_end'], 16),
-                                        "function_id": function_id,
-                                    } for x in function_info["function_info"]]
+                        rvablocks = [
+                            {
+                                "start": int(x["rva_start"], 16),
+                                "end": int(x["rva_end"], 16),
+                                "function_id": function_id,
+                            }
+                            for x in function_info["function_info"]
+                        ]
                         # Skip degenerate ranges (start >= end), e.g. zero-size
                         # alias symbols or section markers that survived above.
                         rvablocks = [r for r in rvablocks if r["start"] < r["end"]]
@@ -313,16 +370,18 @@ def db_construct(dbfile, target_dir, include_lines, include_functions, include_r
                             "name": function_name,
                             "binary_id": bin_id,
                             "id": function_id,
-                            "hash": get_hash_bin_rva(mapped_memory,
-                                    [[x["start"], x["end"]] for x in rvablocks]),
-                            "top_comments":"",
-                            "source_codes":"",
-                            "prototype":"",
-                            "source_file":""}
+                            "hash": get_hash_bin_rva(
+                                mapped_memory, [[x["start"], x["end"]] for x in rvablocks]
+                            ),
+                            "top_comments": "",
+                            "source_codes": "",
+                            "prototype": "",
+                            "source_file": "",
+                        }
                         if "source_codes" in function_info:
                             function_obj["source_codes"] = function_info["source_codes"]
                         if "top_comments" in function_info:
-                            function_obj["top_comments"] = (function_info["top_comments"])
+                            function_obj["top_comments"] = function_info["top_comments"]
                         if "prototype" in function_info:
                             function_obj["prototype"] = function_info["prototype"]
                         if "source_file" in function_info:
@@ -336,34 +395,56 @@ def db_construct(dbfile, target_dir, include_lines, include_functions, include_r
                                 rva = line_info.get("rva", "")
                                 source_file = line_info.get("source_file", "")
                                 if line_number:
-                                    line_ds.append({
-                                        "line_number": line_number,
-                                        "source_file": source_file,
-                                        "source_code": source_code,
-                                        "function_id": function_id,
-                                        "rva": ("0x" + rva) if rva else "",
-                                        "length": length})
+                                    line_ds.append(
+                                        {
+                                            "line_number": line_number,
+                                            "source_file": source_file,
+                                            "source_code": source_code,
+                                            "function_id": function_id,
+                                            "rva": ("0x" + rva) if rva else "",
+                                            "length": length,
+                                        }
+                                    )
                         function_id += 1
 
         runcmd(f"rm -rf {target_dir}/{identifier}")
         # Flush database
         # print(len(binary_ds), "binaries in `memory")
         if len(binary_ds) > 25:
-            print(f"Flush database: {len(binary_ds)} bins, {len(function_ds)} funcs, {len(line_ds)} lines")
-            db.bulk_flush(binary_ds.values(), function_ds, line_ds, rva_ds, pdb_ds,
-                          include_functions, include_lines, include_rvas, include_pdbs)
+            print(
+                f"Flush database: {len(binary_ds)} bins, {len(function_ds)} funcs, {len(line_ds)} lines"
+            )
+            db.bulk_flush(
+                binary_ds.values(),
+                function_ds,
+                line_ds,
+                rva_ds,
+                pdb_ds,
+                include_functions,
+                include_lines,
+                include_rvas,
+                include_pdbs,
+            )
             binary_ds = {}
             function_ds = []
             line_ds = []
             rva_ds = []
             pdb_ds = []
     print(f"Final flush: {len(binary_ds)} bins, {len(function_ds)} funcs, {len(line_ds)} lines")
-    db.bulk_flush(binary_ds.values(), function_ds, line_ds, rva_ds, pdb_ds,
-                  include_functions, include_lines, include_rvas, include_pdbs)
+    db.bulk_flush(
+        binary_ds.values(),
+        function_ds,
+        line_ds,
+        rva_ds,
+        pdb_ds,
+        include_functions,
+        include_lines,
+        include_rvas,
+        include_pdbs,
+    )
     db.shutdown()
 
     print(f"Finished database location: {dbfile}, binary location: {target_dir}")
-
 
 
 def update_license(dbfile):
@@ -372,7 +453,7 @@ def update_license(dbfile):
     print("You can put tokens in a file called tokens.txt")
     if os.path.isfile("tokens.txt"):
         print("Using tokens.txt")
-        with open("tokens.txt", "r") as f:
+        with open("tokens.txt") as f:
             tokens = [x.strip() for x in f.readlines()]
     else:
         tokens = [""]
@@ -396,21 +477,22 @@ def update_license(dbfile):
         db.update_license(url, license)
     db.shutdown()
 
+
 def get_elf_mapped_memory(filepath):
     """Build a flat byte array from ELF PT_LOAD segments for RVA-based lookups."""
     try:
-        with open(filepath, 'rb') as f:
+        with open(filepath, "rb") as f:
             elf = ELFFile(f)
-            load_segs = [s for s in elf.iter_segments() if s['p_type'] == 'PT_LOAD']
+            load_segs = [s for s in elf.iter_segments() if s["p_type"] == "PT_LOAD"]
             if not load_segs:
                 return None
-            base = min(s['p_vaddr'] for s in load_segs)
-            max_addr = max(s['p_vaddr'] + s['p_memsz'] for s in load_segs)
+            base = min(s["p_vaddr"] for s in load_segs)
+            max_addr = max(s["p_vaddr"] + s["p_memsz"] for s in load_segs)
             mem = bytearray(max_addr - base)
             for seg in load_segs:
-                off = seg['p_vaddr'] - base
+                off = seg["p_vaddr"] - base
                 data = seg.data()
-                mem[off:off + len(data)] = data
+                mem[off : off + len(data)] = data
         return bytes(mem)
     except Exception:
         return None

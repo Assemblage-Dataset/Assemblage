@@ -17,23 +17,22 @@ import bisect
 import datetime
 import hashlib
 import json
-import signal
 import logging
 import os
 import shutil
-import tempfile
+import signal
 from pathlib import Path
 
 import boto3
 import botocore
 from botocore.client import Config
-from elftools.elf.elffile import ELFFile
 from elftools.common.exceptions import ELFError
+from elftools.elf.elffile import ELFFile
 from sqlalchemy import create_engine, text
 
 # dataset_utils lives in the same directory
-from assemblage.dataset.construct import db_construct, METAFILE
-from assemblage.dataset.orm import migrate_existing_db, init_clean_database
+from assemblage.dataset.construct import METAFILE, db_construct
+from assemblage.dataset.orm import init_clean_database, migrate_existing_db
 from assemblage.dataset.store import Dataset_DB
 
 logging.basicConfig(
@@ -47,6 +46,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # DWARF extraction (mirrors LinuxBuildStrategy._extract_dwarf_info)
 # ---------------------------------------------------------------------------
+
 
 def _get_elf_base_address(elf):
     base = None
@@ -148,8 +148,10 @@ def _resolve_address_ranges(die, dwarf_info, cu_base_addr):
                         base = entry.base_address
                         continue
                     # End-of-list sentinel for v4 .debug_ranges.
-                    if (getattr(entry, "begin_offset", None) == 0 and
-                            getattr(entry, "end_offset", None) == 0):
+                    if (
+                        getattr(entry, "begin_offset", None) == 0
+                        and getattr(entry, "end_offset", None) == 0
+                    ):
                         break
                     if getattr(entry, "is_absolute", False):
                         begin = entry.begin_offset
@@ -230,8 +232,10 @@ def _resolve_source_path(source_file, source_root_for_binary, comp_dir):
                 return candidate
     # Strip a 32-hex MD5/UUID prefix that some build paths use.
     parts = source_file.split("/", 1)
-    if len(parts) == 2 and len(parts[0]) == 32 and all(
-        c in "0123456789abcdef" for c in parts[0].lower()
+    if (
+        len(parts) == 2
+        and len(parts[0]) == 32
+        and all(c in "0123456789abcdef" for c in parts[0].lower())
     ):
         candidate = os.path.join(source_root_for_binary, parts[1])
         if os.path.isfile(candidate):
@@ -246,7 +250,7 @@ def _resolve_source_path(source_file, source_root_for_binary, comp_dir):
     # If comp_dir is an absolute path matching the build tmpdir, try
     # rewriting `comp_dir/<rest>` -> `source_root/<rest>` on top.
     if comp_dir and source_file.startswith(comp_dir + "/"):
-        rel = source_file[len(comp_dir) + 1:]
+        rel = source_file[len(comp_dir) + 1 :]
         candidate = os.path.join(source_root_for_binary, rel)
         if os.path.isfile(candidate):
             return candidate
@@ -260,7 +264,7 @@ def _read_source_line(resolved_path, line_num, _cache):
     cached = _cache.get(resolved_path)
     if cached is None:
         try:
-            with open(resolved_path, "r", encoding="utf-8", errors="replace") as f:
+            with open(resolved_path, encoding="utf-8", errors="replace") as f:
                 cached = f.readlines()
         except Exception:
             cached = []
@@ -281,6 +285,7 @@ def extract_dwarf_info(binfile, source_root=None):
     (which often look like `/tmp/projects/<user>/<repo>/...`) to actual
     on-disk files so `lines.source_code` can be populated.
     """
+
     def _timeout_handler(signum, frame):
         raise _DWARFTimeout()
 
@@ -346,8 +351,8 @@ def extract_dwarf_info(binfile, source_root=None):
                 file_table = _build_dwarf_file_table(lp, comp_dir)
 
                 # Collect line entries per address, sorted for O(log N) range queries.
-                line_addrs = []   # sorted list of addresses
-                line_data  = {}   # addr -> {line, file_idx}
+                line_addrs = []  # sorted list of addresses
+                line_data = {}  # addr -> {line, file_idx}
                 if lp:
                     try:
                         for entry in lp.get_entries():
@@ -368,25 +373,21 @@ def extract_dwarf_info(binfile, source_root=None):
                     line_addrs = sorted(line_data.keys())
 
                 for die in cu.iter_DIEs():
-                    if die.tag not in ("DW_TAG_subprogram",
-                                       "DW_TAG_inlined_subroutine"):
+                    if die.tag not in ("DW_TAG_subprogram", "DW_TAG_inlined_subroutine"):
                         continue
 
                     func_name = _resolve_die_name(die)
                     if not func_name:
                         continue
 
-                    addr_ranges = _resolve_address_ranges(
-                        die, dwarf, cu_base_addr)
+                    addr_ranges = _resolve_address_ranges(die, dwarf, cu_base_addr)
                     if not addr_ranges:
                         continue
                     # Drop ranges that don't overlap any executable section.
                     # This filters out STL/template DIEs the compiler emits
                     # at low_pc=0 even though no code was generated.
                     if exec_ranges:
-                        addr_ranges = [
-                            (b, e) for (b, e) in addr_ranges if _in_exec(b, e)
-                        ]
+                        addr_ranges = [(b, e) for (b, e) in addr_ranges if _in_exec(b, e)]
                         if not addr_ranges:
                             continue
 
@@ -400,10 +401,12 @@ def extract_dwarf_info(binfile, source_root=None):
                         rva_e = end - base_addr
                         if rva_s < 0 or rva_e <= rva_s:
                             continue
-                        rva_ranges.append({
-                            "rva_start": format(rva_s, "x").rjust(16, "0"),
-                            "rva_end": format(rva_e, "x").rjust(16, "0"),
-                        })
+                        rva_ranges.append(
+                            {
+                                "rva_start": format(rva_s, "x").rjust(16, "0"),
+                                "rva_end": format(rva_e, "x").rjust(16, "0"),
+                            }
+                        )
                         lo = bisect.bisect_left(line_addrs, begin)
                         hi = bisect.bisect_left(line_addrs, end)
                         for addr in line_addrs[lo:hi]:
@@ -412,55 +415,57 @@ def extract_dwarf_info(binfile, source_root=None):
                             sf = file_table.get(li["file_idx"], source_file)
                             src_text = ""
                             if source_root:
-                                resolved = _resolve_source_path(
-                                    sf, source_root, comp_dir)
-                                src_text = _read_source_line(
-                                    resolved, li["line"], source_cache)
-                            lines.append({
-                                "line_number": li["line"],
-                                "rva": format(rva, "x").rjust(16, "0"),
-                                "rva_int": rva,
-                                "length": 0,
-                                "source_code": src_text,
-                                "source_file": sf,
-                            })
+                                resolved = _resolve_source_path(sf, source_root, comp_dir)
+                                src_text = _read_source_line(resolved, li["line"], source_cache)
+                            lines.append(
+                                {
+                                    "line_number": li["line"],
+                                    "rva": format(rva, "x").rjust(16, "0"),
+                                    "rva_int": rva,
+                                    "length": 0,
+                                    "source_code": src_text,
+                                    "source_file": sf,
+                                }
+                            )
 
                     # Compute line lengths from consecutive addresses
                     if lines:
                         lines.sort(key=lambda x: x["rva_int"])
                         for i in range(len(lines) - 1):
-                            lines[i]["length"] = (
-                                lines[i + 1]["rva_int"] - lines[i]["rva_int"])
+                            lines[i]["length"] = lines[i + 1]["rva_int"] - lines[i]["rva_int"]
                         for ln in lines:
                             del ln["rva_int"]
 
                     if rva_ranges:
                         # Dedup: skip if we already have this function
-                        rva_key = tuple(
-                            (r["rva_start"], r["rva_end"]) for r in rva_ranges)
+                        rva_key = tuple((r["rva_start"], r["rva_end"]) for r in rva_ranges)
                         dedup_key = (func_name, source_file, rva_key)
                         if dedup_key in seen_functions:
                             continue
                         seen_functions.add(dedup_key)
-                        all_functions.append({
-                            "function_name": func_name,
-                            "source_file": source_file,
-                            "function_info": rva_ranges,
-                            "lines": lines,
-                        })
+                        all_functions.append(
+                            {
+                                "function_name": func_name,
+                                "source_file": source_file,
+                                "function_info": rva_ranges,
+                                "lines": lines,
+                            }
+                        )
 
         if not all_functions:
             return None
 
         functions_list = []
         for fdata in all_functions:
-            functions_list.append({
-                "function_name": fdata["function_name"],
-                "source_file": fdata["source_file"],
-                "intersect_ratio": "0.00%",
-                "function_info": fdata["function_info"],
-                "lines": fdata["lines"],
-            })
+            functions_list.append(
+                {
+                    "function_name": fdata["function_name"],
+                    "source_file": fdata["source_file"],
+                    "intersect_ratio": "0.00%",
+                    "function_info": fdata["function_info"],
+                    "lines": fdata["lines"],
+                }
+            )
 
         return {
             "file": os.path.basename(binfile),
@@ -569,6 +574,7 @@ def query_new_assembly(db_url, since_dt, limit=0):
 # MinIO download
 # ---------------------------------------------------------------------------
 
+
 def make_s3_client(endpoint, access_key, secret_key, https=False):
     scheme = "https" if https else "http"
     endpoint_url = f"{scheme}://{endpoint}"
@@ -590,6 +596,7 @@ def parse_github_owner_project(url):
 
 _FLAG_TO_OLD_ENUM = {"-O0": "NONE", "-O1": "LOW", "-O2": "MEDIUM", "-O3": "HIGH"}
 
+
 def download_binary(s3, bucket, repo_url, commit_hexsha, compiler, opt_enum, filename, dest_path):
     owner, project = parse_github_owner_project(repo_url)
     basename = os.path.basename(filename)
@@ -607,7 +614,9 @@ def download_binary(s3, bucket, repo_url, commit_hexsha, compiler, opt_enum, fil
             return True
         except botocore.exceptions.ClientError:
             continue
-    logger.warning("Failed to download s3://%s/%s (tried %d paths)", bucket, candidates[0], len(candidates))
+    logger.warning(
+        "Failed to download s3://%s/%s (tried %d paths)", bucket, candidates[0], len(candidates)
+    )
     return False
 
 
@@ -631,6 +640,7 @@ def download_source_archive(s3, owner, project, commit_hexsha, dest_path):
 # ---------------------------------------------------------------------------
 # Staging directory construction
 # ---------------------------------------------------------------------------
+
 
 def get_md5(s):
     return hashlib.md5(s.encode()).hexdigest()
@@ -672,8 +682,14 @@ def build_staging_entry(row, binary_path, staging_dir, source_root=None):
 
     # Determine artifact_type based on file extension
     ext = os.path.splitext(filename)[1].lower()
-    artifact_type_map = {'.s': 'assembly', '.S': 'assembly', '.bc': 'llvm_ir', '.ii': 'preprocessed', '.i': 'preprocessed'}
-    artifact_type = artifact_type_map.get(ext, 'binary')
+    artifact_type_map = {
+        ".s": "assembly",
+        ".S": "assembly",
+        ".bc": "llvm_ir",
+        ".ii": "preprocessed",
+        ".i": "preprocessed",
+    }
+    artifact_type = artifact_type_map.get(ext, "binary")
 
     # Read existing meta if present (we accumulate Binary_info_list across
     # multiple binaries that share the same identifier dir), or build a new
@@ -683,7 +699,7 @@ def build_staging_entry(row, binary_path, staging_dir, source_root=None):
     # being discarded.
     if os.path.exists(meta_path):
         try:
-            with open(meta_path, "r") as f:
+            with open(meta_path) as f:
                 meta = json.load(f)
         except Exception:
             meta = {}
@@ -730,6 +746,7 @@ def build_staging_entry(row, binary_path, staging_dir, source_root=None):
 # Main pipeline
 # ---------------------------------------------------------------------------
 
+
 def _download_asm_one(args):
     """Download a single assembly file. Thread worker."""
     row, bucket, s3_endpoint, s3_access_key, s3_secret_key, s3_https, download_dir = args
@@ -742,7 +759,8 @@ def _download_asm_one(args):
         return ("cached", row, raw_path)
 
     ok = download_binary(
-        s3, bucket,
+        s3,
+        bucket,
         repo_url=row["repo_url"],
         commit_hexsha=row["commit_hexsha"],
         compiler=row["compiler"],
@@ -756,17 +774,22 @@ def _download_asm_one(args):
     return ("ok", row, raw_path)
 
 
-def run_assembly_pipeline(since_date_str, dataset_dir, db_url,
-                          s3_endpoint, s3_access_key, s3_secret_key,
-                          bucket="artifacts", s3_https=False,
-                          download_workers=32, limit=0):
+def run_assembly_pipeline(
+    since_date_str,
+    dataset_dir,
+    db_url,
+    s3_endpoint,
+    s3_access_key,
+    s3_secret_key,
+    bucket="artifacts",
+    s3_https=False,
+    download_workers=32,
+    limit=0,
+):
     """Download assembly files from MinIO and record them in assembly.sqlite."""
     from concurrent.futures import ThreadPoolExecutor, as_completed
-    import datetime as _datetime
 
-    since_dt = datetime.datetime.strptime(since_date_str, "%Y-%m-%d").replace(
-        tzinfo=datetime.timezone.utc
-    )
+    since_dt = datetime.datetime.strptime(since_date_str, "%Y-%m-%d").replace(tzinfo=datetime.UTC)
     today_str = datetime.date.today().isoformat()
 
     dataset_dir = Path(dataset_dir)
@@ -811,6 +834,7 @@ def run_assembly_pipeline(since_date_str, dataset_dir, db_url,
 
     # Build url -> repo_id lookup
     import sqlite3 as _sqlite3
+
     conn = _sqlite3.connect(sqlite_path)
     cursor = conn.cursor()
     for url in repo_ds:
@@ -892,7 +916,8 @@ def _download_one(args):
         return ("cached", row, raw_path)
 
     ok = download_binary(
-        s3, bucket,
+        s3,
+        bucket,
         repo_url=row["repo_url"],
         commit_hexsha=row["commit_hexsha"],
         compiler=row["compiler"],
@@ -906,16 +931,21 @@ def _download_one(args):
     return ("ok", row, raw_path)
 
 
-def run_pipeline(since_date_str, dataset_dir, db_url,
-                 s3_endpoint, s3_access_key, s3_secret_key,
-                 bucket="artifacts", s3_https=False,
-                 download_workers=32):
+def run_pipeline(
+    since_date_str,
+    dataset_dir,
+    db_url,
+    s3_endpoint,
+    s3_access_key,
+    s3_secret_key,
+    bucket="artifacts",
+    s3_https=False,
+    download_workers=32,
+):
 
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
-    since_dt = datetime.datetime.strptime(since_date_str, "%Y-%m-%d").replace(
-        tzinfo=datetime.timezone.utc
-    )
+    since_dt = datetime.datetime.strptime(since_date_str, "%Y-%m-%d").replace(tzinfo=datetime.UTC)
     today_str = datetime.date.today().isoformat()
 
     dataset_dir = Path(dataset_dir)
@@ -961,8 +991,14 @@ def run_pipeline(since_date_str, dataset_dir, db_url,
         for future in as_completed(futures):
             done_count += 1
             if done_count % 2000 == 0:
-                logger.info("Downloaded %d/%d files (%.1f%%) ok=%d failed=%d",
-                            done_count, total, 100.0 * done_count / total, downloaded, failed)
+                logger.info(
+                    "Downloaded %d/%d files (%.1f%%) ok=%d failed=%d",
+                    done_count,
+                    total,
+                    100.0 * done_count / total,
+                    downloaded,
+                    failed,
+                )
             try:
                 status, row, raw_path = future.result()
             except Exception as e:
@@ -985,7 +1021,12 @@ def run_pipeline(since_date_str, dataset_dir, db_url,
     s3_arc = make_s3_client(s3_endpoint, s3_access_key, s3_secret_key, s3_https)
     for idx, (row, raw_path) in enumerate(downloaded_rows, 1):
         if idx % 2000 == 0:
-            logger.info("Staging %d/%d (%.1f%%)", idx, len(downloaded_rows), 100.0 * idx / len(downloaded_rows))
+            logger.info(
+                "Staging %d/%d (%.1f%%)",
+                idx,
+                len(downloaded_rows),
+                100.0 * idx / len(downloaded_rows),
+            )
 
         try:
             build_staging_entry(row, raw_path, staging_dir)
@@ -1002,9 +1043,7 @@ def run_pipeline(since_date_str, dataset_dir, db_url,
             owner, project = parse_github_owner_project(row["repo_url"])
             commit_hexsha = row["commit_hexsha"] or ""
             if commit_hexsha:
-                archive_dest = os.path.join(
-                    archives_dir, owner, project, f"{commit_hexsha}.tar.gz"
-                )
+                archive_dest = os.path.join(archives_dir, owner, project, f"{commit_hexsha}.tar.gz")
                 download_source_archive(s3_arc, owner, project, commit_hexsha, archive_dest)
 
     logger.info("Staged %d/%d binaries for db_construct() (failed_dl=%d)", staged, total, failed)
@@ -1057,8 +1096,12 @@ def run_pipeline(since_date_str, dataset_dir, db_url,
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Daily MinIO -> dataset pipeline")
-    parser.add_argument("--since", required=True, help="Fetch binaries built after this date (YYYY-MM-DD)")
-    parser.add_argument("--dataset-dir", default="assemblage_dataset", help="Root dataset directory")
+    parser.add_argument(
+        "--since", required=True, help="Fetch binaries built after this date (YYYY-MM-DD)"
+    )
+    parser.add_argument(
+        "--dataset-dir", default="assemblage_dataset", help="Root dataset directory"
+    )
     parser.add_argument("--db-url", required=True, help="PostgreSQL connection URL")
     parser.add_argument("--s3-endpoint", required=True, help="MinIO/S3 host:port")
     parser.add_argument("--s3-access-key", required=True)

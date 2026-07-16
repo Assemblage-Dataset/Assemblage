@@ -1,21 +1,22 @@
-import os
 import json
+import os
 import shutil
 
 unzipdata_path = "windows"
 
-import json
 import pefile
 
+
 def convert_hex_int(hex_str):
-    return int("0x"+str(hex_str), 16) 
+    return int("0x" + str(hex_str), 16)
+
 
 def convert_json(dir):
     print("Processing", dir)
     if os.path.isfile(os.path.join(dir, "addr2name.json")):
         return
-    if os.path.isfile(os.path.join(dir, os.path.join(dir.split("/")[-1])+".json")):
-        db = json.load(open(os.path.join(dir, dir.split("/")[-1])+".json", "r"))
+    if os.path.isfile(os.path.join(dir, os.path.join(dir.split("/")[-1]) + ".json")):
+        db = json.load(open(os.path.join(dir, dir.split("/")[-1]) + ".json"))
     else:
         shutil.rmtree(dir)
         return
@@ -37,16 +38,18 @@ def convert_json(dir):
                             name2addr[function_name] = min(name2addr[function_name], ph_start)
                         else:
                             name2addr[function_name] = convert_hex_int(ph_start)
-    addr2name = {x:y for y,x in name2addr.items()}
+    addr2name = {x: y for y, x in name2addr.items()}
     with open(os.path.join(dir, "addr2name.json"), "w") as f:
         json.dump(addr2name, f)
-    os.remove(os.path.join(dir, os.path.join(dir.split("/")[-1])+".json"))
+    os.remove(os.path.join(dir, os.path.join(dir.split("/")[-1]) + ".json"))
     print("Processed", dir)
 
+
 import multiprocessing
+
 pool = multiprocessing.Pool(64)
 
 for f in os.listdir(unzipdata_path):
-    pool.apply_async(convert_json, args=(os.path.join(unzipdata_path, f), ))
+    pool.apply_async(convert_json, args=(os.path.join(unzipdata_path, f),))
 pool.close()
-pool.join() 
+pool.join()

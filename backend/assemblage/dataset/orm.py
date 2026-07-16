@@ -1,22 +1,18 @@
-'''
+"""
 Object model for Assemblage dataset
 Chang Liu
-'''
+"""
 
-import datetime
-import json
 import sqlite3
+from sqlite3 import Connection as SQLite3Connection
 
+from sqlalchemy import BigInteger, Column, Integer, String, Text, create_engine, event
 from sqlalchemy.dialects import sqlite as sqlite_dialect
-from sqlalchemy.orm import Session
-from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, create_engine, LargeBinary, Float, BigInteger
-from sqlalchemy.orm import declarative_base, relationship, sessionmaker
-from sqlalchemy.sql.expression import column
+from sqlalchemy.engine import Engine
+from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy.sql.schema import ForeignKey
 from sqlalchemy_utils import create_database, database_exists
-from sqlalchemy import event
-from sqlalchemy.engine import Engine
-from sqlite3 import Connection as SQLite3Connection
+
 
 @event.listens_for(Engine, "connect")
 def _set_sqlite_pragma(dbapi_connection, connection_record):
@@ -29,12 +25,18 @@ def _set_sqlite_pragma(dbapi_connection, connection_record):
         cursor.execute("PRAGMA foreign_keys=OFF;")
         cursor.close()
 
+
 Base = declarative_base()
 
-class Binary(Base):
-    __tablename__ = 'binaries'
 
-    id = Column(Integer, primary_key=True, autoincrement=True,)
+class Binary(Base):
+    __tablename__ = "binaries"
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        autoincrement=True,
+    )
     file_name = Column(String(length=256))
     platform = Column(String(length=16))
     build_mode = Column(String(length=32))
@@ -44,17 +46,18 @@ class Binary(Base):
     repo_last_update = Column(Integer)
     size = Column(Integer, default=0)
     path = Column(String(length=256))
-    license = Column(String(length=128), default='')
+    license = Column(String(length=128), default="")
     hash = Column(String(length=64))
     repo_commit = Column(String(length=64))
-    binary_format = Column(String(length=8), default='')  # "PE" or "ELF"
+    binary_format = Column(String(length=8), default="")  # "PE" or "ELF"
+
 
 class Function(Base):
-    __tablename__ = 'functions'
+    __tablename__ = "functions"
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(length=512))
     hash = Column(String(length=64))
-    binary_id = Column(Integer, ForeignKey('binaries.id'))
+    binary_id = Column(Integer, ForeignKey("binaries.id"))
     top_comments = Column(Text)
     # body_comments = Column(Text)
     source_codes = Column(Text)
@@ -62,27 +65,36 @@ class Function(Base):
     prototype = Column(Text)
     source_file = Column(Text)
 
+
 class RVA(Base):
-    __tablename__ = 'rvas'
+    __tablename__ = "rvas"
     id = Column(Integer, primary_key=True, autoincrement=True)
     start = Column(BigInteger)
     end = Column(BigInteger)
-    function_id = Column(Integer, ForeignKey('functions.id'))
+    function_id = Column(Integer, ForeignKey("functions.id"))
+
 
 class Line(Base):
-    __tablename__ = 'lines'
+    __tablename__ = "lines"
     id = Column(Integer, primary_key=True, autoincrement=True)
     line_number = Column(Integer)
     source_file = Column(String(length=512))
     source_code = Column(Text)
     rva = Column(String(length=20))
     length = Column(Integer)
-    function_id = Column(Integer, ForeignKey('functions.id'),)
+    function_id = Column(
+        Integer,
+        ForeignKey("functions.id"),
+    )
+
 
 class PDB(Base):
-    __tablename__ = 'pdbs'
+    __tablename__ = "pdbs"
     id = Column(Integer, primary_key=True, autoincrement=True)
-    binary_id = Column(Integer, ForeignKey('binaries.id'),)
+    binary_id = Column(
+        Integer,
+        ForeignKey("binaries.id"),
+    )
     pdb_path = Column(String(length=128))
 
 
@@ -97,7 +109,7 @@ def init_clean_database(db_str):
         Binary.__table__.drop(engine)
         Function.__table__.drop(engine)
         Line.__table__.drop(engine)
-    except Exception as err:
+    except Exception:
         pass
     try:
         if not database_exists(db_str):
@@ -152,16 +164,13 @@ def migrate_existing_db(db_path):
                 if col.name in existing_columns:
                     continue
                 coltype = col.type.compile(dialect=dialect)
-                cur.execute(
-                    f'ALTER TABLE "{table.name}" ADD COLUMN "{col.name}" {coltype}'
-                )
+                cur.execute(f'ALTER TABLE "{table.name}" ADD COLUMN "{col.name}" {coltype}')
 
         for index_name, table_name, column_name in _DATASET_INDEXES:
             if table_name not in existing_tables:
                 continue
             cur.execute(
-                f'CREATE INDEX IF NOT EXISTS "{index_name}" '
-                f'ON "{table_name}" ("{column_name}")'
+                f'CREATE INDEX IF NOT EXISTS "{index_name}" ON "{table_name}" ("{column_name}")'
             )
 
         conn.commit()
