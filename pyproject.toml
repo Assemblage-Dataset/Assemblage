@@ -97,9 +97,6 @@ ignore = [
 "Assemblage_dataset_cli/otherutils/jtrans_address_convert.py" = ["E402", "F841", "SIM115"]
 "backend/alembic/env.py" = ["E402", "F403"]
 "backend/assemblage/analyze/analyze.py" = ["LOG015", "RUF015", "T201"]
-"backend/assemblage/coordinator/coordinator.py" = ["E722", "F841", "W291"]
-"backend/assemblage/data/db.py" = ["E711", "E712", "F811", "LOG015"]
-"backend/assemblage/data/initialize_database.py" = ["LOG015"]
 "backend/assemblage/mq/client.py" = ["RUF003"]
 "backend/assemblage/mq/messages.py" = ["B006", "UP028"]
 "backend/assemblage/s3/client.py" = ["LOG015"]
@@ -151,9 +148,6 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = [
     "assemblage.config",
-    "assemblage.coordinator.coordinator",
-    "assemblage.data.db",
-    "assemblage.data.initialize_database",
     "assemblage.mq.client",
     "assemblage.s3.client",
     "assemblage.worker.base_worker",
@@ -174,7 +168,15 @@ module = [
     "assemblage.build.commands",
     "assemblage.constants",
     "assemblage.consts",
-    "assemblage.database.models",
+    "assemblage.coordinator.app",
+    "assemblage.coordinator.dispatch",
+    "assemblage.coordinator.ingest",
+    "assemblage.coordinator.registration",
+    "assemblage.coordinator.scraper_requests",
+    "assemblage.db.bootstrap",
+    "assemblage.db.engine",
+    "assemblage.db.models",
+    "assemblage.db.store",
     "assemblage.enums",
     "assemblage.messages",
     "assemblage.mq.connection",

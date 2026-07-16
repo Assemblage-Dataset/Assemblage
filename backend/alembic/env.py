@@ -39,7 +39,7 @@ if config.get_main_option("sqlalchemy.url") in (
 
 # add your model's MetaData object here
 # for 'autogenerate' support
-from assemblage.database.models import *
+from assemblage.db.models import *
 from sqlmodel import SQLModel
 
 target_metadata = SQLModel.metadata

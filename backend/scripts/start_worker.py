@@ -8,11 +8,9 @@ import logging
 import logging.config
 import os
 import sys
-import time
 
-from assemblage.config import BuilderSettings, CoordinatorSettings, ScraperSettings
+from assemblage.config import BuilderSettings, ScraperSettings
 from assemblage.consts import WorkerType
-from assemblage.coordinator.coordinator import Coordinator
 from assemblage.worker.builder import Builder
 from assemblage.worker.scraper import Scraper
 
@@ -36,16 +34,11 @@ if __name__ == "__main__":
 
     match worker_type:
         case WorkerType.Coordinator:
-            settings = CoordinatorSettings()
-            # i dont particularly like this but the dict config isnt working...
-            logging.basicConfig(
-                format="%(asctime)s %(levelname)s:%(message)s",
-                datefmt="%Y-%m-%d %H:%M:%S",
-                level=settings.logLevel,
-            )
-            coordinator = Coordinator(settings)
-            coordinator.run()
-            # call start coordinator
+            # Re-architected coordinator: composition root owns its own settings,
+            # logging, supervisor and graceful-shutdown exit code.
+            from assemblage.coordinator.app import main as coordinator_main
+
+            sys.exit(coordinator_main())
         case WorkerType.Builder:
             settings = BuilderSettings()
             logging.basicConfig(
@@ -84,8 +77,5 @@ if __name__ == "__main__":
             from scripts.build_deephistory import main as deephistory_main
 
             deephistory_main()
-        case WorkerType.Test:
-            while True:
-                time.sleep(1)
 
         # to run multiple instances of the same worker, add multiple instances in docker compose

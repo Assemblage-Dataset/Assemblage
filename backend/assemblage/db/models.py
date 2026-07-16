@@ -26,7 +26,7 @@ from sqlmodel import (
     SQLModel,
 )
 
-from assemblage.consts import BuildStatus, CloneStatus, PriorityStatus
+from assemblage.enums import BuildStatus, CloneStatus, PriorityStatus
 
 
 def _name_enum(enum_cls: type, length: int) -> sa.Enum:

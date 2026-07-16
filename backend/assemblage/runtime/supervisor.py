@@ -29,19 +29,40 @@ class Supervisor:
 
     def add(self, service: Service, policy: RestartPolicy | None = None) -> None:
         """Register a service (before :meth:`start`)."""
-        self._services.append((service, policy or RestartPolicy()))
+        with self._lock:
+            self._services.append((service, policy or RestartPolicy()))
 
     def start(self) -> None:
         """Launch one non-daemon thread per registered service."""
-        for service, policy in self._services:
-            thread = threading.Thread(
-                target=self._supervise,
-                args=(service, policy),
-                name=service.name,
-                daemon=False,
-            )
+        with self._lock:
+            services = list(self._services)
+        for service, policy in services:
+            self._launch(service, policy)
+
+    def add_and_start(self, service: Service, policy: RestartPolicy | None = None) -> None:
+        """Register and immediately launch a service after :meth:`start`.
+
+        Used by the coordinator's dispatch manager, which spins up one
+        per-buildopt dispatcher as each builder registers — i.e. after the
+        supervisor is already running. A no-op if shutdown has begun.
+        """
+        policy = policy or RestartPolicy()
+        with self._lock:
+            if self._stop.is_set():
+                return
+            self._services.append((service, policy))
+        self._launch(service, policy)
+
+    def _launch(self, service: Service, policy: RestartPolicy) -> None:
+        thread = threading.Thread(
+            target=self._supervise,
+            args=(service, policy),
+            name=service.name,
+            daemon=False,
+        )
+        with self._lock:
             self._threads.append(thread)
-            thread.start()
+        thread.start()
 
     def _supervise(self, service: Service, policy: RestartPolicy) -> None:
         attempt = 0
@@ -75,7 +96,9 @@ class Supervisor:
         self._wake_services()
 
     def _wake_services(self) -> None:
-        for service, _ in self._services:
+        with self._lock:
+            services = [service for service, _ in self._services]
+        for service in services:
             try:
                 service.request_stop()
             except Exception:
@@ -85,11 +108,13 @@ class Supervisor:
         """Signal every service to stop and join with a shared deadline."""
         self._stop.set()
         self._wake_services()
+        with self._lock:
+            threads = list(self._threads)
         deadline = time.monotonic() + timeout
-        for thread in self._threads:
+        for thread in threads:
             remaining = max(0.0, deadline - time.monotonic())
             thread.join(remaining)
-        for thread in self._threads:
+        for thread in threads:
             if thread.is_alive():
                 logger.warning("service thread %r did not stop within %.0fs", thread.name, timeout)
 
