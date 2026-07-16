@@ -83,3 +83,4 @@ deephistory/*.sqlite*
 /RUST_WORKER_DESIGN.md
 *_DESIGN.md
 /RE-ARCHITECTURE.md
+/CLAUDE.md
