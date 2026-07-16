@@ -80,6 +80,15 @@ historical; the new acceptance instrument is `tests/e2e/dataset_correctness.sh`
 (`make dataset-gate`), which asserts the corpus is *correctly populated* for
 both a C and a Rust binary.
 
+### Known-incomplete: the assembly sub-pipeline (fail-soft)
+
+`run_assembly_pipeline` (assembly.sqlite harvest of `.s` artifacts) has never
+completed a run: it calls `Dataset_DB.bulk_add_repos` and a `repos` table that
+no version of the dataset store — including the pre-absorption CLI — ever
+defined. It runs *after* the binaries corpus is complete, wrapped in
+`_harvest_assembly_failsoft`, which logs the failure and keeps the daily run
+green. Rebuilding it against the real ORM is future work.
+
 ### New columns (R5, Rust support)
 
 `binaries` gains `compiler`, `language`, `codegen_backend` (and `build_mode`,

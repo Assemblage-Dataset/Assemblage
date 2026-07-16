@@ -768,8 +768,8 @@ def run_pipeline(
     logger.info("Done. Dataset updated at %s", sqlite_path)
     logger.info("Today's binaries stored at %s", binaries_dir)
 
-    # Also harvest assembly files into assembly.sqlite
-    run_assembly_pipeline(
+    # Also harvest assembly files into assembly.sqlite (fail-soft; see helper).
+    _harvest_assembly_failsoft(
         since_date_str=since_date_str,
         dataset_dir=str(dataset_dir),
         db_url=db_url,
@@ -780,6 +780,25 @@ def run_pipeline(
         s3_https=s3_https,
         download_workers=download_workers,
     )
+
+
+def _harvest_assembly_failsoft(**kwargs: object) -> None:
+    """Run the assembly sub-pipeline without letting it sink the daily run.
+
+    The assembly harvest has never completed: it calls Dataset_DB.bulk_add_repos
+    and a ``repos`` table that no version of the dataset store ever defined
+    (verified against the pre-absorption CLI too). By the time it runs, the
+    binaries corpus for the day is already complete, so a failure here is
+    logged loudly and swallowed. Remove this guard when the sub-pipeline is
+    rebuilt against the real ORM.
+    """
+    try:
+        run_assembly_pipeline(**kwargs)
+    except Exception:
+        logger.exception(
+            "assembly sub-pipeline failed (known-incomplete feature; the "
+            "binaries corpus for this run is already complete and unaffected)"
+        )
 
 
 # ---------------------------------------------------------------------------
