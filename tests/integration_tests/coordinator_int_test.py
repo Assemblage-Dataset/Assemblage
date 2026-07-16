@@ -54,8 +54,8 @@ class TestDispatcherIntegration(unittest.TestCase):
         # exactly opt-1 rows are now PROCESSING; opt-2 rows untouched
         with store._engine.connect() as conn:
             rows = conn.execute(sqla.select(Status.build_opt_id, Status.clone_status)).all()
-        processing = {r[0] for r in rows if r[1] == CloneStatus.PROCESSING.name}
-        untouched = {r[0] for r in rows if r[1] == CloneStatus.NOT_STARTED.name}
+        processing = {r[0] for r in rows if r[1] == CloneStatus.PROCESSING}
+        untouched = {r[0] for r in rows if r[1] == CloneStatus.NOT_STARTED}
         self.assertEqual(processing, {1})
         self.assertEqual(untouched, {2})
 
