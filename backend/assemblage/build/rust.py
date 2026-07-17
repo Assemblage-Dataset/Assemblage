@@ -28,14 +28,15 @@ import os
 import shlex
 import subprocess
 from abc import ABC, abstractmethod
-from dataclasses import asdict, dataclass
+from collections.abc import Iterable
+from dataclasses import asdict, dataclass, field
 
 from assemblage.build.commands import CommandResult, run_command
 from assemblage.build.discovery import is_elf_executable
 from assemblage.build.linux import work_base_path
 from assemblage.build.strategy import BuildStrategy
 from assemblage.dwarf.extract import extract_dwarf_info
-from assemblage.enums import BuildStatus, RustCodegenBackend
+from assemblage.enums import BuildStatus, IrStage, RustCodegenBackend
 from assemblage.settings import BuilderSettings
 
 logger = logging.getLogger(__name__)
@@ -87,11 +88,35 @@ class DebugInfoCaps:
     maturity: str  # "stable" | "experimental"
 
 
+@dataclass(frozen=True)
+class IrCaps:
+    """Which IR stages a codegen backend can actually dump.
+
+    A property of the *backend*, not of taste: cranelift and cg_gcc replace LLVM
+    entirely, so they can never produce LLVM-IR, and their own IRs (CLIF, GIMPLE)
+    only exist on their own builds. Everything here was verified against
+    nightly-2026-06-15 on 2026-07-17; ``unsupported_reason`` records why a stage a
+    reader might expect is absent, so nobody re-derives it from a silent gap.
+    """
+
+    stages: frozenset[IrStage]
+    unsupported_reason: dict[IrStage, str] = field(default_factory=dict)
+
+    def supports(self, stage: IrStage) -> bool:
+        return stage in self.stages
+
+
+# Frontend stages (AST/HIR/THIR/MIR) are produced by rustc before any codegen
+# backend runs, so every backend can emit them via a -Zunpretty pass.
+_FRONTEND_STAGES = frozenset({IrStage.AST, IrStage.HIR, IrStage.THIR, IrStage.MIR})
+
+
 class RustCodegenAdapter(ABC):
     """A codegen backend as flags + env + a capability descriptor."""
 
     name: RustCodegenBackend
     caps: DebugInfoCaps
+    ir_caps: IrCaps
 
     @abstractmethod
     def rustflags(self) -> list[str]:
@@ -101,10 +126,22 @@ class RustCodegenAdapter(ABC):
         """Extra process env the backend needs (none by default)."""
         return {}
 
+    def ir_env(self, stages: Iterable[IrStage], dump_dir: str) -> dict[str, str]:
+        """Env needed to dump ``stages`` (only cg_gcc needs any)."""
+        return {}
+
 
 class LLVMAdapter(RustCodegenAdapter):
     name = RustCodegenBackend.LLVM
     caps = DebugInfoCaps(functions=True, lines=True, variables=True, maturity="stable")
+    # The only backend that can emit LLVM-IR and asm, plus every frontend stage.
+    ir_caps = IrCaps(
+        stages=_FRONTEND_STAGES | {IrStage.LLVM_IR, IrStage.ASM},
+        unsupported_reason={
+            IrStage.CLIF: "CLIF is cranelift's IR; llvm builds never produce it",
+            IrStage.GIMPLE: "GIMPLE is cg_gcc's IR; llvm builds never produce it",
+        },
+    )
 
     def rustflags(self) -> list[str]:
         return []
@@ -113,6 +150,27 @@ class LLVMAdapter(RustCodegenAdapter):
 class CraneliftAdapter(RustCodegenAdapter):
     name = RustCodegenBackend.CRANELIFT
     caps = DebugInfoCaps(functions=True, lines=True, variables=False, maturity="experimental")
+    # CLIF is deliberately NOT listed. Probed on nightly-2026-06-15 (2026-07-17):
+    # cg_clif parses -Cllvm-args and accepts only `mode`, `jit_mode` and
+    # `enable_verifier` -- every IR key (`write_ir`, `write_ir=1`,
+    # `should_write_ir=1`) makes rustc fail to start. The `should_write_ir` /
+    # `write_ir_file` symbols exist in the shipped .so but are not reachable
+    # through any accepted option, so IR writing appears compiled out of the
+    # release backend rustup ships. Revisit on a toolchain bump; do not "enable"
+    # this by guessing an option name.
+    ir_caps = IrCaps(
+        stages=_FRONTEND_STAGES,
+        unsupported_reason={
+            IrStage.LLVM_IR: (
+                "cranelift replaces LLVM; --emit=llvm-ir fails looking for a .rcgu.ll"
+            ),
+            IrStage.ASM: "cg_clif does not implement --emit=asm",
+            IrStage.CLIF: (
+                "shipped cg_clif accepts only mode/jit_mode/enable_verifier via "
+                "-Cllvm-args; IR writing is not reachable (verified nightly-2026-06-15)"
+            ),
+        },
+    )
 
     def rustflags(self) -> list[str]:
         return ["-Zcodegen-backend=cranelift"]
@@ -127,9 +185,33 @@ class GccAdapter(RustCodegenAdapter):
     # file/origin attribution is also weaker than llvm/cranelift (the smoke resolved
     # zero in_repo origins). Maturity stays experimental.
     caps = DebugInfoCaps(functions=True, lines=True, variables=False, maturity="experimental")
+    # GIMPLE verified working on nightly-2026-06-15 (2026-07-17): CG_GCCJIT_DUMP_GIMPLE=1
+    # with CG_GCCJIT_DUMP_TO_FILE=1 wrote /tmp/gccjit_dumps/<crate>-cgu.0.c. The dump is
+    # libgccjit's C-like reproducer form, hence IrStage.GIMPLE.file_suffix == ".c".
+    ir_caps = IrCaps(
+        stages=_FRONTEND_STAGES | {IrStage.GIMPLE},
+        unsupported_reason={
+            IrStage.LLVM_IR: "cg_gcc replaces LLVM; it cannot emit LLVM-IR",
+            IrStage.ASM: "cg_gcc does not implement --emit=asm",
+            IrStage.CLIF: "CLIF is cranelift's IR; gcc builds never produce it",
+        },
+    )
 
     def rustflags(self) -> list[str]:
         return ["-Zcodegen-backend=gcc"]
+
+    def ir_env(self, stages: Iterable[IrStage], dump_dir: str) -> dict[str, str]:
+        """cg_gcc dumps via env, not flags.
+
+        NOTE ``dump_dir`` is advisory: libgccjit writes to a fixed
+        ``/tmp/gccjit_dumps``. :mod:`assemblage.builder.ir` collects from there.
+        """
+        if IrStage.GIMPLE not in set(stages):
+            return {}
+        return {
+            "CG_GCCJIT_DUMP_GIMPLE": "1",
+            "CG_GCCJIT_DUMP_TO_FILE": "1",
+        }
 
 
 _ADAPTERS: dict[RustCodegenBackend, RustCodegenAdapter] = {
@@ -147,6 +229,22 @@ def make_adapter(backend: RustCodegenBackend) -> RustCodegenAdapter:
 # --- pure helpers (unit-tested without a real toolchain) ---------------------
 
 
+def ride_along_emit_flag(stages: Iterable[IrStage], adapter: RustCodegenAdapter) -> str | None:
+    """The single ``--emit=`` RUSTFLAG for the ride-along stages, or ``None``.
+
+    ``link`` must be listed or rustc stops producing the binary. Stages the backend
+    can't dump are dropped here rather than failing the build.
+    """
+    kinds = [
+        s.emit_kind
+        for s in sorted(set(stages), key=lambda s: s.value)
+        if s.rides_along and adapter.ir_caps.supports(s) and s.emit_kind
+    ]
+    if not kinds:
+        return None
+    return "--emit=" + ",".join(["link", *kinds])
+
+
 def cargo_env(
     *,
     build_mode: str,
@@ -154,12 +252,24 @@ def cargo_env(
     adapter: RustCodegenAdapter,
     cargo_home: str,
     target_dir: str,
+    ir_stages: Iterable[IrStage] = (),
+    ir_dump_dir: str = "",
 ) -> dict[str, str]:
     """Assemble the cargo profile/backend env for one build.
 
     ``Debug`` -> the ``dev`` profile (debug=2, debug-assertions on by default);
     ``RelWithDebInfo``/``Release`` -> the ``release`` profile with ``debug`` 2 or 0 and
     an explicit ``strip=none`` so Release keeps its symtab (matching the C corpus).
+
+    ``ir_stages`` adds ride-along IR emission. This is not free and not invisible:
+    measured on nightly-2026-06-15 (2026-07-17), ``--emit`` repartitions codegen
+    units, so the binary's ``.text`` bytes differ from a non-IR build of the same
+    source -- while every symbol (mangled and demangled), ``.rodata``, ``.data`` and
+    ``.eh_frame`` stay byte-identical. Passing the flags via RUSTC_WRAPPER instead
+    was tried and produces the *same* changed binary, so this is inherent to
+    ``--emit``, not to how it is passed. DWARF/RVAs are extracted from the binary we
+    actually store, so an IR build stays internally consistent; it is only
+    byte-comparison against pre-IR artifacts that breaks.
     """
     opt = opt_level_for_flag(compiler_flag)
     profile = "dev" if build_mode == "Debug" else "release"
@@ -174,7 +284,15 @@ def cargo_env(
     env["CARGO_HOME"] = cargo_home
     env["CARGO_TARGET_DIR"] = target_dir
     env.update(adapter.extra_env())
-    env["RUSTFLAGS"] = " ".join([*adapter.rustflags(), *_FIXED_RUSTFLAGS])
+
+    stages = list(ir_stages)
+    rustflags = [*adapter.rustflags(), *_FIXED_RUSTFLAGS]
+    if stages:
+        emit = ride_along_emit_flag(stages, adapter)
+        if emit:
+            rustflags.append(emit)
+        env.update(adapter.ir_env(stages, ir_dump_dir))
+    env["RUSTFLAGS"] = " ".join(rustflags)
     return env
 
 
@@ -320,9 +438,12 @@ def demangle_names(names: list[str]) -> list[str]:
 
 @dataclass(frozen=True)
 class RustPrepared:
-    """``prepare`` -> ``build`` token: workspace member ids, or a failure reason."""
+    """``prepare`` -> ``build`` token: workspace member ids/names, or a failure reason."""
 
     member_ids: frozenset[str]
+    # Package names (not ids): `cargo rustc -p <name>` for the -Zunpretty passes, and
+    # the repo-vs-dependency split when scoping IR.
+    member_names: frozenset[str] = frozenset()
     failure: str | None = None
 
 
@@ -342,6 +463,17 @@ class RustBuildStrategy(BuildStrategy):
         self.backend_caps: dict[str, object] = asdict(self.adapter.caps)
         self.cargo_home = settings.cargo_home
         self.build_timeout_s = settings.build_timeout_s
+        # IR dumping is opt-in per tier (see BuilderSettings.ir_dump). Stages the
+        # backend cannot dump are filtered out by the adapter's IrCaps, so a tier
+        # asking for llvm-ir on cranelift silently gets the frontend stages only.
+        self.ir_dump = settings.ir_dump
+        self.ir_scope = settings.ir_scope
+        self.ir_max_bytes = settings.ir_max_bytes
+        self.ir_stages: list[IrStage] = (
+            [s for s in settings.ir_stage_list if self.adapter.ir_caps.supports(s)]
+            if settings.ir_dump
+            else []
+        )
 
         # One `rustc -vV` probe: the version line fills the identity slots, the full
         # text is kept for the Toolchain metadata key.
@@ -355,6 +487,9 @@ class RustBuildStrategy(BuildStrategy):
         self._last_returncode = 0
         self._target_dir = ""
         self._profile = "release"
+        self._member_names: frozenset[str] = frozenset()
+        self._cargo_env: dict[str, str] = {}
+        self._clone_dir = ""
 
         try:
             perms = os.stat(self.base_path)
@@ -390,20 +525,25 @@ class RustBuildStrategy(BuildStrategy):
     def prepare(self, clone_dir: str, compiler_flag: str) -> object | None:
         if not os.path.isfile(os.path.join(clone_dir, "Cargo.toml")):
             return RustPrepared(frozenset(), failure="not a cargo project")
-        return RustPrepared(self._workspace_members(clone_dir))
+        ids, names = self._workspace_members(clone_dir)
+        return RustPrepared(ids, names)
 
-    def _workspace_members(self, clone_dir: str) -> frozenset[str]:
+    def _workspace_members(self, clone_dir: str) -> tuple[frozenset[str], frozenset[str]]:
+        """(member package ids, member package names) from ``cargo metadata --no-deps``."""
         cmd = f"cargo +{self.toolchain} metadata --format-version 1 --no-deps"
         result = run_command(cmd, timeout=self.build_timeout_s, cwd=clone_dir)
         if result.returncode != 0:
             logger.warning("cargo metadata failed: %s", result.stderr.decode(errors="ignore")[:500])
-            return frozenset()
+            return frozenset(), frozenset()
         try:
             data = json.loads(result.stdout.decode(errors="ignore"))
         except json.JSONDecodeError as e:
             logger.warning("cargo metadata JSON parse failed: %s", e)
-            return frozenset()
-        return frozenset(str(member) for member in data.get("workspace_members", []))
+            return frozenset(), frozenset()
+        ids = frozenset(str(member) for member in data.get("workspace_members", []))
+        # --no-deps means packages[] is exactly the workspace members.
+        names = frozenset(str(pkg["name"]) for pkg in data.get("packages", []) if pkg.get("name"))
+        return ids, names
 
     def build(
         self, clone_dir: str, compiler_flag: str, prepared: object | None
@@ -414,13 +554,17 @@ class RustBuildStrategy(BuildStrategy):
 
         self._profile = self._profile_name()
         self._target_dir = os.path.join(clone_dir, "target")
+        self._member_names = prep.member_names
+        self._clone_dir = clone_dir
         env = cargo_env(
             build_mode=self.build_mode,
             compiler_flag=compiler_flag,
             adapter=self.adapter,
             cargo_home=self.cargo_home,
             target_dir=self._target_dir,
+            ir_stages=self.ir_stages,
         )
+        self._cargo_env = env
 
         lock_exists = os.path.isfile(os.path.join(clone_dir, "Cargo.lock"))
         result = self._run_cargo(clone_dir, env, locked=lock_exists)
@@ -448,6 +592,48 @@ class RustBuildStrategy(BuildStrategy):
         if locked:
             cmd += " --locked"
         return run_command(cmd, timeout=self.build_timeout_s, cwd=clone_dir)
+
+    def collect_ir(self) -> object | None:
+        """Gather this build's IR into per-stage gzipped tarballs, or ``None``.
+
+        Called after a successful build. Imported lazily so :mod:`assemblage.builder.ir`
+        (which imports this module for :class:`RustCodegenAdapter`) does not create an
+        import cycle at module load.
+
+        IR is strictly additive: any failure here is logged and swallowed, because a
+        build that already produced a binary and its DWARF must not be failed by a
+        missing IR dump.
+        """
+        if not self.ir_stages or not self._target_dir:
+            return None
+        from assemblage.builder import ir as ir_mod
+
+        try:
+            repo_crates = frozenset(ir_mod.normalize_crate(n) for n in self._member_names)
+            dumps = ir_mod.discover_ride_along(
+                self._target_dir, self.ir_stages, repo_crates, self.ir_scope
+            )
+            if self.adapter.ir_caps.supports(IrStage.GIMPLE) and IrStage.GIMPLE in self.ir_stages:
+                dumps += ir_mod.discover_gimple(repo_crates, self.ir_scope)
+            # -Zunpretty passes: workspace members only. Each is a whole extra compile
+            # and dependency IR would be discarded by IrScope.REPO anyway.
+            dumps += ir_mod.run_unpretty(
+                clone_dir=self._clone_dir,
+                out_dir=os.path.join(self._target_dir, "assemblage-ir"),
+                toolchain=self.toolchain,
+                profile=self._profile,
+                env=self._cargo_env,
+                stages=self.ir_stages,
+                members=sorted(self._member_names),
+                adapter=self.adapter,
+                timeout_s=self.build_timeout_s,
+            )
+            if not dumps:
+                return None
+            return ir_mod.pack(dumps, max_bytes=self.ir_max_bytes)
+        except Exception:
+            logger.exception("IR collection failed; continuing without IR for this build")
+            return None
 
     def find_binaries(self, path: str) -> set[str]:
         found = {p for p in self._artifacts if os.path.isfile(p)}

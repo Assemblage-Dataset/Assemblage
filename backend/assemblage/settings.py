@@ -10,6 +10,7 @@ settings object is instantiated. The old ``config.py`` stays in place for the
 un-ported workers and is removed in P8.
 """
 
+import logging
 import socket
 from datetime import UTC, datetime
 from platform import machine, system
@@ -26,6 +27,8 @@ from pydantic import (
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from assemblage.enums import (
+    IrScope,
+    IrStage,
     RuntimeEnv,
     RustCodegenBackend,
     ScraperOutputPolicy,
@@ -37,6 +40,7 @@ from assemblage.enums import (
 )
 
 _ONE_YEAR_SECONDS = 60 * 60 * 24 * 31 * 12
+_logger = logging.getLogger(__name__)
 
 
 class MQSettings(BaseSettings):
@@ -152,6 +156,29 @@ class BuilderSettings(WorkerSettings):
     )
     build_timeout_s: int = Field(default=1800, validation_alias="BUILD_TIMEOUT_S")
     cargo_home: str = Field(default="/cargo", validation_alias="CARGO_HOME")
+    # IR dumping (Rust only). OFF by default: emitting IR repartitions codegen units,
+    # so an IR build's .text bytes differ from a non-IR build of the same source
+    # (symbols/.rodata/.data/.eh_frame stay identical) -- a tier must opt in.
+    ir_dump: bool = Field(default=False, validation_alias="IR_DUMP")
+    ir_stages: str = Field(default="llvm-ir,mir", validation_alias="IR_STAGES")
+    ir_scope: IrScope = Field(default=IrScope.REPO, validation_alias="IR_SCOPE")
+    # Per-stage cap on the STORED (gzipped) tarball. A stage over it is dropped
+    # whole and recorded in the manifest, never truncated.
+    ir_max_bytes: int = Field(default=512 * 1024 * 1024, validation_alias="IR_MAX_BYTES")
+
+    @property
+    def ir_stage_list(self) -> list[IrStage]:
+        """``IR_STAGES`` parsed; unknown names are dropped with a warning."""
+        out: list[IrStage] = []
+        for raw in self.ir_stages.split(","):
+            name = raw.strip()
+            if not name:
+                continue
+            try:
+                out.append(IrStage(name))
+            except ValueError:
+                _logger.warning("ignoring unknown IR stage %r in IR_STAGES", name)
+        return out
 
 
 class ScraperSettings(WorkerSettings):

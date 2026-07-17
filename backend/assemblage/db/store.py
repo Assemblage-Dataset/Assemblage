@@ -13,14 +13,16 @@ column expression (not the field's Python type) is what ``.where`` sees.
 
 import logging
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from sqlalchemy import Engine, func, inspect, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import col
 
 from assemblage.db.engine import session_scope
-from assemblage.db.models import BuildDO, BuildOpt, RepoDO, ScraperData, Status
+from assemblage.db.models import BuildDO, BuildOpt, IrArtifactDO, RepoDO, ScraperData, Status
 from assemblage.enums import BuildStatus, CloneStatus
 from assemblage.messages import BuilderRegistration
 
@@ -330,6 +332,27 @@ class CoordinatorStore:
         """Record one produced binary against its task's status row."""
         with session_scope(self._engine) as session:
             session.add(BuildDO(file_name=file_name, description=description, status_id=status_id))
+
+    def upsert_ir_artifacts(self, status_id: int, rows: Sequence[dict[str, object]]) -> int:
+        """Record a build's IR stage tarballs; returns the number written.
+
+        Idempotent on (status_id, stage): a redelivered ``ir`` message updates the
+        existing row instead of duplicating it. The builder acks its task *before*
+        building, so a redelivery is a normal event, not an error.
+        """
+        if not rows:
+            return 0
+        written = 0
+        with session_scope(self._engine) as session:
+            for row in rows:
+                stmt = pg_insert(IrArtifactDO).values(status_id=status_id, **row)
+                stmt = stmt.on_conflict_do_update(
+                    constraint="uq_ir_artifacts_status_stage",
+                    set_={k: stmt.excluded[k] for k in row if k != "stage"},
+                )
+                session.execute(stmt)
+                written += 1
+        return written
 
     # --- scrapers -------------------------------------------------------------
 

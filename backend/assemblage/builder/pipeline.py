@@ -26,10 +26,12 @@ from assemblage.builder.artifacts import (
     save_metadata_locally,
     save_metadata_to_s3,
 )
+from assemblage.builder.ir import manifest_bytes
 from assemblage.builder.report import BuildReporter
 from assemblage.builder.source import SourceResult, acquire_source
-from assemblage.enums import BuildStatus, CloneStatus
-from assemblage.messages import BuildTask
+from assemblage.enums import BuildStatus, CloneStatus, IrScope
+from assemblage.messages import BuildTask, IrStageRecord
+from assemblage.storage.layout import ir_manifest_key, ir_tarball_key
 from assemblage.storage.s3 import S3Bucket
 
 logger = logging.getLogger(__name__)
@@ -161,7 +163,69 @@ def _persist_success(
     for file_name in saved.file_names:
         ctx.reporter.binary(task_id=task.task_id, file_name=file_name)
     logger.info("Binaries saved to %s", saved.dest)
+
+    _persist_ir(ctx, task, prefix)
     return saved.all_saved
+
+
+def _persist_ir(ctx: BuildContext, task: BuildTask, prefix: str) -> None:
+    """Upload this build's IR tarballs + manifest and report them.
+
+    A no-op for every strategy without a ``collect_ir`` hook (all the C/C++ ones) and
+    for Rust tiers with ``IR_DUMP`` off. Duck-typed rather than isinstance-checked so
+    this module never imports the Rust strategy — the factory stays the only place
+    that knows which strategies exist.
+
+    Failures are logged, never raised: the binary and its metadata are already saved,
+    and IR is additive corpus data — it must not be able to fail a good build.
+    """
+    collect = getattr(ctx.strategy, "collect_ir", None)
+    if collect is None or ctx.artifact_bucket is None:
+        return
+    try:
+        bundle = collect()
+        if bundle is None or not bundle.tarballs:
+            return
+
+        records: list[IrStageRecord] = []
+        for stage, blob in bundle.tarballs.items():
+            key = ir_tarball_key(prefix, stage.value)
+            ctx.artifact_bucket.put_bytes(key, blob)
+            entries = [d for d in bundle.dumps if d.stage is stage]
+            records.append(
+                IrStageRecord(
+                    stage=stage,
+                    s3_key=key,
+                    file_count=len(entries),
+                    crate_count=len({d.crate for d in entries}),
+                    raw_bytes=sum(d.raw_bytes for d in entries),
+                    stored_bytes=len(blob),
+                )
+            )
+
+        scope = getattr(ctx.strategy, "ir_scope", IrScope.REPO)
+        backend = str(getattr(ctx.strategy, "codegen_backend", ""))
+        toolchain = str(getattr(ctx.strategy, "toolchain", ""))
+        ctx.artifact_bucket.put_bytes(
+            ir_manifest_key(prefix),
+            manifest_bytes(bundle, toolchain=toolchain, backend=backend, scope=scope.value),
+        )
+        ctx.reporter.ir(
+            task_id=task.task_id,
+            scope=scope,
+            toolchain=toolchain,
+            codegen_backend=backend,
+            stages=records,
+        )
+        logger.info(
+            "IR stored for %s: %d stage(s), %d -> %d bytes",
+            prefix,
+            len(records),
+            bundle.raw_bytes,
+            bundle.stored_bytes,
+        )
+    except Exception:
+        logger.exception("storing IR failed for %s; the build itself is unaffected", prefix)
 
 
 def _clean_folder(path: str) -> None:

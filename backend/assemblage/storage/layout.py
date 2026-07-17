@@ -13,12 +13,19 @@ Layout (frozen — see ``tests/fixtures/messages/README.md``):
 - ``artifacts`` bucket:
   ``{owner}_{project}_{sha12}_{compiler}_{flag}/<file>`` (built binaries and
   ``assemblage_meta.json``).
+- IR dumps live *under* an artifact prefix, never beside it:
+  ``{artifact_prefix}/ir/{stage}.tar.gz`` (one gzipped tarball per IR stage) plus
+  ``{artifact_prefix}/ir/manifest.json``. Additive: a build with no IR simply has
+  no ``ir/`` subtree, so every pre-IR artifact stays valid unread.
 """
 
 PROJECT_ARCHIVE_BUCKET = "project-archive"
 ARTIFACTS_BUCKET = "artifacts"
 
 METADATA_FILENAME = "assemblage_meta.json"
+
+IR_DIRNAME = "ir"
+IR_MANIFEST_FILENAME = "manifest.json"
 
 
 def artifact_prefix(owner: str, project: str, sha12: str, compiler: str, flag: str) -> str:
@@ -47,6 +54,25 @@ def artifact_key(prefix: str, filename: str) -> str:
 def metadata_key(prefix: str) -> str:
     """The ``assemblage_meta.json`` key inside an :func:`artifact_prefix`."""
     return f"{prefix}/{METADATA_FILENAME}"
+
+
+def ir_prefix(prefix: str) -> str:
+    """The ``ir/`` subtree of an :func:`artifact_prefix`."""
+    return f"{prefix}/{IR_DIRNAME}"
+
+
+def ir_tarball_key(prefix: str, stage: str) -> str:
+    """The gzipped tarball holding every kept dump for one IR ``stage``.
+
+    One object per stage rather than per crate: IR is many small text files and
+    S3 round-trips dominate at that granularity.
+    """
+    return f"{ir_prefix(prefix)}/{stage}.tar.gz"
+
+
+def ir_manifest_key(prefix: str) -> str:
+    """The IR manifest (what stages/crates/sizes are in the tarballs)."""
+    return f"{ir_prefix(prefix)}/{IR_MANIFEST_FILENAME}"
 
 
 def archive_key(owner: str, project: str, sha12: str) -> str:

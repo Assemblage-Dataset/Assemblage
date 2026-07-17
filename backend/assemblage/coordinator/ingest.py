@@ -21,6 +21,7 @@ from assemblage.messages import (
     BinaryRecordMsg,
     BuildStatusMsg,
     CloneStatusMsg,
+    IrRecordMsg,
     ScrapeBundle,
 )
 from assemblage.mq.consumer import AckDecision
@@ -103,4 +104,27 @@ def handle_build_status(
 def handle_binary(store: CoordinatorStore, msg: BinaryRecordMsg) -> AckDecision:
     """Record one produced binary against its task."""
     store.insert_binary(file_name=msg.file_name, description="", status_id=msg.task_id)
+    return AckDecision.ACK
+
+
+def handle_ir(store: CoordinatorStore, msg: IrRecordMsg) -> AckDecision:
+    """Record the IR stage tarballs a builder stored for one build.
+
+    The DB keeps enum member NAMES (``LLVM_IR``) while the wire carries values
+    (``llvm-ir``) — the same split the status columns already use.
+    """
+    rows = [
+        {
+            "stage": rec.stage.name,
+            "scope": msg.scope.name,
+            "s3_key": rec.s3_key,
+            "file_count": rec.file_count,
+            "crate_count": rec.crate_count,
+            "raw_bytes": rec.raw_bytes,
+            "stored_bytes": rec.stored_bytes,
+        }
+        for rec in msg.stages
+    ]
+    written = store.upsert_ir_artifacts(msg.task_id, rows)
+    logger.info("recorded %d IR stage(s) for task %d", written, msg.task_id)
     return AckDecision.ACK

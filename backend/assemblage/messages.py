@@ -17,11 +17,13 @@ fixtures README:
 
 from collections.abc import Iterator
 
-from pydantic import BaseModel, ConfigDict, RootModel, model_validator
+from pydantic import BaseModel, ConfigDict, Field, RootModel, model_validator
 
 from assemblage.enums import (
     BuildStatus,
     CloneStatus,
+    IrScope,
+    IrStage,
     ScraperMsgType,
     ScraperOutputPolicy,
 )
@@ -80,6 +82,33 @@ class BuildStatusMsg(_WireModel):
 class BinaryRecordMsg(_WireModel):
     task_id: int
     file_name: str
+
+
+class IrStageRecord(_WireModel):
+    """One IR stage tarball a builder stored for a build."""
+
+    stage: IrStage
+    s3_key: str
+    file_count: int = 0
+    crate_count: int = 0
+    raw_bytes: int = 0
+    stored_bytes: int = 0
+
+
+class IrRecordMsg(_WireModel):
+    """Sent on the ``ir`` queue after a build's IR tarballs reach S3.
+
+    A NEW message on a NEW queue rather than extra keys on :class:`BinaryRecordMsg`:
+    the ``binary`` message's JSON is frozen against a golden, and an old coordinator
+    must keep parsing what a new builder sends. A separate queue means pre-IR
+    coordinators simply never consume this, and the frozen goldens stay untouched.
+    """
+
+    task_id: int
+    scope: IrScope
+    toolchain: str = ""
+    codegen_backend: str = ""
+    stages: list[IrStageRecord] = Field(default_factory=list)
 
 
 class BuilderRegistration(_WireModel):

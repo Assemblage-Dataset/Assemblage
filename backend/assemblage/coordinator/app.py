@@ -1,6 +1,6 @@
 """Coordinator composition root.
 
-Wires the store, the six inbound :class:`ConsumerLoop`s, the dispatch manager
+Wires the store, the seven inbound :class:`ConsumerLoop`s, the dispatch manager
 and the scraper-request service under one :class:`Supervisor`, then blocks in
 ``run_until_signal`` for a graceful SIGTERM shutdown. Replaces the 827-line
 ``coordinator.py`` God class and its stop-the-world excepthook / ``os._exit``.
@@ -15,6 +15,7 @@ from assemblage.coordinator.ingest import (
     handle_binary,
     handle_build_status,
     handle_clone_status,
+    handle_ir,
     handle_scrape,
 )
 from assemblage.coordinator.registration import (
@@ -35,6 +36,7 @@ from assemblage.messages import (
     BuilderRegistration,
     BuildStatusMsg,
     CloneStatusMsg,
+    IrRecordMsg,
     ScrapeBundle,
     ScraperControlReply,
     ScraperControlRequest,
@@ -48,6 +50,7 @@ from assemblage.mq.topology import (
     BUILD_OPT_EXCHANGE,
     BUILDER_REG,
     CLONE,
+    IR,
     SCRAPE,
     SCRAPER_REG,
     QueueSpec,
@@ -139,6 +142,9 @@ class CoordinatorApp:
     def _on_binary(self, incoming: IncomingMessage) -> AckDecision:
         return handle_binary(self._store, BinaryRecordMsg.model_validate_json(incoming.body))
 
+    def _on_ir(self, incoming: IncomingMessage) -> AckDecision:
+        return handle_ir(self._store, IrRecordMsg.model_validate_json(incoming.body))
+
     def _on_builder_reg(self, incoming: IncomingMessage) -> AckDecision:
         reg = BuilderRegistration.model_validate_json(incoming.body)
 
@@ -169,6 +175,7 @@ class CoordinatorApp:
             ("coordinator-clone", CLONE, self._on_clone),
             ("coordinator-build", BUILD, self._on_build),
             ("coordinator-binary", BINARY, self._on_binary),
+            ("coordinator-ir", IR, self._on_ir),
             ("coordinator-builder-reg", BUILDER_REG, self._on_builder_reg),
             ("coordinator-scraper-reg", SCRAPER_REG, self._on_scraper_reg),
         ]

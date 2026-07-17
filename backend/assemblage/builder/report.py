@@ -9,10 +9,16 @@ ingest).
 
 import logging
 
-from assemblage.enums import BuildStatus, CloneStatus
-from assemblage.messages import BinaryRecordMsg, BuildStatusMsg, CloneStatusMsg
+from assemblage.enums import BuildStatus, CloneStatus, IrScope
+from assemblage.messages import (
+    BinaryRecordMsg,
+    BuildStatusMsg,
+    CloneStatusMsg,
+    IrRecordMsg,
+    IrStageRecord,
+)
 from assemblage.mq.publisher import Publisher
-from assemblage.mq.topology import BINARY, BUILD, CLONE
+from assemblage.mq.topology import BINARY, BUILD, CLONE, IR
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +78,33 @@ class BuildReporter:
         self._publisher.publish(
             BINARY,
             BinaryRecordMsg(task_id=task_id, file_name=file_name).model_dump_json(),
+        )
+
+    def ir(
+        self,
+        *,
+        task_id: int,
+        scope: IrScope,
+        toolchain: str,
+        codegen_backend: str,
+        stages: list[IrStageRecord],
+    ) -> None:
+        """Report a build's stored IR tarballs on the `ir` queue.
+
+        One message per build listing every stage, not one per stage: the coordinator
+        upserts them together, so a redelivery can't leave a half-recorded build.
+        """
+        if not stages:
+            return
+        self._publisher.publish(
+            IR,
+            IrRecordMsg(
+                task_id=task_id,
+                scope=scope,
+                toolchain=toolchain,
+                codegen_backend=codegen_backend,
+                stages=stages,
+            ).model_dump_json(),
         )
 
     def _publish_build(

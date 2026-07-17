@@ -33,6 +33,10 @@ BUILD = QueueSpec("build")
 BINARY = QueueSpec("binary")
 BUILDER_REG = QueueSpec("builder_reg")
 SCRAPER_REG = QueueSpec("scraper_reg")
+# Added 2026-07-17 with Rust IR dumping. A NEW queue rather than new keys on the
+# frozen `binary` message: the six names above are frozen, and this one is additive
+# -- a coordinator that never declares it is simply a coordinator without IR.
+IR = QueueSpec("ir")
 
 # Topic exchange fanning build tasks out to per-buildopt queues.
 BUILD_OPT_EXCHANGE = "build_opt"

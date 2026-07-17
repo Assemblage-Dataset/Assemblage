@@ -109,6 +109,20 @@ x-rust-worker-env: &rust-worker-env
   # C++ builders ≈ 1.3x the 128 cores — busy but civil.
   CARGO_BUILD_JOBS: "4"
 
+# IR-dumping rust env: the llvm/RelWithDebInfo tiers only. Emitting IR repartitions
+# codegen units, so these tiers' binaries are no longer byte-comparable with pre-IR
+# artifacts (symbols/.rodata/.data/.eh_frame are unchanged; only .text layout moves)
+# -- that is why this is a separate anchor and not a default. It also costs ~+75%
+# build time for the ride-along stages, plus one extra compile per unpretty stage.
+# IR_SCOPE=repo is load-bearing: 93% of a real repo's IR bulk is dependency crates
+# (crates.io code identical everywhere), ~350 MB/build vs ~19 MB repo-only.
+x-rust-worker-env-ir: &rust-worker-env-ir
+  <<: *rust-worker-env
+  IR_DUMP: "1"
+  IR_STAGES: "llvm-ir,mir,asm,hir,thir"
+  IR_SCOPE: repo
+  IR_MAX_BYTES: "536870912"
+
 services:
 
   database:
@@ -333,7 +347,7 @@ services:
   builder_rust_llvm_o0:
     <<: *builder-rust
     environment:
-      <<: *rust-worker-env
+      <<: *rust-worker-env-ir
       CODEGEN_BACKEND: llvm
       BUILD_MODE: RelWithDebInfo
       COMPILER_FLAG: "-O0"
@@ -342,7 +356,7 @@ services:
   builder_rust_llvm_o1:
     <<: *builder-rust
     environment:
-      <<: *rust-worker-env
+      <<: *rust-worker-env-ir
       CODEGEN_BACKEND: llvm
       BUILD_MODE: RelWithDebInfo
       COMPILER_FLAG: "-O1"
@@ -351,7 +365,7 @@ services:
   builder_rust_llvm_o2:
     <<: *builder-rust
     environment:
-      <<: *rust-worker-env
+      <<: *rust-worker-env-ir
       CODEGEN_BACKEND: llvm
       BUILD_MODE: RelWithDebInfo
       COMPILER_FLAG: "-O2"
@@ -360,7 +374,7 @@ services:
   builder_rust_llvm_o3:
     <<: *builder-rust
     environment:
-      <<: *rust-worker-env
+      <<: *rust-worker-env-ir
       CODEGEN_BACKEND: llvm
       BUILD_MODE: RelWithDebInfo
       COMPILER_FLAG: "-O3"
@@ -369,7 +383,7 @@ services:
   builder_rust_llvm_os:
     <<: *builder-rust
     environment:
-      <<: *rust-worker-env
+      <<: *rust-worker-env-ir
       CODEGEN_BACKEND: llvm
       BUILD_MODE: RelWithDebInfo
       COMPILER_FLAG: "-Os"
@@ -427,7 +441,7 @@ services:
   builder_rust_llvm_oz:
     <<: *builder-rust
     environment:
-      <<: *rust-worker-env
+      <<: *rust-worker-env-ir
       CODEGEN_BACKEND: llvm
       BUILD_MODE: RelWithDebInfo
       COMPILER_FLAG: "-Oz"

@@ -146,6 +146,39 @@ class BuildDO(SQLModel, table=True):
         return f"Repo(File name={self.file_name})"
 
 
+class IrArtifactDO(SQLModel, table=True):
+    """One IR stage tarball produced for one build (``ir_artifacts``).
+
+    Grain is (build, stage), not (build, crate): IR is packed one gzipped tarball
+    per stage because per-crate objects would multiply S3 round-trips for many tiny
+    text files. ``crates`` therefore lists what is *inside* the tarball, and
+    ``s3_key`` points at the tarball itself.
+
+    Added 2026-07-17 by migration ``a7f3b21c5d84``. Purely additive -- the live
+    schema's existing tables are untouched, so pre-IR rows stay valid and every
+    reader that ignores this table is unaffected.
+    """
+
+    __tablename__ = "ir_artifacts"
+    id: int | None = Field(default=None, primary_key=True)
+    status_id: int = Field(foreign_key="b_status.id")
+    # IrStage member NAME, matching the varchar-stores-names convention the rest of
+    # the live schema uses (the RabbitMQ wire carries the lowercase value instead).
+    stage: str = Field(max_length=16, default="")
+    scope: str = Field(max_length=16, default="")  # IrScope: repo | all
+    s3_key: str = Field(max_length=512, default="")
+    file_count: int = 0
+    crate_count: int = 0
+    raw_bytes: int = 0
+    stored_bytes: int = 0
+    created_at: datetime.datetime = Field(
+        default_factory=lambda: datetime.datetime.now(datetime.UTC)
+    )
+
+    def __repr__(self) -> str:
+        return f"IrArtifact(stage={self.stage}, key={self.s3_key})"
+
+
 class RepoDO(SQLModel, table=True):
     """
     ORM model for repo
