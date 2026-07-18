@@ -24,8 +24,8 @@ from .conftest import alembic_config_for
 
 pytestmark = pytest.mark.integration
 
-# The five ORM-managed tables (alembic_version is Alembic's own bookkeeping).
-_MODEL_TABLES = {"buildopt", "b_status", "binaries", "projects", "scrapers"}
+# The six ORM-managed tables (alembic_version is Alembic's own bookkeeping).
+_MODEL_TABLES = {"buildopt", "b_status", "binaries", "projects", "scrapers", "ir_artifacts"}
 
 
 @contextlib.contextmanager

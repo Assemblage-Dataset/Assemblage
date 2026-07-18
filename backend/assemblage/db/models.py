@@ -19,6 +19,7 @@ freshly-migrated database and against the live one.
 import datetime
 
 import sqlalchemy as sa
+from sqlalchemy import UniqueConstraint
 from sqlmodel import (
     Column,
     Field,
@@ -160,17 +161,26 @@ class IrArtifactDO(SQLModel, table=True):
     """
 
     __tablename__ = "ir_artifacts"
+    # Column shapes below mirror migration a7f3b21c5d84 EXACTLY (BigInteger byte
+    # counts, the two indexes, the composite unique constraint) so `alembic check`
+    # sees no drift between the model and the migrated schema.
+    __table_args__ = (UniqueConstraint("status_id", "stage", name="uq_ir_artifacts_status_stage"),)
+
     id: int | None = Field(default=None, primary_key=True)
-    status_id: int = Field(foreign_key="b_status.id")
+    status_id: int = Field(
+        sa_column=Column(sa.Integer, sa.ForeignKey("b_status.id"), index=True, nullable=False)
+    )
     # IrStage member NAME, matching the varchar-stores-names convention the rest of
     # the live schema uses (the RabbitMQ wire carries the lowercase value instead).
-    stage: str = Field(max_length=16, default="")
+    stage: str = Field(sa_column=Column(sa.String(16), index=True, nullable=False, default=""))
     scope: str = Field(max_length=16, default="")  # IrScope: repo | all
     s3_key: str = Field(max_length=512, default="")
     file_count: int = 0
     crate_count: int = 0
-    raw_bytes: int = 0
-    stored_bytes: int = 0
+    # BigInteger: raw IR runs to hundreds of MB per stage (a 350 MB unscoped build
+    # was measured), so int4's 2.1 GB ceiling is uncomfortably close.
+    raw_bytes: int = Field(default=0, sa_column=Column(sa.BigInteger, nullable=False))
+    stored_bytes: int = Field(default=0, sa_column=Column(sa.BigInteger, nullable=False))
     created_at: datetime.datetime = Field(
         default_factory=lambda: datetime.datetime.now(datetime.UTC)
     )
