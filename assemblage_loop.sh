@@ -37,17 +37,32 @@ mkdir -p "$LOG_DIR"
 LOG="$LOG_DIR/loop.log"
 COMPOSE="docker compose -f docker-compose.yml"
 RESTART_INTERVAL_S="${RESTART_INTERVAL_S:-21600}"   # 6h; PSI stayed 0.00 all soak
+INFRA_CHECK_S="${INFRA_CHECK_S:-60}"                # watchdog poll
 DAILY_LOCK="$LOG_DIR/daily.lock"
 DAY_FILE="$LOG_DIR/last_pipeline_day"
 
+# Services that must always be up. The watchdog only ever STARTS these when they
+# are missing -- it never restarts a healthy one (bouncing the broker/coordinator
+# is exactly what this script exists to avoid; see the header).
+INFRA_SERVICES="database rabbitmq coordinator minio"
+
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $*" >>"$LOG"; }
 
-# Restart only the RUNNING builder/scraper containers — whatever is scaled up
-# right now — and nothing else. A zero-scaled service simply isn't listed.
+# Restart only the RUNNING *rust* worker containers.
+#
+# Rust-only by deliberate policy: this deployment crawls and builds Rust only,
+# and the C/C++ services (builder_0..9, scraper_0) are kept scaled to 0. Matching
+# a bare '^(builder|scraper)' would make this loop *resurrect* any C++ builder
+# that got started by accident -- e.g. a bare `docker compose up -d`, which brings
+# up every service in the file -- and keep it alive forever. Anchoring on the rust
+# names means the loop can never do that. To run C++ here again, widen this
+# pattern deliberately.
+WORKER_PATTERN="${WORKER_PATTERN:-^(builder_rust|scraper_rust)}"
+
 restart_workers() {
     local workers
     workers=$($COMPOSE ps --services --filter status=running 2>/dev/null \
-        | grep -E '^(builder|scraper)' | sort -u | tr '\n' ' ') || true
+        | grep -E "$WORKER_PATTERN" | sort -u | tr '\n' ' ') || true
     if [ -z "${workers// /}" ]; then
         log "no running worker containers to restart"
         return
@@ -79,9 +94,48 @@ run_daily_async() {
     ) &
 }
 
-log "loop starting (restart interval ${RESTART_INTERVAL_S}s, workers only; broker/coordinator/db left alone)"
+# Bring back any infra service that has stopped. On 2026-07-17 and 2026-07-18,
+# both at 00:00:0X EDT, something cleanly stopped database+rabbitmq+coordinator
+# (exit 0, SIGTERM, dependency order) and they stayed down -- db and rabbitmq
+# carry no restart policy, and a `docker stop` defeats one anyway. The 5-second
+# stop became a 17-hour outage purely because nothing noticed. This is the
+# self-heal; var/docker_events_recorder.sh is what identifies the culprit.
+ensure_infra_up() {
+    local running missing=""
+    # NOTE every `return` here is an explicit `return 0`. Under `set -e` a bare
+    # `return` propagates the previous command's status, so the all-infra-up path
+    # (the normal one) would return 1 and kill the whole loop.
+    running="$($COMPOSE ps --services --filter status=running 2>/dev/null | sort -u)" || return 0
+    for svc in $INFRA_SERVICES; do
+        printf '%s\n' "$running" | grep -qx "$svc" || missing="$missing $svc"
+    done
+    [ -n "${missing// /}" ] || return 0
+    log "INFRA DOWN:$missing — starting"
+    # shellcheck disable=SC2086
+    if $COMPOSE up -d --no-recreate $missing >>"$LOG" 2>&1; then
+        log "infra recovered:$missing"
+    else
+        log "infra recovery FAILED:$missing (will retry in ${INFRA_CHECK_S}s)"
+    fi
+}
+
+# Sleep in slices so infra is watched every INFRA_CHECK_S while workers are still
+# only restarted once per RESTART_INTERVAL_S.
+sleep_watching_infra() {
+    local remain="$1" slice
+    while [ "$remain" -gt 0 ]; do
+        slice=$(( remain < INFRA_CHECK_S ? remain : INFRA_CHECK_S ))
+        sleep "$slice"
+        remain=$(( remain - slice ))
+        ensure_infra_up
+    done
+}
+
+log "loop starting (worker restart ${RESTART_INTERVAL_S}s, infra watchdog ${INFRA_CHECK_S}s)"
 
 while true; do
+    ensure_infra_up
+
     today="$(date '+%Y-%m-%d')"
     last="$(cat "$DAY_FILE" 2>/dev/null || echo '')"
     if [ "$today" != "$last" ]; then
@@ -90,6 +144,6 @@ while true; do
 
     restart_workers
 
-    log "sleeping ${RESTART_INTERVAL_S}s"
-    sleep "$RESTART_INTERVAL_S"
+    log "sleeping ${RESTART_INTERVAL_S}s (infra watched every ${INFRA_CHECK_S}s)"
+    sleep_watching_infra "$RESTART_INTERVAL_S"
 done
