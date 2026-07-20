@@ -9,7 +9,14 @@ did, so the observable message sequence and S3 side effects are preserved:
 4. prepare, build (timing the build only), extract DWARF;
 5. on build success: write metadata, upload binaries (one binary message each);
 6. send the final build message with the build time;
-7. clean the clone tree only once everything is safely in S3.
+7. clean the clone tree once the task is done, whatever the outcome.
+
+Step 7 is unconditional (see ``run_task``'s ``finally``). It used to require a
+successful build *and* a fully-successful upload, which meant every failed build,
+every lib-only crate that produced no binaries, and every partial upload left its
+whole clone + build tree on disk forever. At an ~85% Rust failure rate that leaked
+~25 GB per builder per day into the container's writable layer, which
+``docker compose restart`` does not reclaim.
 """
 
 import logging
@@ -79,39 +86,44 @@ def run_task(ctx: BuildContext, task: BuildTask) -> None:
     commit_hexsha = source.commit_hexsha
     clone_dir = source.clone_dir
 
-    reporter.clone_status(
-        url=task.url,
-        status=CloneStatus.SUCCESS,
-        msg=ctx.uuid[:5] + source.message,
-        task_id=task.task_id,
-    )
-    reporter.build_processing(url=task.url, task_id=task.task_id, commit_hexsha=commit_hexsha)
+    try:
+        reporter.clone_status(
+            url=task.url,
+            status=CloneStatus.SUCCESS,
+            msg=ctx.uuid[:5] + source.message,
+            task_id=task.task_id,
+        )
+        reporter.build_processing(url=task.url, task_id=task.task_id, commit_hexsha=commit_hexsha)
 
-    logger.info("Building %s with flag %s", task.name, ctx.compiler_flag)
-    prepared = strategy.prepare(clone_dir, ctx.compiler_flag)
-    before_build = int(time.time())
-    build_output, build_status = strategy.build(clone_dir, ctx.compiler_flag, prepared)
-    after_build = int(time.time())
+        logger.info("Building %s with flag %s", task.name, ctx.compiler_flag)
+        prepared = strategy.prepare(clone_dir, ctx.compiler_flag)
+        before_build = int(time.time())
+        build_output, build_status = strategy.build(clone_dir, ctx.compiler_flag, prepared)
+        after_build = int(time.time())
 
-    dwarf_list = strategy.debug_info(clone_dir, source.original_files)
-    logger.info("Build %s for task %s with flag %s", build_status, task.name, ctx.compiler_flag)
+        dwarf_list = strategy.debug_info(clone_dir, source.original_files)
+        logger.info("Build %s for task %s with flag %s", build_status, task.name, ctx.compiler_flag)
 
-    if build_status == BuildStatus.SUCCESS:
-        all_saved = _persist_success(ctx, task, source, dwarf_list)
-    else:
-        all_saved = False
-        logger.info("Build failed for %s: %s", task.name, build_output[:500])
+        if build_status == BuildStatus.SUCCESS:
+            if not _persist_success(ctx, task, source, dwarf_list):
+                logger.warning("Not every artifact was saved for %s", task.name)
+        else:
+            logger.info("Build failed for %s: %s", task.name, build_output[:500])
 
-    reporter.build_finished(
-        url=task.url,
-        task_id=task.task_id,
-        status=build_status,
-        build_time=after_build - before_build,
-        commit_hexsha=commit_hexsha,
-    )
-
-    if ctx.s3_enabled and all_saved:
-        _clean_folder(os.path.dirname(clone_dir))
+        reporter.build_finished(
+            url=task.url,
+            task_id=task.task_id,
+            status=build_status,
+            build_time=after_build - before_build,
+            commit_hexsha=commit_hexsha,
+        )
+    finally:
+        # Unconditional: the clone tree is scratch in every outcome, and anything
+        # worth keeping has already been uploaded by _persist_success. Still gated
+        # on s3_enabled because local mode leaves the generated metadata (and, with
+        # no bucket, the only copy of it) inside the clone dir.
+        if ctx.s3_enabled:
+            _clean_folder(os.path.dirname(clone_dir))
 
     logger.info("Task %s finished in %.3fs", task.name, time.time() - started)
 
