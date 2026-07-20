@@ -198,11 +198,17 @@ def run_unpretty(
     profile: str,
     env: dict[str, str],
     stages: Iterable[IrStage],
-    members: Sequence[str],
+    targets: Sequence[tuple[str, str, str]],
     adapter: RustCodegenAdapter,
     timeout_s: int,
 ) -> list[IrDump]:
-    """Run one ``cargo rustc -- -Zunpretty=<mode>`` pass per (stage, member).
+    """Run one ``cargo rustc -- -Zunpretty=<mode>`` pass per (stage, target).
+
+    ``targets`` is (package, kind, target name) for each lib/bin target of each
+    workspace member. Per *target*, not per package: ``cargo rustc -p X -- <args>``
+    exits 101 with "extra arguments to `rustc` can only be passed to one target"
+    whenever X has more than one, which silently cost 294 builds their HIR+THIR
+    before this was measured (2026-07-20).
 
     These stages produce no object file, so each pass is a whole extra compile of
     that crate. Cost is bounded by only ever running them for workspace members --
@@ -212,7 +218,7 @@ def run_unpretty(
     failing a build that already produced a binary.
     """
     modes = [s for s in stages if s.unpretty_mode and adapter.ir_caps.supports(s)]
-    if not modes or not members:
+    if not modes or not targets:
         return []
     os.makedirs(out_dir, exist_ok=True)
     # run_command takes no env mapping; the strategy's convention is a shell prefix.
@@ -228,19 +234,32 @@ def run_unpretty(
 
     dumps: list[IrDump] = []
     for stage in modes:
-        for member in members:
-            out_path = os.path.join(out_dir, f"{normalize_crate(member)}.{stage.value}.txt")
+        for package, kind, target_name in targets:
+            selector = "--lib" if kind == "lib" else f"--bin {shlex.quote(target_name)}"
+            # Kind AND target name in the filename: cargo names a package's default bin
+            # after the package itself, so `{package}.{target}` alone still collides for
+            # the very common lib+bin layout and the second pass would silently
+            # overwrite the first (caught in-container, not by the first unit test).
+            out_path = os.path.join(
+                out_dir,
+                f"{normalize_crate(package)}.{kind}."
+                f"{normalize_crate(target_name)}.{stage.value}.txt",
+            )
             cmd = (
-                f"{env_prefix} cargo +{toolchain} rustc -p {shlex.quote(member)} "
+                f"{env_prefix} cargo +{toolchain} rustc -p {shlex.quote(package)} {selector} "
                 f"--profile {profile} -- -Zunpretty={stage.unpretty_mode}"
             )
             result = run_command(cmd, timeout=timeout_s, cwd=clone_dir)
             if result.returncode != 0 or not result.stdout:
+                # rc=0 with no stdout is a real and distinct outcome (rustc accepted the
+                # pass but printed nothing); saying only "rc=0" reads like a bad log line.
                 logger.info(
-                    "unpretty %s failed for %s (rc=%s), skipping",
+                    "unpretty %s failed for %s %s (rc=%s%s), skipping",
                     stage.unpretty_mode,
-                    member,
+                    package,
+                    selector,
                     result.returncode,
+                    ", empty output" if result.returncode == 0 else "",
                 )
                 continue
             try:
@@ -250,7 +269,7 @@ def run_unpretty(
                 logger.warning("could not write %s: %s", out_path, e)
                 continue
             dumps.append(
-                IrDump(stage, normalize_crate(member), "repo", out_path, len(result.stdout))
+                IrDump(stage, normalize_crate(package), "repo", out_path, len(result.stdout))
             )
     return dumps
 

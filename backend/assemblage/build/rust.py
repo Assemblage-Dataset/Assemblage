@@ -296,6 +296,42 @@ def cargo_env(
     return env
 
 
+# Every cargo target kind that `cargo rustc --lib` selects. proc-macro is a lib
+# target too, so -Zunpretty works on it the same way.
+_LIB_TARGET_KINDS = frozenset({"lib", "rlib", "dylib", "staticlib", "cdylib", "proc-macro"})
+
+
+def _unpretty_targets(metadata: dict[str, object]) -> tuple[tuple[str, str, str], ...]:
+    """(package, kind, target name) for each lib/bin target in ``cargo metadata`` output.
+
+    Only lib and bin kinds: ``custom-build`` is the build script, and test/bench/example
+    targets would each cost another whole compile for IR nobody pairs with a binary.
+    """
+    found: set[tuple[str, str, str]] = set()
+    packages = metadata.get("packages")
+    if not isinstance(packages, list):
+        return ()
+    for pkg in packages:
+        if not isinstance(pkg, dict):
+            continue
+        name = str(pkg.get("name") or "")
+        targets = pkg.get("targets")
+        if not name or not isinstance(targets, list):
+            continue
+        for target in targets:
+            if not isinstance(target, dict):
+                continue
+            target_name = str(target.get("name") or "")
+            kinds = {str(k) for k in target.get("kind", []) if k}
+            if not target_name:
+                continue
+            if "bin" in kinds:
+                found.add((name, "bin", target_name))
+            elif kinds & _LIB_TARGET_KINDS:
+                found.add((name, "lib", target_name))
+    return tuple(sorted(found))
+
+
 def parse_cargo_artifacts(stdout: str, member_ids: frozenset[str]) -> list[str]:
     """Executable/cdylib paths from cargo's JSON stream, workspace members only.
 
@@ -441,9 +477,15 @@ class RustPrepared:
     """``prepare`` -> ``build`` token: workspace member ids/names, or a failure reason."""
 
     member_ids: frozenset[str]
-    # Package names (not ids): `cargo rustc -p <name>` for the -Zunpretty passes, and
-    # the repo-vs-dependency split when scoping IR.
+    # Package names (not ids): the repo-vs-dependency split when scoping IR.
     member_names: frozenset[str] = frozenset()
+    # (package, kind, target name) for every lib/bin target of every member.
+    # `cargo rustc -p X -- <args>` REFUSES to run when X has more than one target
+    # ("extra arguments to `rustc` can only be passed to one target"), so each
+    # -Zunpretty pass has to name exactly one. Measured 2026-07-20: 294 builds had
+    # lost HIR+THIR entirely to that error while still emitting the ride-along
+    # stages, because a package with both a lib and a bin is the common case.
+    member_targets: tuple[tuple[str, str, str], ...] = ()
     failure: str | None = None
 
 
@@ -493,6 +535,7 @@ class RustBuildStrategy(BuildStrategy):
         self._target_dir = ""
         self._profile = "release"
         self._member_names: frozenset[str] = frozenset()
+        self._member_targets: tuple[tuple[str, str, str], ...] = ()
         self._cargo_env: dict[str, str] = {}
         self._clone_dir = ""
 
@@ -530,25 +573,28 @@ class RustBuildStrategy(BuildStrategy):
     def prepare(self, clone_dir: str, compiler_flag: str) -> object | None:
         if not os.path.isfile(os.path.join(clone_dir, "Cargo.toml")):
             return RustPrepared(frozenset(), failure="not a cargo project")
-        ids, names = self._workspace_members(clone_dir)
-        return RustPrepared(ids, names)
+        ids, names, targets = self._workspace_members(clone_dir)
+        return RustPrepared(ids, names, targets)
 
-    def _workspace_members(self, clone_dir: str) -> tuple[frozenset[str], frozenset[str]]:
-        """(member package ids, member package names) from ``cargo metadata --no-deps``."""
+    def _workspace_members(
+        self, clone_dir: str
+    ) -> tuple[frozenset[str], frozenset[str], tuple[tuple[str, str, str], ...]]:
+        """(member ids, member names, member lib/bin targets) from ``cargo metadata``."""
+        empty: tuple[tuple[str, str, str], ...] = ()
         cmd = f"cargo +{self.toolchain} metadata --format-version 1 --no-deps"
         result = run_command(cmd, timeout=self.build_timeout_s, cwd=clone_dir)
         if result.returncode != 0:
             logger.warning("cargo metadata failed: %s", result.stderr.decode(errors="ignore")[:500])
-            return frozenset(), frozenset()
+            return frozenset(), frozenset(), empty
         try:
             data = json.loads(result.stdout.decode(errors="ignore"))
         except json.JSONDecodeError as e:
             logger.warning("cargo metadata JSON parse failed: %s", e)
-            return frozenset(), frozenset()
+            return frozenset(), frozenset(), empty
         ids = frozenset(str(member) for member in data.get("workspace_members", []))
         # --no-deps means packages[] is exactly the workspace members.
         names = frozenset(str(pkg["name"]) for pkg in data.get("packages", []) if pkg.get("name"))
-        return ids, names
+        return ids, names, _unpretty_targets(data)
 
     def build(
         self, clone_dir: str, compiler_flag: str, prepared: object | None
@@ -560,6 +606,7 @@ class RustBuildStrategy(BuildStrategy):
         self._profile = self._profile_name()
         self._target_dir = os.path.join(clone_dir, "target")
         self._member_names = prep.member_names
+        self._member_targets = prep.member_targets
         self._clone_dir = clone_dir
         env = cargo_env(
             build_mode=self.build_mode,
@@ -620,8 +667,9 @@ class RustBuildStrategy(BuildStrategy):
             )
             if self.adapter.ir_caps.supports(IrStage.GIMPLE) and IrStage.GIMPLE in self.ir_stages:
                 dumps += ir_mod.discover_gimple(repo_crates, self.ir_scope)
-            # -Zunpretty passes: workspace members only. Each is a whole extra compile
-            # and dependency IR would be discarded by IrScope.REPO anyway.
+            # -Zunpretty passes: workspace members' own lib/bin targets only. Each is a
+            # whole extra compile and dependency IR would be discarded by IrScope.REPO
+            # anyway. One pass per *target*, not per package -- see RustPrepared.
             dumps += ir_mod.run_unpretty(
                 clone_dir=self._clone_dir,
                 out_dir=os.path.join(self._target_dir, "assemblage-ir"),
@@ -629,7 +677,7 @@ class RustBuildStrategy(BuildStrategy):
                 profile=self._profile,
                 env=self._cargo_env,
                 stages=self.ir_stages,
-                members=sorted(self._member_names),
+                targets=self._member_targets,
                 adapter=self.adapter,
                 timeout_s=self.build_timeout_s,
             )
