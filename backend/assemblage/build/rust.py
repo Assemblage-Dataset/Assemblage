@@ -35,7 +35,7 @@ from assemblage.build.commands import CommandResult, run_command
 from assemblage.build.discovery import is_elf_executable
 from assemblage.build.linux import work_base_path
 from assemblage.build.strategy import BuildStrategy
-from assemblage.dwarf.extract import extract_dwarf_info
+from assemblage.dwarf.isolated import extract_each
 from assemblage.enums import BuildStatus, IrStage, RustCodegenBackend
 from assemblage.settings import BuilderSettings
 
@@ -462,6 +462,11 @@ class RustBuildStrategy(BuildStrategy):
         self.codegen_backend = str(self.adapter.name)
         self.backend_caps: dict[str, object] = asdict(self.adapter.caps)
         self.cargo_home = settings.cargo_home
+        # Extraction budgets, enforced out-of-process (see dwarf.isolated).
+        self.dwarf_timeout_s = settings.dwarf_timeout_s
+        self.dwarf_phase_timeout_s = settings.dwarf_phase_timeout_s
+        self.dwarf_mem_limit_bytes = settings.dwarf_mem_limit_mb * 1024 * 1024
+        self.dwarf_extract_jobs = settings.dwarf_extract_jobs
         self.build_timeout_s = settings.build_timeout_s
         # IR dumping is opt-in per tier (see BuilderSettings.ir_dump). Stages the
         # backend cannot dump are filtered out by the adapter's IrCaps, so a tier
@@ -649,20 +654,21 @@ class RustBuildStrategy(BuildStrategy):
         if not bin_files:
             return []
         items: list[dict[str, object]] = []
-        for binfile in bin_files:
-            try:
-                # source_root=clone_dir lets the extractor read the embedded
-                # source_code text for rustc's comp_dir-relative repo paths
-                # (the C path passes no source_root, keeping its golden frozen).
-                item = extract_dwarf_info(binfile, source_root=clone_dir)
-            except Exception as e:
-                logger.warning(
-                    "DWARF extraction failed for %s: %s: %s", binfile, type(e).__name__, e
-                )
-                continue
-            if item:
-                self._postprocess_item(item, clone_dir)
-                items.append(item)
+        # source_root=clone_dir lets the extractor read the embedded source_code
+        # text for rustc's comp_dir-relative repo paths (the C path passes no
+        # source_root, keeping its golden frozen). Out-of-process and bounded:
+        # this is the tier where a single Debug binary used to hold the builder
+        # for 18+ minutes.
+        for item in extract_each(
+            bin_files,
+            source_root=clone_dir,
+            timeout_secs=self.dwarf_timeout_s,
+            phase_timeout_s=self.dwarf_phase_timeout_s,
+            mem_limit_bytes=self.dwarf_mem_limit_bytes,
+            jobs=self.dwarf_extract_jobs,
+        ):
+            self._postprocess_item(item, clone_dir)
+            items.append(item)
         if not items:
             logger.info("No DWARF debug info found in any binary")
         return items

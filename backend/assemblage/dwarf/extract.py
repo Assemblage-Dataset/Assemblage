@@ -24,7 +24,7 @@ import logging
 import os
 import signal
 import threading
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from typing import Any
 
@@ -70,6 +70,7 @@ def extract_dwarf_info(
     source_root: str | None = None,
     size_limit: int | None = None,
     timeout_secs: int | None = None,
+    jobs: int = 1,
 ) -> dict[str, Any] | None:
     """Extract one ``Binary_info_list`` item from ``binfile``.
 
@@ -78,6 +79,12 @@ def extract_dwarf_info(
     costs roughly 10-20x the file size in Python memory. ``source_root`` remaps
     source-line lookups onto a local checkout; ``timeout_secs`` bounds the whole
     extraction with SIGALRM (main-thread only).
+
+    ``jobs`` > 1 shards the compile units across that many worker processes;
+    output is identical either way (verified byte-for-byte on a 248 MB rust
+    Debug binary). Only pass it from a single-threaded process -- it forks. The
+    default of 1 keeps every existing caller, including the dataset pipeline, on
+    the serial path.
     """
     if size_limit is None:
         size_limit = int(os.environ.get("DWARF_SIZE_LIMIT", _DEFAULT_SIZE_LIMIT))
@@ -100,13 +107,30 @@ def extract_dwarf_info(
 
     try:
         with _alarm(timeout_secs):
-            return _extract(binfile, source_root)
+            return _extract(binfile, source_root, jobs)
     except _DwarfTimeout:
         logger.warning("DWARF extraction timed out for %s", binfile)
         return None
 
 
-def _extract(binfile: str, source_root: str | None) -> dict[str, Any] | None:
+def _extract_shard(
+    binfile: str, source_root: str | None, shard: int, shards: int
+) -> list[tuple[int, list[dict[str, Any]]]] | None:
+    """Run the per-CU extraction for the compile units belonging to ``shard``.
+
+    Returns ``[(cu_index, [function dicts])]`` so a caller can reassemble the CUs
+    in their original order, or ``None`` when the file carries no DWARF at all.
+
+    The per-CU work is genuinely independent, which is what makes sharding safe:
+    a CU's functions come from its own DIE tree, and ``_assign_line_entries``
+    only ever touches functions collected from that same CU (the serial version
+    expressed this with ``func_start_idx`` into a shared list; here each CU just
+    gets its own list, which is the same thing). ``base_addr`` and
+    ``exec_ranges`` are whole-file properties recomputed identically per shard,
+    and ``file_cache`` is only a cache, so a per-shard one changes speed and not
+    results. Cross-CU DIE references still resolve because every shard holds a
+    complete ``dwarf_info``.
+    """
     with open(binfile, "rb") as f:
         try:
             elf = ELFFile(f)
@@ -120,10 +144,16 @@ def _extract(binfile: str, source_root: str | None) -> dict[str, Any] | None:
         base_addr = _get_elf_base_address(elf)
         exec_ranges = _executable_ranges(elf)
 
-        all_functions: list[dict[str, Any]] = []
+        out: list[tuple[int, list[dict[str, Any]]]] = []
         file_cache: dict[str, list[str]] = {}
 
-        for cu in dwarf_info.iter_CUs():
+        for cu_index, cu in enumerate(dwarf_info.iter_CUs()):
+            # Stride rather than contiguous chunks: CU cost varies by orders of
+            # magnitude, and interleaving spreads the expensive ones across workers.
+            if cu_index % shards != shard:
+                continue
+
+            cu_functions: list[dict[str, Any]] = []
             top_die = cu.get_top_DIE()
             comp_dir = ""
             comp_dir_attr = top_die.attributes.get("DW_AT_comp_dir")
@@ -138,23 +168,110 @@ def _extract(binfile: str, source_root: str | None) -> dict[str, Any] | None:
             line_program = dwarf_info.line_program_for_CU(cu)
             file_table = _build_dwarf_file_table(line_program, comp_dir)
 
-            func_start_idx = len(all_functions)
             _collect_functions_from_die(
-                top_die, all_functions, base_addr, file_table, dwarf_info, cu_base_addr, exec_ranges
+                top_die, cu_functions, base_addr, file_table, dwarf_info, cu_base_addr, exec_ranges
             )
 
             if line_program:
                 _assign_line_entries(
                     line_program,
-                    all_functions,
-                    func_start_idx,
+                    cu_functions,
+                    0,
                     base_addr,
                     file_table,
                     file_cache,
                     source_root,
                 )
 
-        return _build_item(binfile, all_functions)
+            out.append((cu_index, cu_functions))
+
+        return out
+
+
+def _merge_shards(
+    binfile: str, parts: Iterable[list[tuple[int, list[dict[str, Any]]]]]
+) -> dict[str, Any] | None:
+    """Reassemble sharded CU results in CU order and build the item.
+
+    Ordering is load-bearing: ``_build_item`` deduplicates byte-identical
+    functions by keeping the *first* occurrence, so the merged list has to be in
+    the same order the serial walk produced or the surviving duplicate could
+    differ.
+    """
+    by_cu: dict[int, list[dict[str, Any]]] = {}
+    for part in parts:
+        for cu_index, funcs in part:
+            by_cu[cu_index] = funcs
+    all_functions = [f for cu_index in sorted(by_cu) for f in by_cu[cu_index]]
+    return _build_item(binfile, all_functions)
+
+
+def _extract(binfile: str, source_root: str | None, jobs: int = 1) -> dict[str, Any] | None:
+    if jobs > 1:
+        handled, item = _extract_parallel(binfile, source_root, jobs)
+        if handled:
+            return item
+    part = _extract_shard(binfile, source_root, 0, 1)
+    if part is None:
+        return None
+    return _merge_shards(binfile, [part])
+
+
+def _extract_parallel(
+    binfile: str, source_root: str | None, jobs: int
+) -> tuple[bool, dict[str, Any] | None]:
+    """Extract with ``jobs`` worker processes, one shard of CUs each.
+
+    Processes, not threads: this is pure-Python CPU work and the GIL would
+    serialise it. Measured on a 248 MB rust Debug binary (2026-07-20): 10.6M DIEs
+    parsed in 206s and 10.9M line entries in 81s, with 95% of the time inside
+    pyelftools' byte-level decoding rather than our own code -- so sharding the
+    per-CU loop is the only lever that does not mean rewriting the parser.
+
+    ``fork`` is safe here despite the builder being threaded, because this always
+    runs inside the single-threaded child that :mod:`assemblage.dwarf.isolated`
+    spawns. Workers inherit that child's process group, so the parent's timeout
+    killpg still reaps the whole tree, and they inherit its RLIMIT_AS too.
+
+    Returns ``(handled, item)``. ``handled=False`` means the parallel path
+    declined -- too few CUs to be worth forking, or the pool could not be built --
+    and the caller should fall back to the serial walk.
+    """
+    import multiprocessing
+
+    try:
+        with open(binfile, "rb") as f:
+            elf = ELFFile(f)
+            if not elf.has_dwarf_info():
+                return True, None
+            n_cus = sum(1 for _ in elf.get_dwarf_info().iter_CUs())
+    except (ELFError, OSError):
+        return True, None
+
+    # Header iteration is ~free (measured 0.0s for 827 CUs); the DIE trees and
+    # line programs underneath are what cost. Below two CUs per worker the fork
+    # overhead outweighs the win.
+    if n_cus < 2 * jobs:
+        return False, None
+
+    try:
+        ctx = multiprocessing.get_context("fork")
+        with ctx.Pool(jobs) as pool:
+            parts = pool.starmap(
+                _extract_shard, [(binfile, source_root, i, jobs) for i in range(jobs)]
+            )
+    except Exception as e:
+        logger.warning("parallel DWARF extraction failed for %s (%s); using serial", binfile, e)
+        return False, None
+
+    usable: list[list[tuple[int, list[dict[str, Any]]]]] = []
+    for part in parts:
+        if part is None:
+            # A shard saw no DWARF at all, which can only mean the whole file has
+            # none -- the serial path returns None for exactly this.
+            return True, None
+        usable.append(part)
+    return True, _merge_shards(binfile, usable)
 
 
 def _executable_ranges(elf: Any) -> list[tuple[int, int]]:
