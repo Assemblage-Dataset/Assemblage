@@ -123,6 +123,24 @@ x-rust-worker-env-ir: &rust-worker-env-ir
   IR_SCOPE: repo
   IR_MAX_BYTES: "536870912"
 
+# Debug-tier rust env: the llvm/Debug tiers only. Debug binaries carry the
+# heaviest DWARF in the matrix (unoptimized, full debug info for the repo AND
+# every dependency), so the fleet-wide 300s per-binary extraction budget times
+# out on about half of them — measured 2026-07-20, 5 of 10 finished tasks across
+# the three dbg builders hit the cap and stored an empty Binary_info_list. On the
+# one tier that exists FOR its debug info that is the wrong trade, so it gets a
+# longer budget.
+#
+# Still bounded, and that is the point: before dwarf.isolated ran extraction
+# out-of-process these were unbounded, and a single Debug binary held its builder
+# for 18+ minutes (0 tasks completed in a window where gcc tiers completed 17).
+# Debug averages 1.06 binaries per successful build, so the phase cap almost
+# never binds — the per-binary budget is the one that matters here.
+x-rust-worker-env-debug: &rust-worker-env-debug
+  <<: *rust-worker-env
+  DWARF_TIMEOUT_S: "900"
+  DWARF_PHASE_TIMEOUT_S: "1800"
+
 services:
 
   database:
@@ -393,7 +411,7 @@ services:
   builder_rust_llvm_dbg_o0:
     <<: *builder-rust
     environment:
-      <<: *rust-worker-env
+      <<: *rust-worker-env-debug
       CODEGEN_BACKEND: llvm
       BUILD_MODE: Debug
       COMPILER_FLAG: "-O0"
@@ -450,7 +468,7 @@ services:
   builder_rust_llvm_dbg_o1:
     <<: *builder-rust
     environment:
-      <<: *rust-worker-env
+      <<: *rust-worker-env-debug
       CODEGEN_BACKEND: llvm
       BUILD_MODE: Debug
       COMPILER_FLAG: "-O1"
@@ -459,7 +477,7 @@ services:
   builder_rust_llvm_dbg_o2:
     <<: *builder-rust
     environment:
-      <<: *rust-worker-env
+      <<: *rust-worker-env-debug
       CODEGEN_BACKEND: llvm
       BUILD_MODE: Debug
       COMPILER_FLAG: "-O2"
