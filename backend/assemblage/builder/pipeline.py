@@ -105,10 +105,17 @@ def run_task(ctx: BuildContext, task: BuildTask) -> None:
         logger.info("Build %s for task %s with flag %s", build_status, task.name, ctx.compiler_flag)
 
         if build_status == BuildStatus.SUCCESS:
+            finish_msg = "Build Process Finished"
             if not _persist_success(ctx, task, source, dwarf_list):
                 logger.warning("Not every artifact was saved for %s", task.name)
         else:
-            logger.info("Build failed for %s: %s", task.name, build_output[:500])
+            # The TAIL, not the head. cargo prints progress first and the actual
+            # error last, so the old ``build_output[:500]`` only ever captured
+            # "Compiling foo v1.2.3" / "Updating crates.io index" and the real
+            # cause never reached the coordinator -- which is why every failed
+            # build in the database reads "Build Process Finished".
+            finish_msg = build_output
+            logger.info("Build failed for %s: %s", task.name, build_output[-500:])
 
         reporter.build_finished(
             url=task.url,
@@ -116,6 +123,9 @@ def run_task(ctx: BuildContext, task: BuildTask) -> None:
             status=build_status,
             build_time=after_build - before_build,
             commit_hexsha=commit_hexsha,
+            # BuildReporter keeps the last 1000 chars, the coordinator stores the
+            # last 500 -- both already tail-truncate, so the cause survives.
+            msg=finish_msg,
         )
     finally:
         # Unconditional: the clone tree is scratch in every outcome, and anything
