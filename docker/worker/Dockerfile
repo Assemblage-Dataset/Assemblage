@@ -27,7 +27,7 @@ ENV PIP_USE_PEP517=1
 # `timeout` script is installed: coreutils `timeout` (used by the build
 # strategy's `timeout 10m make …`) already ships in the base image.
 RUN apt-get update && apt-get -y upgrade && apt-get -y install \
-        tzdata ca-certificates curl wget git tree unzip xz-utils \
+        tzdata ca-certificates curl wget git tree unzip xz-utils zstd \
         cmake make build-essential pkg-config \
         gcc g++ gcc-13 g++-13 \
         clang clang-18 llvm libc++-dev libc++abi-dev \

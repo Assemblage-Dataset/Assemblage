@@ -25,7 +25,7 @@ ENV PIP_USE_PEP517=1
 # Lean build stack: git (clone), build-essential/pkg-config (crates with build.rs
 # that shell out to cc / pkg-config), and python3 for the worker itself.
 RUN apt-get update && apt-get -y upgrade && apt-get -y install \
-        tzdata ca-certificates curl wget git xz-utils \
+        tzdata ca-certificates curl wget git xz-utils zstd \
         build-essential pkg-config \
         python3-pip python3.12-venv \
     && rm -rf /var/lib/apt/lists/*

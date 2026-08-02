@@ -16,11 +16,12 @@ import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from sqlalchemy import Engine, func, inspect, select, update
+from sqlalchemy import ColumnElement, Engine, func, inspect, not_, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import col
 
+from assemblage.blocklist import BlocklistProvider
 from assemblage.db.engine import session_scope
 from assemblage.db.models import BuildDO, BuildOpt, IrArtifactDO, RepoDO, ScraperData, Status
 from assemblage.enums import BuildStatus, CloneStatus
@@ -75,8 +76,9 @@ class DispatchCandidate:
 class CoordinatorStore:
     """All database access the coordinator performs."""
 
-    def __init__(self, engine: Engine) -> None:
+    def __init__(self, engine: Engine, blocklist: BlocklistProvider | None = None) -> None:
         self._engine = engine
+        self._blocklist = blocklist
 
     def shutdown(self) -> None:
         """Dispose the engine's connection pool."""
@@ -157,22 +159,38 @@ class CoordinatorStore:
 
     # --- dispatch -------------------------------------------------------------
 
+    def _not_blocked(self) -> ColumnElement[bool] | None:
+        """A condition excluding blocklisted repos, or ``None`` when nothing is blocked.
+
+        Returning ``None`` rather than a tautology keeps the query byte-identical
+        to the un-blocklisted one, so the common case pays nothing — no join, no
+        extra predicate.
+        """
+        if self._blocklist is None:
+            return None
+        patterns = self._blocklist().like_patterns()
+        if not patterns:
+            return None
+        return not_(or_(*(col(RepoDO.url).ilike(pattern, escape="\\") for pattern in patterns)))
+
     def next_dispatchable(self, opt_id: int) -> DispatchCandidate | None:
-        """Return one un-started task for ``opt_id`` (clone NOT_STARTED, build INIT)."""
+        """Return one un-started task for ``opt_id`` (clone NOT_STARTED, build INIT).
+
+        Blocklisted repos are excluded in SQL, so the next eligible row is
+        returned instead of one that would have to be rejected afterwards.
+        """
         with session_scope(self._engine) as session:
-            row = (
-                session.execute(
-                    select(Status)
-                    .where(
-                        col(Status.clone_status) == CloneStatus.NOT_STARTED,
-                        col(Status.build_status) == BuildStatus.INIT,
-                        col(Status.build_opt_id) == opt_id,
-                    )
-                    .limit(1)
-                )
-                .scalars()
-                .first()
+            statement = select(Status).where(
+                col(Status.clone_status) == CloneStatus.NOT_STARTED,
+                col(Status.build_status) == BuildStatus.INIT,
+                col(Status.build_opt_id) == opt_id,
             )
+            blocked = self._not_blocked()
+            if blocked is not None:
+                statement = statement.join(RepoDO, col(RepoDO.id) == col(Status.repo_id)).where(
+                    blocked
+                )
+            row = session.execute(statement.limit(1)).scalars().first()
             if row is None:
                 return None
 
@@ -193,19 +211,23 @@ class CoordinatorStore:
             )
 
     def count_pending(self, opt_id: int) -> int:
-        """How many un-started tasks remain for ``opt_id``."""
+        """How many un-started, non-blocklisted tasks remain for ``opt_id``."""
         with session_scope(self._engine) as session:
-            return int(
-                session.execute(
-                    select(func.count())
-                    .select_from(Status)
-                    .where(
-                        col(Status.clone_status) == CloneStatus.NOT_STARTED,
-                        col(Status.build_status) == BuildStatus.INIT,
-                        col(Status.build_opt_id) == opt_id,
-                    )
-                ).scalar_one()
+            statement = (
+                select(func.count())
+                .select_from(Status)
+                .where(
+                    col(Status.clone_status) == CloneStatus.NOT_STARTED,
+                    col(Status.build_status) == BuildStatus.INIT,
+                    col(Status.build_opt_id) == opt_id,
+                )
             )
+            blocked = self._not_blocked()
+            if blocked is not None:
+                statement = statement.join(RepoDO, col(RepoDO.id) == col(Status.repo_id)).where(
+                    blocked
+                )
+            return int(session.execute(statement).scalar_one())
 
     def mark_clone_processing(self, status_id: int) -> None:
         """Flag a task as PROCESSING (called only after a confirmed dispatch)."""

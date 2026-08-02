@@ -12,6 +12,8 @@ supervisor, not an import-time handler.
 """
 
 import logging
+import os
+import shutil
 import threading
 import uuid
 from collections.abc import Callable
@@ -35,6 +37,29 @@ logger = logging.getLogger(__name__)
 _RECYCLE_AFTER_TASKS = 1000
 
 Handler = Callable[[IncomingMessage], AckDecision]
+
+
+def _sweep_stale_scratch(base_path: str) -> None:
+    """Delete leftover clone/build scratch from a previous life of this builder.
+
+    Builds that were SIGKILLed -- the build timeout, the 1000-task recycle, an OOM,
+    a host-level kill, or a fleet storm -- never run ``pipeline.py``'s finally-block
+    cleanup, so their multi-GB target dirs orphan under ``{base_path}/projects``.
+    ``docker restart`` preserves the writable layer, so nothing else clears them and
+    they accumulate (measured 2026-07-21: 783 GB across 33 builders, one holding
+    125 GB). A freshly-started builder has no in-flight build yet, so wiping the whole
+    tree here is safe and bounds scratch to a single recycle interval. Best-effort:
+    a failure here must never keep a builder from starting.
+    """
+    projects = os.path.join(base_path, "projects")
+    try:
+        entries = os.listdir(projects)
+    except OSError:
+        return  # nothing cloned yet (fresh image) or path missing
+    for name in entries:
+        shutil.rmtree(os.path.join(projects, name), ignore_errors=True)
+    if entries:
+        logger.info("swept %d stale scratch dir(s) from %s at startup", len(entries), projects)
 
 
 class BuilderApp:
@@ -175,6 +200,9 @@ class BuilderApp:
     def run(self) -> int:
         """Register, then consume build tasks until signalled or recycled."""
         logger.info("builder %s starting", self._uuid)
+        # Reclaim any scratch orphaned by a SIGKILLed build before this restart --
+        # safe here because no task has been consumed yet. See _sweep_stale_scratch.
+        _sweep_stale_scratch(self._strategy.base_path)
         if not self._register():
             return 1
 

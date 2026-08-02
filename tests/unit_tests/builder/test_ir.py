@@ -9,10 +9,12 @@ import json
 import tarfile
 
 import pytest
+from assemblage.build.commands import CommandResult
 from assemblage.build.rust import (
     CraneliftAdapter,
     GccAdapter,
     LLVMAdapter,
+    _unpretty_targets,
     cargo_env,
     ride_along_emit_flag,
 )
@@ -225,3 +227,99 @@ class TestCargoEnvIntegration:
         )
         assert env["CG_GCCJIT_DUMP_GIMPLE"] == "1"
         assert env["CG_GCCJIT_DUMP_TO_FILE"] == "1"
+
+
+class TestUnprettyTargetSelection:
+    """`cargo rustc -p X -- <args>` refuses to run when X has >1 target.
+
+    Measured 2026-07-20 on the live corpus: 294 builds emitted the ride-along
+    stages but lost HIR+THIR entirely, because a package carrying both a lib and
+    a bin is the common case and the pass named neither. Every unpretty command
+    must therefore select exactly one target.
+    """
+
+    @staticmethod
+    def _metadata(*targets):
+        return {"packages": [{"name": "demo", "targets": list(targets)}]}
+
+    def test_lib_and_bin_are_both_selected(self):
+        got = _unpretty_targets(
+            self._metadata(
+                {"name": "demo", "kind": ["lib"]},
+                {"name": "demo-cli", "kind": ["bin"]},
+            )
+        )
+        assert got == (("demo", "bin", "demo-cli"), ("demo", "lib", "demo"))
+
+    def test_proc_macro_counts_as_a_lib(self):
+        got = _unpretty_targets(self._metadata({"name": "demo", "kind": ["proc-macro"]}))
+        assert got == (("demo", "lib", "demo"),)
+
+    @pytest.mark.parametrize("kind", ["custom-build", "test", "bench", "example"])
+    def test_non_lib_bin_targets_are_skipped(self, kind):
+        """Each would cost another whole compile for IR nobody pairs with a binary."""
+        assert _unpretty_targets(self._metadata({"name": "x", "kind": [kind]})) == ()
+
+    def test_malformed_metadata_is_not_fatal(self):
+        assert _unpretty_targets({}) == ()
+        assert _unpretty_targets({"packages": "nonsense"}) == ()
+        assert _unpretty_targets({"packages": [{"name": "a"}]}) == ()
+
+
+class TestRunUnpretty:
+    def _run(self, targets, monkeypatch, tmp_path, *, rc=0, stdout=b"HIR"):
+        seen = []
+
+        def _fake(cmd, **kwargs):
+            seen.append(cmd)
+            return CommandResult(stdout=stdout, stderr=b"", returncode=rc)
+
+        monkeypatch.setattr(ir, "run_command", _fake)
+        dumps = ir.run_unpretty(
+            clone_dir=str(tmp_path),
+            out_dir=str(tmp_path / "out"),
+            toolchain="nightly-x",
+            profile="release",
+            env={},
+            stages=[IrStage.HIR],
+            targets=targets,
+            adapter=LLVMAdapter(),
+            timeout_s=60,
+        )
+        return seen, dumps
+
+    def test_lib_target_passes_lib_flag(self, monkeypatch, tmp_path):
+        seen, _ = self._run((("demo", "lib", "demo"),), monkeypatch, tmp_path)
+        assert "-p demo --lib " in seen[0]
+
+    def test_bin_target_names_that_bin(self, monkeypatch, tmp_path):
+        seen, _ = self._run((("demo", "bin", "demo-cli"),), monkeypatch, tmp_path)
+        assert "-p demo --bin demo-cli " in seen[0]
+
+    def test_every_command_selects_exactly_one_target(self, monkeypatch, tmp_path):
+        """The regression guard: an unfiltered `-p X` is what exited 101."""
+        targets = (("demo", "lib", "demo"), ("demo", "bin", "demo-cli"))
+        seen, _ = self._run(targets, monkeypatch, tmp_path)
+        assert len(seen) == 2
+        for cmd in seen:
+            assert ("--lib" in cmd) ^ ("--bin" in cmd)
+
+    def test_lib_and_bin_of_one_package_do_not_share_an_output_path(self, monkeypatch, tmp_path):
+        """`cargo new --bin demo` names the bin `demo` too, so the target name alone
+        does not disambiguate -- the paths must differ or one pass overwrites the
+        other. Observed in-container before the kind was added to the filename."""
+        targets = (("demo", "lib", "demo"), ("demo", "bin", "demo"))
+        _, dumps = self._run(targets, monkeypatch, tmp_path)
+        assert len({d.path for d in dumps}) == 2
+
+    def test_no_targets_runs_nothing(self, monkeypatch, tmp_path):
+        seen, dumps = self._run((), monkeypatch, tmp_path)
+        assert seen == [] and dumps == []
+
+    def test_failing_pass_is_skipped_not_raised(self, monkeypatch, tmp_path):
+        _, dumps = self._run((("demo", "lib", "demo"),), monkeypatch, tmp_path, rc=101)
+        assert dumps == []
+
+    def test_rc_zero_with_empty_output_is_also_skipped(self, monkeypatch, tmp_path):
+        _, dumps = self._run((("demo", "lib", "demo"),), monkeypatch, tmp_path, rc=0, stdout=b"")
+        assert dumps == []

@@ -22,6 +22,7 @@ dependencies = [
     "SQLAlchemy==2.0.43",
     "SQLAlchemy-Utils==0.38.2",
     "sqlmodel==0.0.25",
+    "zstandard==0.23.0",
 ]
 
 [project.optional-dependencies]

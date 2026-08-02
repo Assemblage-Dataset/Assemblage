@@ -66,6 +66,8 @@ db-data/
 !/data_refill/*.py
 !/data_refill/README.md
 /frontend/
+# sorted+compressed corpus export (hundreds of GB) — see backend/scripts/export_corpus.py
+/assemblage-rust/
 
 # deephistory: runtime data only — source under deephistory/ stays tracked
 deephistory/binaries/

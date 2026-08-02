@@ -120,8 +120,9 @@ log "mirroring flat artifact objects to legacy slash keys (for the PRE download 
 MIRROR_JSON="$WORK/mirror.json"
 S3_ENDPOINT="$S3_ENDPOINT" S3_KEY="$S3_KEY" S3_SECRET="$S3_SECRET" \
 MIRROR_JSON="$MIRROR_JSON" PYTHONPATH="$REPO_ROOT/backend" "$PY" - <<'PY'
-import json, os
+import io, json, os
 import boto3
+import zstandard
 from assemblage.storage import layout
 from assemblage.dataset.pipeline import parse_github_owner_project
 s3 = boto3.client("s3", endpoint_url=f"http://{os.environ['S3_ENDPOINT']}",
@@ -143,16 +144,30 @@ elf_objs = []
 for url, compiler, flag, sha, file_name in cur.fetchall():
     owner, project = parse_github_owner_project(url)
     base = os.path.basename(file_name)
-    prefix = layout.artifact_prefix(owner, project, sha, compiler, flag)
-    flat = layout.artifact_key(prefix, base)
+    # v2 stores compressed under a build dir; the legacy slash mirror below is
+    # what the OLD tree reads, so it must be the decompressed ELF.
+    v2 = layout.binary_key(
+        layout.build_dir(owner, project, sha, flag, compiler, "RelWithDebInfo"), base)
+    flat = layout.artifact_key(layout.artifact_prefix(owner, project, sha, compiler, flag), base)
     slash = f"{owner}/{project}/{sha}/{compiler}/{flag}/{base}"
     try:
-        s3.head_object(Bucket=layout.ARTIFACTS_BUCKET, Key=flat)
+        s3.head_object(Bucket=layout.ARTIFACTS_BUCKET, Key=v2)
     except Exception:
-        continue  # not every binaries row has an S3 object (e.g. .s intermediates)
-    s3.copy_object(Bucket=layout.ARTIFACTS_BUCKET,
-                   CopySource={"Bucket": layout.ARTIFACTS_BUCKET, "Key": flat}, Key=slash)
-    print(f"  mirrored {flat} -> {slash}")
+        try:
+            s3.head_object(Bucket=layout.ARTIFACTS_BUCKET, Key=flat)
+        except Exception:
+            continue  # not every binaries row has an S3 object (e.g. .s intermediates)
+        s3.copy_object(Bucket=layout.ARTIFACTS_BUCKET,
+                       CopySource={"Bucket": layout.ARTIFACTS_BUCKET, "Key": flat}, Key=slash)
+        print(f"  mirrored {flat} -> {slash}")
+        if not base.lower().endswith((".s", ".asm")):
+            elf_objs.append(flat)
+        continue
+    body = s3.get_object(Bucket=layout.ARTIFACTS_BUCKET, Key=v2)["Body"].read()
+    s3.put_object(Bucket=layout.ARTIFACTS_BUCKET, Key=slash,
+                  Body=zstandard.ZstdDecompressor().stream_reader(io.BytesIO(body)).read())
+    print(f"  mirrored {v2} -> {slash} (decompressed)")
+    flat = v2
     if not base.lower().endswith((".s", ".asm")):
         elf_objs.append(flat)
 json.dump(elf_objs, open(os.environ["MIRROR_JSON"], "w"))

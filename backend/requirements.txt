@@ -72,6 +72,7 @@ tqdm==4.62.3  # not used by core workers
 #typing-inspection==0.4.1 # fastapi
 # uritemplate==4.2.0  # google
 urllib3==2.5.0  # boto
+zstandard==0.23.0  # artifact compression (storage.compress)
 #uvicorn==0.37.0  # fastapi
 #uvloop==0.21.0; sys_platform != "win32"   # required for website only (FastAPI) - not currently used
 #watchfiles==1.1.0

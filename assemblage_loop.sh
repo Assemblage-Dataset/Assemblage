@@ -136,13 +136,27 @@ log "loop starting (worker restart ${RESTART_INTERVAL_S}s, infra watchdog ${INFR
 while true; do
     ensure_infra_up
 
-    today="$(date '+%Y-%m-%d')"
-    last="$(cat "$DAY_FILE" 2>/dev/null || echo '')"
-    if [ "$today" != "$last" ]; then
-        run_daily_async "$today"
-    fi
+    # Daily dataset dump DISABLED 2026-07-21 by owner decision: the corpus lives
+    # in MinIO (artifacts + assemblage_meta.json carry the DWARF), and the daily
+    # SQLite re-dump was filling the disk with per-day staging for a derived
+    # artifact we no longer maintain. The running loop is additionally held off by
+    # a persistent flock on $DAILY_LOCK; this edit keeps it off across any restart.
+    # To re-enable: uncomment below and release the daily.lock holder.
+    #   today="$(date '+%Y-%m-%d')"
+    #   last="$(cat "$DAY_FILE" 2>/dev/null || echo '')"
+    #   if [ "$today" != "$last" ]; then
+    #       run_daily_async "$today"
+    #   fi
 
-    restart_workers
+    # restart_workers DISABLED 2026-07-21: the 6h mass restart bounced all ~51 rust
+    # builders simultaneously, synchronizing them into a disk-I/O storm (measured this
+    # morning: load 316, 154 procs in D-state, CPU 53% idle -- pure I/O saturation of
+    # the single volume from ~40 builders re-cloning/re-fetching/uploading at once,
+    # ~2h to drain). Its original purpose was clearing the builder writable-layer leak,
+    # but that is now fixed per-task in builder/pipeline.py (the finally-cleanup), so
+    # the restart only causes harm. Infra watchdog below is retained.
+    # To re-enable (and re-introduce the storm): uncomment.
+    #   restart_workers
 
     log "sleeping ${RESTART_INTERVAL_S}s (infra watched every ${INFRA_CHECK_S}s)"
     sleep_watching_infra "$RESTART_INTERVAL_S"

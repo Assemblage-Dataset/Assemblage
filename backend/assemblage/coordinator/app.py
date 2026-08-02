@@ -9,6 +9,7 @@ and the scraper-request service under one :class:`Supervisor`, then blocks in
 import logging
 import time
 
+from assemblage.blocklist import FileBlocklist
 from assemblage.coordinator.dispatch import DispatchManager, StarvationSignals
 from assemblage.coordinator.ingest import (
     BuildStats,
@@ -70,7 +71,8 @@ class CoordinatorApp:
 
     def __init__(self, settings: CoordinatorSettings) -> None:
         self._settings = settings
-        self._store = CoordinatorStore(make_engine(settings.db.url))
+        self._blocklist = FileBlocklist(settings.blocklist_path)
+        self._store = CoordinatorStore(make_engine(settings.db.url), self._blocklist.current)
         self._factory = ConnectionFactory(settings.mq)
         self._supervisor = Supervisor()
         self._starvation = StarvationSignals()

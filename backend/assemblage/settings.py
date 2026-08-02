@@ -125,6 +125,11 @@ class CoordinatorSettings(WorkerSettings):
 
     db: DatabaseSettings = Field(default_factory=DatabaseSettings)
     s3: S3Settings = Field(default_factory=S3Settings)
+    # Owners/repos never dispatched. A path, not a list of entries, because the
+    # file is re-read on a live coordinator -- restarting it to change a config
+    # value would strand the fleet until builders re-register. ./backend is
+    # bind-mounted to /app, so this is backend/blocklist.txt on the host.
+    blocklist_path: str = Field(default="/app/blocklist.txt", validation_alias="BLOCKLIST_PATH")
 
 
 class BuilderSettings(WorkerSettings):
@@ -156,6 +161,30 @@ class BuilderSettings(WorkerSettings):
     )
     build_timeout_s: int = Field(default=1800, validation_alias="BUILD_TIMEOUT_S")
     cargo_home: str = Field(default="/cargo", validation_alias="CARGO_HOME")
+    # DWARF extraction budgets. Wholly separate from build_timeout_s, which only
+    # wraps the cargo/make invocations -- extraction runs after them and used to
+    # be unbounded, which is what let one llvm/Debug binary hold a builder for
+    # 18+ minutes (measured 2026-07-20). Enforced by dwarf.isolated in a child
+    # process, because the extractor's own SIGALRM timeout cannot arm on the
+    # Supervisor worker thread the builder runs tasks on.
+    #
+    # Per binary; on expiry that binary yields no debug info but is still stored.
+    dwarf_timeout_s: int = Field(default=300, validation_alias="DWARF_TIMEOUT_S")
+    # Across the whole extraction phase: a build emitting many binaries would
+    # otherwise still park a builder for hours at dwarf_timeout_s each.
+    dwarf_phase_timeout_s: int = Field(default=900, validation_alias="DWARF_PHASE_TIMEOUT_S")
+    # RLIMIT_AS for the extractor child. Extraction costs ~42x the binary size,
+    # so an unbounded run can OOM-kill the whole container; this kills the child.
+    dwarf_mem_limit_mb: int = Field(default=8192, validation_alias="DWARF_MEM_LIMIT_MB")
+    # Worker processes the extractor child shards compile units across. 95% of
+    # extraction is pyelftools decoding DWARF byte-by-byte in pure Python, which
+    # the GIL would serialise, so this has to be processes. Measured on a 248 MB
+    # rust Debug binary (2026-07-20), output byte-identical at every setting:
+    #   jobs=1 306s | jobs=2 167s (1.8x) | jobs=4 103s (3.0x) | jobs=8 76s (4.0x)
+    # 4 is the knee: 75% parallel efficiency, and it matches CARGO_BUILD_JOBS so a
+    # builder's extraction phase asks for no more cores than its compile phase
+    # already does — 32 builders keep the same peak demand shape on 128 cores.
+    dwarf_extract_jobs: int = Field(default=4, validation_alias="DWARF_EXTRACT_JOBS")
     # IR dumping (Rust only). OFF by default: emitting IR repartitions codegen units,
     # so an IR build's .text bytes differ from a non-IR build of the same source
     # (symbols/.rodata/.data/.eh_frame stay identical) -- a tier must opt in.

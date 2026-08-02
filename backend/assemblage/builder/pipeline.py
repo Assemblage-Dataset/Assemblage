@@ -9,7 +9,14 @@ did, so the observable message sequence and S3 side effects are preserved:
 4. prepare, build (timing the build only), extract DWARF;
 5. on build success: write metadata, upload binaries (one binary message each);
 6. send the final build message with the build time;
-7. clean the clone tree only once everything is safely in S3.
+7. clean the clone tree once the task is done, whatever the outcome.
+
+Step 7 is unconditional (see ``run_task``'s ``finally``). It used to require a
+successful build *and* a fully-successful upload, which meant every failed build,
+every lib-only crate that produced no binaries, and every partial upload left its
+whole clone + build tree on disk forever. At an ~85% Rust failure rate that leaked
+~25 GB per builder per day into the container's writable layer, which
+``docker compose restart`` does not reclaim.
 """
 
 import logging
@@ -20,9 +27,11 @@ from dataclasses import dataclass
 
 from assemblage.build.strategy import BuildStrategy
 from assemblage.builder.artifacts import (
+    ObjectRecord,
     build_prefix,
     generate_metadata,
     save_binaries,
+    save_export_manifest,
     save_metadata_locally,
     save_metadata_to_s3,
 )
@@ -79,39 +88,54 @@ def run_task(ctx: BuildContext, task: BuildTask) -> None:
     commit_hexsha = source.commit_hexsha
     clone_dir = source.clone_dir
 
-    reporter.clone_status(
-        url=task.url,
-        status=CloneStatus.SUCCESS,
-        msg=ctx.uuid[:5] + source.message,
-        task_id=task.task_id,
-    )
-    reporter.build_processing(url=task.url, task_id=task.task_id, commit_hexsha=commit_hexsha)
+    try:
+        reporter.clone_status(
+            url=task.url,
+            status=CloneStatus.SUCCESS,
+            msg=ctx.uuid[:5] + source.message,
+            task_id=task.task_id,
+        )
+        reporter.build_processing(url=task.url, task_id=task.task_id, commit_hexsha=commit_hexsha)
 
-    logger.info("Building %s with flag %s", task.name, ctx.compiler_flag)
-    prepared = strategy.prepare(clone_dir, ctx.compiler_flag)
-    before_build = int(time.time())
-    build_output, build_status = strategy.build(clone_dir, ctx.compiler_flag, prepared)
-    after_build = int(time.time())
+        logger.info("Building %s with flag %s", task.name, ctx.compiler_flag)
+        prepared = strategy.prepare(clone_dir, ctx.compiler_flag)
+        before_build = int(time.time())
+        build_output, build_status = strategy.build(clone_dir, ctx.compiler_flag, prepared)
+        after_build = int(time.time())
 
-    dwarf_list = strategy.debug_info(clone_dir, source.original_files)
-    logger.info("Build %s for task %s with flag %s", build_status, task.name, ctx.compiler_flag)
+        dwarf_list = strategy.debug_info(clone_dir, source.original_files)
+        logger.info("Build %s for task %s with flag %s", build_status, task.name, ctx.compiler_flag)
 
-    if build_status == BuildStatus.SUCCESS:
-        all_saved = _persist_success(ctx, task, source, dwarf_list)
-    else:
-        all_saved = False
-        logger.info("Build failed for %s: %s", task.name, build_output[:500])
+        if build_status == BuildStatus.SUCCESS:
+            finish_msg = "Build Process Finished"
+            if not _persist_success(ctx, task, source, dwarf_list):
+                logger.warning("Not every artifact was saved for %s", task.name)
+        else:
+            # The TAIL, not the head. cargo prints progress first and the actual
+            # error last, so the old ``build_output[:500]`` only ever captured
+            # "Compiling foo v1.2.3" / "Updating crates.io index" and the real
+            # cause never reached the coordinator -- which is why every failed
+            # build in the database reads "Build Process Finished".
+            finish_msg = build_output
+            logger.info("Build failed for %s: %s", task.name, build_output[-500:])
 
-    reporter.build_finished(
-        url=task.url,
-        task_id=task.task_id,
-        status=build_status,
-        build_time=after_build - before_build,
-        commit_hexsha=commit_hexsha,
-    )
-
-    if ctx.s3_enabled and all_saved:
-        _clean_folder(os.path.dirname(clone_dir))
+        reporter.build_finished(
+            url=task.url,
+            task_id=task.task_id,
+            status=build_status,
+            build_time=after_build - before_build,
+            commit_hexsha=commit_hexsha,
+            # BuildReporter keeps the last 1000 chars, the coordinator stores the
+            # last 500 -- both already tail-truncate, so the cause survives.
+            msg=finish_msg,
+        )
+    finally:
+        # Unconditional: the clone tree is scratch in every outcome, and anything
+        # worth keeping has already been uploaded by _persist_success. Still gated
+        # on s3_enabled because local mode leaves the generated metadata (and, with
+        # no bucket, the only copy of it) inside the clone dir.
+        if ctx.s3_enabled:
+            _clean_folder(os.path.dirname(clone_dir))
 
     logger.info("Task %s finished in %.3fs", task.name, time.time() - started)
 
@@ -141,8 +165,9 @@ def _persist_success(
     owner, project = clone_dir.rstrip("/").split("/")[-2:]
     prefix = build_prefix(ctx.strategy, owner, project, commit_hexsha, ctx.compiler_flag)
 
+    metadata_record = None
     if ctx.artifact_bucket is not None:
-        save_metadata_to_s3(
+        metadata_record = save_metadata_to_s3(
             clone_dir=clone_dir,
             prefix=prefix,
             metadata=metadata,
@@ -164,11 +189,23 @@ def _persist_success(
         ctx.reporter.binary(task_id=task.task_id, file_name=file_name)
     logger.info("Binaries saved to %s", saved.dest)
 
-    _persist_ir(ctx, task, prefix)
+    ir_records = _persist_ir(ctx, task, prefix)
+    # Written last so it can account for every object the build stored, including
+    # IR. Like IR, it is additive: a failure here never fails a good build.
+    if ctx.artifact_bucket is not None:
+        save_export_manifest(
+            prefix=prefix,
+            artifact_bucket=ctx.artifact_bucket,
+            task=task,
+            commit_hexsha=commit_hexsha,
+            metadata=metadata_record,
+            binaries=saved.records,
+            ir=ir_records,
+        )
     return saved.all_saved
 
 
-def _persist_ir(ctx: BuildContext, task: BuildTask, prefix: str) -> None:
+def _persist_ir(ctx: BuildContext, task: BuildTask, prefix: str) -> list[ObjectRecord]:
     """Upload this build's IR tarballs + manifest and report them.
 
     A no-op for every strategy without a ``collect_ir`` hook (all the C/C++ ones) and
@@ -181,11 +218,12 @@ def _persist_ir(ctx: BuildContext, task: BuildTask, prefix: str) -> None:
     """
     collect = getattr(ctx.strategy, "collect_ir", None)
     if collect is None or ctx.artifact_bucket is None:
-        return
+        return []
+    stored: list[ObjectRecord] = []
     try:
         bundle = collect()
         if bundle is None or not bundle.tarballs:
-            return
+            return []
 
         records: list[IrStageRecord] = []
         for stage, blob in bundle.tarballs.items():
@@ -198,6 +236,15 @@ def _persist_ir(ctx: BuildContext, task: BuildTask, prefix: str) -> None:
                     s3_key=key,
                     file_count=len(entries),
                     crate_count=len({d.crate for d in entries}),
+                    raw_bytes=sum(d.raw_bytes for d in entries),
+                    stored_bytes=len(blob),
+                )
+            )
+            # IR tarballs are already gzipped, so they go to S3 verbatim; the
+            # export manifest still accounts for them.
+            stored.append(
+                ObjectRecord(
+                    file=f"{stage.value}.tar.gz",
                     raw_bytes=sum(d.raw_bytes for d in entries),
                     stored_bytes=len(blob),
                 )
@@ -226,6 +273,7 @@ def _persist_ir(ctx: BuildContext, task: BuildTask, prefix: str) -> None:
         )
     except Exception:
         logger.exception("storing IR failed for %s; the build itself is unaffected", prefix)
+    return stored
 
 
 def _clean_folder(path: str) -> None:

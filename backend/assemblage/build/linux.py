@@ -20,7 +20,7 @@ from assemblage.build.commands import run_command
 from assemblage.build.detect import get_build_system
 from assemblage.build.discovery import find_binaries
 from assemblage.build.strategy import BuildStrategy
-from assemblage.dwarf.extract import extract_dwarf_info
+from assemblage.dwarf.isolated import extract_each
 from assemblage.enums import BuildStatus
 from assemblage.settings import BuilderSettings
 
@@ -45,6 +45,11 @@ class LinuxBuildStrategy(BuildStrategy):
         self.build_mode = BUILD_MODE
         self.toolset_version: str | None = None
         self.base_path = work_base_path(settings)
+        # Extraction budgets, enforced out-of-process (see dwarf.isolated).
+        self.dwarf_timeout_s = settings.dwarf_timeout_s
+        self.dwarf_phase_timeout_s = settings.dwarf_phase_timeout_s
+        self.dwarf_mem_limit_bytes = settings.dwarf_mem_limit_mb * 1024 * 1024
+        self.dwarf_extract_jobs = settings.dwarf_extract_jobs
         self.compiler_version = self._get_compiler_version()
 
         try:
@@ -146,16 +151,17 @@ class LinuxBuildStrategy(BuildStrategy):
         if not bin_files:
             return []
 
-        items: list[dict[str, object]] = []
-        for binfile in bin_files:
-            try:
-                item = extract_dwarf_info(binfile)
-                if item:
-                    items.append(item)
-            except Exception as e:
-                logger.warning(
-                    "DWARF extraction failed for %s: %s: %s", binfile, type(e).__name__, e
-                )
+        # No source_root: the C golden is pinned against the un-remapped output.
+        # Same extractor, same arguments -- only the process it runs in changed.
+        items: list[dict[str, object]] = list(
+            extract_each(
+                bin_files,
+                timeout_secs=self.dwarf_timeout_s,
+                phase_timeout_s=self.dwarf_phase_timeout_s,
+                mem_limit_bytes=self.dwarf_mem_limit_bytes,
+                jobs=self.dwarf_extract_jobs,
+            )
+        )
         if not items:
             logger.info("No DWARF debug info found in any binary")
         return items

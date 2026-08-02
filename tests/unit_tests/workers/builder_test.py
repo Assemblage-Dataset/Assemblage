@@ -197,6 +197,9 @@ class TestPipelineOrdering(unittest.TestCase):
     def _ctx(self, reporter):
         strategy = SimpleNamespace(
             compiler="gcc",
+            # build_mode is part of the v2 build dir (it closes the C-side
+            # Debug/Release collision), so build_prefix needs it here too.
+            build_mode="RelWithDebInfo",
             prepare=lambda clone_dir, flag: None,
             build=lambda clone_dir, flag, prepared: ("build output", BuildStatus.SUCCESS),
             debug_info=lambda clone_dir, originals: [],
@@ -299,6 +302,58 @@ class TestBuilderAppHandler(unittest.TestCase):
             handler(self._incoming())
         shutdown.assert_not_called()
         self.assertEqual(app._processed, 1)
+
+
+class TestSweepStaleScratch(unittest.TestCase):
+    """A restarted builder must reclaim scratch orphaned by a SIGKILLed build.
+
+    SIGKILL (build timeout, 1000-task recycle, storm) skips pipeline.py's finally
+    cleanup, and docker restart preserves the layer -- so orphaned target dirs pile
+    up (783 GB measured 2026-07-21) until a fresh builder wipes them at startup.
+    """
+
+    def _projects(self, base):
+        p = os.path.join(base, "projects")
+        os.makedirs(p)
+        return p
+
+    def test_removes_all_leftover_owner_dirs(self):
+        import tempfile
+
+        from assemblage.builder.app import _sweep_stale_scratch
+
+        with tempfile.TemporaryDirectory() as base:
+            projects = self._projects(base)
+            for owner in ("alice", "bob"):
+                d = os.path.join(projects, owner, "repo", "target")
+                os.makedirs(d)
+                with open(os.path.join(d, "big.rlib"), "w") as fh:
+                    fh.write("x" * 1000)
+            _sweep_stale_scratch(base)
+            # the projects dir itself survives; everything under it is gone
+            self.assertTrue(os.path.isdir(projects))
+            self.assertEqual(os.listdir(projects), [])
+
+    def test_missing_projects_dir_is_not_an_error(self):
+        import tempfile
+
+        from assemblage.builder.app import _sweep_stale_scratch
+
+        with tempfile.TemporaryDirectory() as base:
+            _sweep_stale_scratch(base)  # no projects/ yet -- must not raise
+
+    def test_runs_before_registration_at_startup(self):
+        """The sweep must fire on run() even if registration later fails."""
+        from assemblage.builder.app import BuilderApp
+
+        with patch.dict(os.environ, _BUILDER_ENV, clear=False):
+            app = BuilderApp(BuilderSettings())
+        with (
+            patch("assemblage.builder.app._sweep_stale_scratch") as sweep,
+            patch.object(app, "_register", return_value=False),
+        ):
+            app.run()
+        sweep.assert_called_once_with(app._strategy.base_path)
 
 
 if __name__ == "__main__":

@@ -23,6 +23,7 @@ from pathlib import Path
 
 import boto3
 import botocore
+import zstandard
 from botocore.client import Config
 from sqlalchemy import create_engine, text
 
@@ -31,7 +32,7 @@ from assemblage.dataset.construct import METAFILE, db_construct
 from assemblage.dataset.orm import init_clean_database, migrate_existing_db
 from assemblage.dataset.store import Dataset_DB
 from assemblage.dwarf.extract import extract_dwarf_info as _shared_extract_dwarf_info
-from assemblage.storage import layout
+from assemblage.storage import compress, layout
 
 logging.basicConfig(
     format="%(asctime)s %(levelname)s %(message)s",
@@ -211,14 +212,21 @@ def download_binary(
 ):
     owner, project = parse_github_owner_project(repo_url)
     basename = os.path.basename(filename)
-    # The builder's real key layout (storage.layout, the one source of truth)
-    # comes first; the slash-separated candidates below match historical objects
-    # written before the builder switched to the flat prefix.
+    is_rust = (language or "").lower() == "rust"
+    # v2 (compressed, HF-aligned) is tried first, then the v1 raw keys, then the
+    # historical slash-separated ones. Every shape stays readable, so the corpus
+    # is usable while the backfill runs and never needs a flag day.
+    backend = (codegen_backend or "") if is_rust else compiler
+    v2_prefix = layout.build_dir(
+        owner, project, commit_hexsha, opt_enum, backend, build_mode or "RelWithDebInfo"
+    )
+    compressed = {layout.binary_key(v2_prefix, basename)}
+
     candidates = []
     # Rust artifacts live under a backend/mode-qualified prefix (frozen in
     # storage.layout), so the Rust key is tried first for rust builds. The C
     # candidates below stay as a fallback and keep C/C++ behaviour unchanged.
-    if (language or "").lower() == "rust":
+    if is_rust:
         rust_prefix = layout.rust_artifact_prefix(
             owner, project, commit_hexsha, codegen_backend or "", build_mode or "", opt_enum
         )
@@ -232,14 +240,30 @@ def download_binary(
     if old_name:
         candidates.append(f"{owner}/{project}/{commit_hexsha}/{compiler}/opt_{old_name}/{basename}")
     candidates.append(f"{owner}/{project}/{commit_hexsha}/{compiler}/opt_{opt_enum}/{basename}")
-    for s3_key in candidates:
+    for s3_key in sorted(compressed) + candidates:
         try:
-            s3.download_file(bucket, s3_key, dest_path)
+            if s3_key in compressed:
+                # Land the raw binary at dest_path: every downstream consumer
+                # (DWARF extraction, disassembly) needs an ELF, not a frame.
+                packed = dest_path + layout.COMPRESSED_SUFFIX
+                s3.download_file(bucket, s3_key, packed)
+                try:
+                    compress.decompress_file(packed, dest_path)
+                finally:
+                    os.remove(packed)
+            else:
+                s3.download_file(bucket, s3_key, dest_path)
             return True
         except botocore.exceptions.ClientError:
             continue
+        except (OSError, zstandard.ZstdError) as exc:
+            logger.warning("Failed to decompress s3://%s/%s : %s", bucket, s3_key, exc)
+            continue
     logger.warning(
-        "Failed to download s3://%s/%s (tried %d paths)", bucket, candidates[0], len(candidates)
+        "Failed to download s3://%s/%s (tried %d paths)",
+        bucket,
+        next(iter(compressed)),
+        len(compressed) + len(candidates),
     )
     return False
 
@@ -265,14 +289,28 @@ def download_rust_binary_info_list(s3, bucket, row):
         row.get("build_type") or "",
         row.get("compiler_flag", "") or "",
     )
-    key = layout.metadata_key(prefix)
-    try:
-        body = s3.get_object(Bucket=bucket, Key=key)["Body"].read()
-        meta = json.loads(body)
-    except (botocore.exceptions.ClientError, ValueError) as exc:
-        logger.warning("Rust metadata unavailable s3://%s/%s : %s", bucket, key, exc)
-        return None
-    return meta.get("Binary_info_list") or []
+    v2_prefix = layout.build_dir(
+        owner,
+        project,
+        row["commit_hexsha"] or "",
+        row.get("compiler_flag", "") or "",
+        row.get("codegen_backend") or "",
+        row.get("build_type") or "RelWithDebInfo",
+    )
+    # v2 first, then v1 raw — same dual-read as download_binary.
+    keys = [(layout.compressed_metadata_key(v2_prefix), True), (layout.metadata_key(prefix), False)]
+    for key, packed in keys:
+        try:
+            body = s3.get_object(Bucket=bucket, Key=key)["Body"].read()
+            if packed:
+                body = compress.decompress_bytes(body)
+            meta = json.loads(body)
+        except (botocore.exceptions.ClientError, ValueError, zstandard.ZstdError) as exc:
+            logger.debug("Rust metadata unavailable s3://%s/%s : %s", bucket, key, exc)
+            continue
+        return meta.get("Binary_info_list") or []
+    logger.warning("Rust metadata unavailable s3://%s/%s (tried %d keys)", bucket, keys[0][0], 2)
+    return None
 
 
 def download_source_archive(s3, owner, project, commit_hexsha, dest_path):
