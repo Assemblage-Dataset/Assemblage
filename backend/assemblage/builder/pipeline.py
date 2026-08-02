@@ -27,9 +27,11 @@ from dataclasses import dataclass
 
 from assemblage.build.strategy import BuildStrategy
 from assemblage.builder.artifacts import (
+    ObjectRecord,
     build_prefix,
     generate_metadata,
     save_binaries,
+    save_export_manifest,
     save_metadata_locally,
     save_metadata_to_s3,
 )
@@ -163,8 +165,9 @@ def _persist_success(
     owner, project = clone_dir.rstrip("/").split("/")[-2:]
     prefix = build_prefix(ctx.strategy, owner, project, commit_hexsha, ctx.compiler_flag)
 
+    metadata_record = None
     if ctx.artifact_bucket is not None:
-        save_metadata_to_s3(
+        metadata_record = save_metadata_to_s3(
             clone_dir=clone_dir,
             prefix=prefix,
             metadata=metadata,
@@ -186,11 +189,23 @@ def _persist_success(
         ctx.reporter.binary(task_id=task.task_id, file_name=file_name)
     logger.info("Binaries saved to %s", saved.dest)
 
-    _persist_ir(ctx, task, prefix)
+    ir_records = _persist_ir(ctx, task, prefix)
+    # Written last so it can account for every object the build stored, including
+    # IR. Like IR, it is additive: a failure here never fails a good build.
+    if ctx.artifact_bucket is not None:
+        save_export_manifest(
+            prefix=prefix,
+            artifact_bucket=ctx.artifact_bucket,
+            task=task,
+            commit_hexsha=commit_hexsha,
+            metadata=metadata_record,
+            binaries=saved.records,
+            ir=ir_records,
+        )
     return saved.all_saved
 
 
-def _persist_ir(ctx: BuildContext, task: BuildTask, prefix: str) -> None:
+def _persist_ir(ctx: BuildContext, task: BuildTask, prefix: str) -> list[ObjectRecord]:
     """Upload this build's IR tarballs + manifest and report them.
 
     A no-op for every strategy without a ``collect_ir`` hook (all the C/C++ ones) and
@@ -203,11 +218,12 @@ def _persist_ir(ctx: BuildContext, task: BuildTask, prefix: str) -> None:
     """
     collect = getattr(ctx.strategy, "collect_ir", None)
     if collect is None or ctx.artifact_bucket is None:
-        return
+        return []
+    stored: list[ObjectRecord] = []
     try:
         bundle = collect()
         if bundle is None or not bundle.tarballs:
-            return
+            return []
 
         records: list[IrStageRecord] = []
         for stage, blob in bundle.tarballs.items():
@@ -220,6 +236,15 @@ def _persist_ir(ctx: BuildContext, task: BuildTask, prefix: str) -> None:
                     s3_key=key,
                     file_count=len(entries),
                     crate_count=len({d.crate for d in entries}),
+                    raw_bytes=sum(d.raw_bytes for d in entries),
+                    stored_bytes=len(blob),
+                )
+            )
+            # IR tarballs are already gzipped, so they go to S3 verbatim; the
+            # export manifest still accounts for them.
+            stored.append(
+                ObjectRecord(
+                    file=f"{stage.value}.tar.gz",
                     raw_bytes=sum(d.raw_bytes for d in entries),
                     stored_bytes=len(blob),
                 )
@@ -248,6 +273,7 @@ def _persist_ir(ctx: BuildContext, task: BuildTask, prefix: str) -> None:
         )
     except Exception:
         logger.exception("storing IR failed for %s; the build itself is unaffected", prefix)
+    return stored
 
 
 def _clean_folder(path: str) -> None:

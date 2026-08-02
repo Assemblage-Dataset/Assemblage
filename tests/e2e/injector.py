@@ -33,6 +33,7 @@ from pathlib import Path
 import boto3
 import pika
 import psycopg2
+import zstandard
 from elftools.elf.elffile import ELFFile
 
 FIXTURES = Path("/fixtures/repos")
@@ -361,6 +362,20 @@ def find_by_demangled(funcs: list[dict], needle: str) -> list[dict]:
     return [f for f in funcs if needle in f.get("demangled_name", "")]
 
 
+def read_meta(s3, prefix: str) -> dict:
+    """Read a v2 build's compressed ``assemblage_meta.json``."""
+    blob = s3.get_object(Bucket="artifacts", Key=f"{prefix}/metadata/assemblage_meta.json.zst")[
+        "Body"
+    ].read()
+    return json.loads(zstandard.ZstdDecompressor().stream_reader(io.BytesIO(blob)).read())
+
+
+def read_binary(s3, prefix: str, name: str) -> bytes:
+    """Read and decompress a v2 build's stored binary."""
+    blob = s3.get_object(Bucket="artifacts", Key=f"{prefix}/binaries/{name}.zst")["Body"].read()
+    return zstandard.ZstdDecompressor().stream_reader(io.BytesIO(blob)).read()
+
+
 def assert_rust(s3, sha12: str) -> bool:
     ok = True
     metas: dict[str, dict] = {}
@@ -368,12 +383,13 @@ def assert_rust(s3, sha12: str) -> bool:
     fixture_lib = (FIXTURES / RUST_REPO / "golden_lib" / "src" / "lib.rs").read_bytes()
 
     for flag in RUST_FLAGS:
-        prefix = f"{USER}_{RUST_REPO}_{sha12}_rustc-llvm_RelWithDebInfo_{flag}"
+        prefix = f"{USER}_{RUST_REPO}_{sha12}-{flag.lstrip('-')}-llvm-RelWithDebInfo"
 
         # (b) exact S3 keys ---------------------------------------------------
         expected = [
-            ("artifacts", f"{prefix}/{RUST_BINARY}"),
-            ("artifacts", f"{prefix}/assemblage_meta.json"),
+            ("artifacts", f"{prefix}/binaries/{RUST_BINARY}.zst"),
+            ("artifacts", f"{prefix}/metadata/assemblage_meta.json.zst"),
+            ("artifacts", f"{prefix}/export.json"),
             ("project-archive", f"{USER}/{RUST_REPO}/{sha12}.tar.gz"),
             ("project-archive", f"{USER}/{RUST_REPO}/latest.txt"),
         ]
@@ -415,9 +431,7 @@ def assert_rust(s3, sha12: str) -> bool:
                     log(f"{flag} archive: golden_lib/src/lib.rs matches fixture")
 
         # (c) metadata --------------------------------------------------------
-        meta = json.loads(
-            s3.get_object(Bucket="artifacts", Key=f"{prefix}/assemblage_meta.json")["Body"].read()
-        )
+        meta = read_meta(s3, prefix)
         metas[flag] = meta
         c_era = {
             "Platform",
@@ -637,10 +651,11 @@ def assert_c(s3, sha12: str, status_id: int) -> bool:
         fail("no 'hello' binaries row")
         ok = False
 
-    prefix = f"{USER}_{REPO}_{sha12}_gcc_-O0"
+    prefix = f"{USER}_{REPO}_{sha12}-O0-gcc-RelWithDebInfo"
     expected_keys = {
-        ("artifacts", f"{prefix}/assemblage_meta.json"),
-        ("artifacts", f"{prefix}/hello"),
+        ("artifacts", f"{prefix}/metadata/assemblage_meta.json.zst"),
+        ("artifacts", f"{prefix}/binaries/hello.zst"),
+        ("artifacts", f"{prefix}/export.json"),
         ("project-archive", f"{USER}/{REPO}/{sha12}.tar.gz"),
         ("project-archive", f"{USER}/{REPO}/latest.txt"),
     }
@@ -652,9 +667,7 @@ def assert_c(s3, sha12: str, status_id: int) -> bool:
             fail(f"missing s3 object {bucket}/{key}")
             ok = False
 
-    meta = json.loads(
-        s3.get_object(Bucket="artifacts", Key=f"{prefix}/assemblage_meta.json")["Body"].read()
-    )
+    meta = read_meta(s3, prefix)
     required_keys = {
         "Platform",
         "Build_mode",

@@ -197,6 +197,9 @@ class TestPipelineOrdering(unittest.TestCase):
     def _ctx(self, reporter):
         strategy = SimpleNamespace(
             compiler="gcc",
+            # build_mode is part of the v2 build dir (it closes the C-side
+            # Debug/Release collision), so build_prefix needs it here too.
+            build_mode="RelWithDebInfo",
             prepare=lambda clone_dir, flag: None,
             build=lambda clone_dir, flag, prepared: ("build output", BuildStatus.SUCCESS),
             debug_info=lambda clone_dir, originals: [],

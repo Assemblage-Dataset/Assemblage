@@ -27,6 +27,23 @@ METADATA_FILENAME = "assemblage_meta.json"
 IR_DIRNAME = "ir"
 IR_MANIFEST_FILENAME = "manifest.json"
 
+# --- v2: compressed, HuggingFace-aligned ------------------------------------
+# The v1 layout above stores every object raw, which cost 2.3 TiB for 23k builds
+# and forced the publish path to recompress the whole corpus on every release.
+# v2 stores what the published dataset already stores, so exporting is a copy:
+#
+#   {build_dir}/binaries/{name}.zst
+#   {build_dir}/metadata/assemblage_meta.json.zst
+#   {build_dir}/ir/{stage}.tar.gz          (already gzipped; unchanged)
+#   {build_dir}/export.json                (provenance + byte counts)
+#
+# v1 keys are NOT rewritten in place by the builder — readers try v2 first and
+# fall back, so the two shapes coexist until the backfill finishes.
+COMPRESSED_SUFFIX = ".zst"
+BINARIES_DIRNAME = "binaries"
+METADATA_DIRNAME = "metadata"
+EXPORT_MANIFEST_FILENAME = "export.json"
+
 
 def artifact_prefix(owner: str, project: str, sha12: str, compiler: str, flag: str) -> str:
     """The flat per-build prefix in the ``artifacts`` bucket."""
@@ -73,6 +90,39 @@ def ir_tarball_key(prefix: str, stage: str) -> str:
 def ir_manifest_key(prefix: str) -> str:
     """The IR manifest (what stages/crates/sizes are in the tarballs)."""
     return f"{ir_prefix(prefix)}/{IR_MANIFEST_FILENAME}"
+
+
+def build_dir(owner: str, project: str, sha12: str, flag: str, backend: str, mode: str) -> str:
+    """The v2 per-build directory: ``{owner}_{project}_{sha12}-{flag}-{backend}-{mode}``.
+
+    Identical to the directory name inside a published HuggingFace repo tar, so a
+    build exports without being renamed. ``backend`` is the bare codegen backend
+    for Rust (``llvm``, not ``rustc-llvm``) and the compiler for C/C++
+    (``gcc``/``clang``); ``flag`` is stored without its leading dash. Unlike the
+    v1 C prefix this always carries ``mode``, which closes the C-side collision
+    between Debug and Release builds of one commit.
+    """
+    return f"{owner}_{project}_{sha12}-{flag.lstrip('-')}-{backend}-{mode}"
+
+
+def binary_key(prefix: str, filename: str) -> str:
+    """A compressed binary inside a v2 build dir."""
+    return f"{prefix}/{BINARIES_DIRNAME}/{filename}{COMPRESSED_SUFFIX}"
+
+
+def compressed_metadata_key(prefix: str) -> str:
+    """The compressed ``assemblage_meta.json`` inside a v2 build dir."""
+    return f"{prefix}/{METADATA_DIRNAME}/{METADATA_FILENAME}{COMPRESSED_SUFFIX}"
+
+
+def export_manifest_key(prefix: str) -> str:
+    """The ``export.json`` provenance manifest inside a v2 build dir.
+
+    Written by the builder with everything it knows (source prefix, per-object
+    raw/stored bytes, repo URL, commit). ``license`` is added host-side from
+    ``projects.license`` — builders have no database access.
+    """
+    return f"{prefix}/{EXPORT_MANIFEST_FILENAME}"
 
 
 def archive_key(owner: str, project: str, sha12: str) -> str:
