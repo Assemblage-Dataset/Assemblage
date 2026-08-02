@@ -1,15 +1,22 @@
 # Assemblage
 
 Assemblage is a distributed binary-corpus generator. It discovers licensed C/C++
-repositories on GitHub, builds them with multiple compilers and optimization
-levels, and archives the resulting binaries with rich, function-level metadata —
-producing labeled training data for machine-learning approaches to binary
-analysis (and for static/dynamic analysis and reverse engineering).
+and Rust repositories on GitHub, builds them with multiple compilers and
+optimization levels, and archives the resulting binaries with rich,
+function-level metadata — producing labeled training data for machine-learning
+approaches to binary analysis (and for static/dynamic analysis and reverse
+engineering).
 
 Paper: [arxiv.org/abs/2405.03991](https://arxiv.org/abs/2405.03991).
 Code is MIT-licensed. The published dataset (permissively-licensed subset only)
 is at [assemblage-dataset.net](https://assemblage-dataset.net); see the
 [data sheet](https://assemblage-dataset.net/assets/total-datasheet.pdf).
+
+**Rust dataset.** 18,450 compiled Rust binaries from 3,034 permissively licensed
+repositories — each with DWARF function/line metadata, and compiler IR for a
+subset — are published on HuggingFace at
+[`changliu8541/assemblage-rust`](https://huggingface.co/datasets/changliu8541/assemblage-rust).
+It is an unprocessed crawl: raw build outputs, filtered only by license.
 
 > **Provenance.** In July 2026 this codebase was deep-refactored and extended
 > with the Rust worker by Claude (Fable 5, Anthropic) under the maintainer's
@@ -56,7 +63,8 @@ origin tags (in-repo vs. dependency vs. stdlib). Tier notes: LLVM and Cranelift
 give full source/line mapping; the GCC (cg_gcc) tier is experimental —
 names/addresses are reliable but repo-level line info is largely absent; Release
 binaries keep symbol tables, not repo debug info. The full matrix lives in
-`docker-compose.yml`.
+`docker-compose.yml`. The corpus this produces is published at
+[`changliu8541/assemblage-rust`](https://huggingface.co/datasets/changliu8541/assemblage-rust).
 
 The Python package lives under `backend/assemblage/`; see
 `backend/assemblage/README.md` for the module map.
