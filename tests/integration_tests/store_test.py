@@ -2,9 +2,11 @@
 
 import logging
 import unittest
+from typing import ClassVar
 
 import pytest
 import sqlalchemy as sqla
+from assemblage.blocklist import Blocklist
 from assemblage.db.models import Status
 from assemblage.db.store import DispatchCandidate
 from assemblage.enums import BuildStatus, CloneStatus
@@ -344,6 +346,91 @@ class TestCoordinatorStore(unittest.TestCase):
         self.assertEqual(store.count_pending(1), 3)
         store.mark_clone_processing(1)
         self.assertEqual(store.count_pending(1), 2)
+
+
+class TestBlocklistedDispatch(unittest.TestCase):
+    """The blocklist has to be applied in SQL, not to the returned row.
+
+    ``next_dispatchable`` selects one row; rejecting it afterwards would leave it
+    NOT_STARTED/INIT for the next tick to select and reject again, wedging that
+    build option's dispatcher forever. These tests pin the behaviour that matters:
+    a blocked repo at the head of the queue is *skipped over*, not returned.
+    """
+
+    #: PROJECT_1/2 belong to the blocked owner and sort ahead of PROJECT_3.
+    URLS: ClassVar[list[str]] = [
+        "https://api.github.com/repos/Dicklesworthstone/frankenpandas",
+        "https://api.github.com/repos/Dicklesworthstone/franken_numpy",
+        "https://api.github.com/repos/id-Software/DOOM",
+    ]
+
+    def _seed(self):
+        helper.truncate_all()
+        helper.seed_database_projects_urls(self.URLS)
+        helper.seed_database_buildopts()
+        helper.seed_database_statuses_unstarted()
+
+    @staticmethod
+    def _provider(text: str):
+        blocklist = Blocklist.parse(text)
+        return lambda: blocklist
+
+    def test_skips_blocked_owner_at_the_head_of_the_queue(self):
+        self._seed()
+        store = helper.make_store(self._provider("Dicklesworthstone"))
+
+        candidate = store.next_dispatchable(1)
+
+        self.assertIsNotNone(candidate)
+        self.assertEqual(candidate.name, "PROJECT_3")
+        self.assertEqual(candidate.url, self.URLS[2])
+
+    def test_skips_a_single_blocked_repo_but_keeps_its_siblings(self):
+        self._seed()
+        store = helper.make_store(self._provider("Dicklesworthstone/frankenpandas"))
+
+        candidate = store.next_dispatchable(1)
+
+        self.assertEqual(candidate.name, "PROJECT_2")
+
+    def test_underscore_in_a_repo_name_is_not_a_wildcard(self):
+        # 'franken_numpy' as a raw LIKE pattern would also match 'frankenXnumpy';
+        # blocking it must leave the *other* franken repo dispatchable.
+        self._seed()
+        store = helper.make_store(self._provider("Dicklesworthstone/franken_numpy"))
+
+        candidate = store.next_dispatchable(1)
+
+        self.assertEqual(candidate.name, "PROJECT_1")
+
+    def test_returns_none_when_every_candidate_is_blocked(self):
+        self._seed()
+        store = helper.make_store(self._provider("Dicklesworthstone\nid-Software\n"))
+
+        self.assertIsNone(store.next_dispatchable(1))
+
+    def test_empty_blocklist_dispatches_normally(self):
+        self._seed()
+        store = helper.make_store(self._provider("# nothing blocked\n"))
+
+        self.assertEqual(store.next_dispatchable(1).name, "PROJECT_1")
+
+    def test_count_pending_excludes_blocked_repos(self):
+        self._seed()
+        store = helper.make_store(self._provider("Dicklesworthstone"))
+
+        self.assertEqual(store.count_pending(1), 1)
+
+    def test_a_live_edit_takes_effect_without_rebuilding_the_store(self):
+        # The coordinator is never restarted to apply a blocklist change, so the
+        # store must read the provider on every call rather than caching it.
+        self._seed()
+        blocklist = {"current": Blocklist.parse("")}
+        store = helper.make_store(lambda: blocklist["current"])
+
+        self.assertEqual(store.next_dispatchable(1).name, "PROJECT_1")
+        blocklist["current"] = Blocklist.parse("Dicklesworthstone")
+        self.assertEqual(store.next_dispatchable(1).name, "PROJECT_3")
 
 
 if __name__ == "__main__":

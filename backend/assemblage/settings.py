@@ -125,6 +125,11 @@ class CoordinatorSettings(WorkerSettings):
 
     db: DatabaseSettings = Field(default_factory=DatabaseSettings)
     s3: S3Settings = Field(default_factory=S3Settings)
+    # Owners/repos never dispatched. A path, not a list of entries, because the
+    # file is re-read on a live coordinator -- restarting it to change a config
+    # value would strand the fleet until builders re-register. ./backend is
+    # bind-mounted to /app, so this is backend/blocklist.txt on the host.
+    blocklist_path: str = Field(default="/app/blocklist.txt", validation_alias="BLOCKLIST_PATH")
 
 
 class BuilderSettings(WorkerSettings):

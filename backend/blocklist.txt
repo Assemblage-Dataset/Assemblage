@@ -1,0 +1,18 @@
+# Owners and repositories that are never dispatched to a builder.
+#
+# One entry per line. A bare name blocks every repository owned by that account;
+# "owner/name" (or a full GitHub URL) blocks a single repository. Matching is
+# case-insensitive. '#' starts a comment.
+#
+# The coordinator re-reads this file every ~30s, so edits take effect on a live
+# coordinator -- do NOT restart it to apply a change (that idles the fleet until
+# builders re-register). ./backend is bind-mounted to /app in the container.
+#
+# Already-built artifacts are not removed by an entry here; blocking only stops
+# future dispatch.
+
+# 49 repos, 980 build tasks, ~581 GiB of the artifacts bucket -- five franken*
+# repos alone are 20% of the corpus by bytes (measured 2026-08-02). All but 12
+# of their builds are already excluded from the published HF dataset by the
+# license filter, so blocking them costs the release nothing.
+Dicklesworthstone

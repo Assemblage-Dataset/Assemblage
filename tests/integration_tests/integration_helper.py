@@ -23,11 +23,39 @@ _CREATED_AT = datetime.datetime(2025, 11, 15, 12, 28, 25)
 _UPDATED_AT = datetime.datetime(2025, 11, 15, 12, 41, 59)
 
 
-def make_store():
-    """A CoordinatorStore pointed at the scratch test database."""
+def make_store(blocklist=None):
+    """A CoordinatorStore pointed at the scratch test database.
+
+    ``blocklist`` is the optional provider the store consults to exclude repos
+    from dispatch (see :mod:`assemblage.blocklist`).
+    """
     from assemblage.db.store import CoordinatorStore
 
-    return CoordinatorStore(make_engine(TEST_DB_ADDR))
+    return CoordinatorStore(make_engine(TEST_DB_ADDR), blocklist)
+
+
+def seed_database_projects_urls(urls: list[str], language: str = "c++") -> None:
+    """Seed one project per URL, named ``PROJECT_1..n``, in the given order.
+
+    ``seed_database_projects`` writes placeholder URLs (``URL_1``); the blocklist
+    matches on real repo URLs, so those tests seed their own.
+    """
+    with session_scope(_engine) as session:
+        for i, url in enumerate(urls, start=1):
+            session.add(
+                RepoDO(
+                    name=f"PROJECT_{i}",
+                    url=url,
+                    language=language,
+                    owner_id=10 + i,
+                    description="DESCRIPTION",
+                    created_at=_CREATED_AT,
+                    updated_at=_UPDATED_AT,
+                    size=5 * i,
+                    build_system="BUILD_SYS",
+                    branch="BRANCH",
+                )
+            )
 
 
 def test_database_settings() -> DatabaseSettings:
