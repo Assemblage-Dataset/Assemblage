@@ -4,8 +4,8 @@ Assemblage is a distributed binary-corpus generator. It discovers licensed C/C++
 and Rust repositories on GitHub, builds them with multiple compilers and
 optimization levels, and archives the resulting binaries with rich,
 function-level metadata — producing labeled training data for machine-learning
-approaches to binary analysis (and for static/dynamic analysis and reverse
-engineering).
+approaches to binary analysis, and for static/dynamic analysis and reverse
+engineering.
 
 Paper: [arxiv.org/abs/2405.03991](https://arxiv.org/abs/2405.03991).
 Code is MIT-licensed. The published dataset (permissively-licensed subset only)
@@ -13,8 +13,8 @@ is at [assemblage-dataset.net](https://assemblage-dataset.net); see the
 [data sheet](https://assemblage-dataset.net/assets/total-datasheet.pdf).
 
 **Rust dataset.** 18,450 compiled Rust binaries from 3,034 permissively licensed
-repositories — each with DWARF function/line metadata, and compiler IR for a
-subset — are published on HuggingFace at
+repositories — each with DWARF function/line metadata, the source tree it was
+built from, and compiler IR for a subset — are published on HuggingFace at
 [`changliu8541/assemblage-rust`](https://huggingface.co/datasets/changliu8541/assemblage-rust).
 It is an unprocessed crawl: raw build outputs, filtered only by license.
 
@@ -26,7 +26,7 @@ It is an unprocessed crawl: raw build outputs, filtered only by license.
 > [`pre-refactor`](../../tree/pre-refactor) branch, whose HEAD is the last
 > commit predating the refactor.
 
-## Architecture in one page
+## Architecture
 
 ```
  GitHub ─▶ scraper ─▶ [scrape] ─▶ coordinator ─▶ [build_opt_{id}] ─▶ builders
@@ -34,130 +34,50 @@ It is an unprocessed crawl: raw build outputs, filtered only by license.
                                       ▼                                  ▼
                                  PostgreSQL  ◀── [clone|build|binary] ── MinIO
                                                                           │
-                                        host-side daily pipeline ◀────────┘
-                                                     │
-                                                     ▼
-                                         linux_licensed.sqlite (corpus)
+                                                       export pipeline ◀──┘
+                                                              │
+                                                              ▼
+                                                    published corpus
 ```
 
-- **scraper** — date-windowed GitHub search, license-filtered, language
-  lowercased; emits bundles of 25 repos.
-- **coordinator** — inserts repos, creates one `b_status` row per buildopt, and
-  runs one dispatch thread per buildopt (per-opt pacing; builders ack before
-  building — at-most-once).
-- **builders** — 10 services (gcc/clang × `-O0 -O1 -O2 -O3 -Os`), each a distinct
-  buildopt with its own dispatch queue; clone or restore-from-S3, build, extract
-  DWARF, upload artifacts + `assemblage_meta.json`.
-- **dataset pipeline** — pulls new licensed Linux artifacts from MinIO and
-  appends them (with DWARF function/RVA/line info) to a cumulative SQLite corpus.
+- **scraper** — date-windowed, license-filtered GitHub search; emits repo bundles.
+- **coordinator** — records repos, fans each one out across the build matrix, and
+  runs one dispatch thread per build option.
+- **builders** — containers that clone or restore a repo, compile it, extract
+  DWARF, and upload binaries plus `assemblage_meta.json`. Builders ack before
+  building, so delivery is at-most-once by design.
+- **export pipeline** — host-side; turns artifacts into a publishable corpus.
 
-**Rust support.** Alongside the C/C++ flow, Assemblage builds Rust (cargo)
-repositories: a dedicated `scraper_rust` service scrapes `language:rust`, and 20
-`builder_rust_*` services compile each repo with `rustc`'s three
-`-Zcodegen-backend` targets (LLVM, Cranelift, and GCC/cg_gcc) across three build
-modes (Debug / RelWithDebInfo / Release) and the `-O0..-O3, -Os, -Oz` flag
-spread, all from one pinned nightly (`docker/rust/Dockerfile`,
-image `assemblage-rust:default`). Rust binaries carry the same DWARF
-function/line metadata as the C corpus, plus demangled names and per-function
-origin tags (in-repo vs. dependency vs. stdlib). Tier notes: LLVM and Cranelift
-give full source/line mapping; the GCC (cg_gcc) tier is experimental —
-names/addresses are reliable but repo-level line info is largely absent; Release
-binaries keep symbol tables, not repo debug info. The full matrix lives in
-`docker-compose.yml`. The corpus this produces is published at
-[`changliu8541/assemblage-rust`](https://huggingface.co/datasets/changliu8541/assemblage-rust).
+Stack: Python 3.12, RabbitMQ, PostgreSQL, MinIO, docker compose.
 
-The Python package lives under `backend/assemblage/`; see
-`backend/assemblage/README.md` for the module map.
+**Build matrix.** C/C++ builds run gcc and clang across `-O0 -O1 -O2 -O3 -Os`.
+Rust builds run `rustc`'s three `-Zcodegen-backend` targets (LLVM, Cranelift,
+GCC/cg_gcc) across Debug / RelWithDebInfo / Release and `-O0..-O3, -Os, -Oz`,
+all from one pinned nightly. Rust binaries carry the same DWARF metadata as the C
+corpus plus demangled names and per-function origin tags (in-repo, dependency,
+stdlib). Quality varies by tier: LLVM and Cranelift give full source/line
+mapping; cg_gcc is a reliable name/address corpus but its repo-level line info is
+largely absent; Release binaries keep symbol tables rather than repo debug info.
+The full matrix lives in `docker-compose.yml`.
 
-## Quickstart
+## Getting started
 
-Requirements: Docker + docker compose. [uv](https://docs.astral.sh/uv/) for the
-Python tooling and host-side scripts (`export PATH="$HOME/.local/bin:$PATH"`).
+**[INSTALL.md](INSTALL.md)** — prerequisites, configuration, image builds, first
+boot, scaling, publishing a corpus, and the failure modes worth knowing before
+you leave it running.
 
-```bash
-git clone <this repo> && cd Assemblage
-cp secrets.env.example secrets.env      # fill in POSTGRES_PASSWORD, GITHUB_TOKEN,
-                                        # S3/MinIO creds, RABBITMQ_* (default guest)
-docker compose up -d                    # postgres + rabbitmq + minio + coordinator
-                                        # + scraper + the 10-builder matrix
-docker exec -it assemblage-coordinator-1 alembic upgrade head   # first run only
-```
+A minimal terminal UI wraps the common operations: `python assemblage_tui.py`.
 
-Artifacts go to MinIO (API on host port **9010**, console on **9011**). The
-`./backend` tree is bind-mounted into every worker, so code edits are live
-without a rebuild.
+## Further reading
 
-Scale the builder matrix without editing the compose file:
-
-```bash
-BUILDER_REPLICAS=4 BUILDER_MEM=8g docker compose up -d
-docker compose up -d --scale builder_6=20        # more gcc -O2 workers
-docker compose down                              # stop (keeps volumes)
-```
-
-A minimal terminal UI wraps the above: `python assemblage_tui.py`.
-
-## Worker images
-
-Both toolchain variants build from one Dockerfile:
-
-```bash
-docker build --build-arg TOOLCHAIN=gcc   -t assemblage-gcc:default   -f docker/worker/Dockerfile .
-docker build --build-arg TOOLCHAIN=clang -t assemblage-clang:default -f docker/worker/Dockerfile .
-```
-
-Both install the same union apt set so gcc- and clang-built binaries stay
-comparable; the clang variant exposes `gcc`/`cc` via a PATH shim over clang.
-
-## Daily dataset pipeline
-
-Fetches newly-built licensed Linux binaries from MinIO, re-extracts DWARF, and
-appends them to `assemblage_dataset/linux_licensed.sqlite`:
-
-```bash
-DB_HOST=localhost MINIO_ENDPOINT=localhost:9010 uv run assemblage-daily
-# or: python backend/scripts/run_daily_dataset.py [--since YYYY-MM-DD]
-```
-
-Host-side runs override the Docker-internal hostnames via env vars (above).
-`assemblage_loop.sh` automates the restart + daily-run cycle. To re-stage raw
-files already on disk, use `backend/scripts/restage_from_raw.py`.
-
-## Tests
-
-```bash
-export PATH="$HOME/.local/bin:$PATH"
-uv run pytest tests/                     # unit — green by default
-uv run pytest tests/ -m integration      # needs: docker compose up -d database
-make e2e                                 # golden-repo end-to-end gate
-```
-
-See `tests/README.md` for the marker policy.
-
-## Distributed / Windows builders (optional)
+| doc | covers |
+|---|---|
+| [INSTALL.md](INSTALL.md) | installation, deployment, operations |
+| `backend/assemblage/README.md` | module map of the Python package |
+| `backend/alembic/README.md` | schema policy — migrations are frozen to the live DB |
+| `tests/README.md` | test markers and the end-to-end gate |
+| `tests/fixtures/messages/README.md` | the frozen wire formats |
 
 Windows/MSVC builds require a Windows host and are quarantined under
-`backend/assemblage/legacy/` + `docker/legacy/`. Point a remote builder's
-`MQ_HOST`/`S3_HOST` at the coordinator (expose RabbitMQ 5672 and MinIO 9010) and
-run `compose/windows.yml` there.
-
-> RabbitMQ defaults to `guest`/`guest` (override with `RABBITMQ_USER`/
-> `RABBITMQ_PASS`). If you expose it, firewall it to your worker hosts and see
-> the [RabbitMQ access-control guide](https://www.rabbitmq.com/docs/access-control).
-
-## DeepHistory (legacy Conan corpus)
-
-Standalone multi-version library corpus via Conan; does not use RabbitMQ or the
-coordinator:
-
-```bash
-python backend/scripts/build_deephistory.py --packages sqlite3 fmt --output ./out
-docker compose -f compose/deephistory.yml up --build     # Linux images
-```
-
-## Troubleshooting
-
-Set `RUNTIME_ENV=development` for debug logging. Most transient failures clear on
-`docker compose restart <service>`. Migrations are handwritten and frozen to the
-live DB — never commit `alembic revision --autogenerate` output
-(`backend/alembic/README.md`).
+`backend/assemblage/legacy/`. DeepHistory, a standalone multi-version library
+corpus built via Conan, lives in `deephistory/` and does not use the coordinator.
